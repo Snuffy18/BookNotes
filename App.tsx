@@ -1,20 +1,55 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { StatusBar } from "expo-status-bar";
+import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AppSettingsProvider, useAppSettings } from "./src/context/AppSettingsContext";
+import { ScanProvider } from "./src/context/ScanContext";
+import { RootTabNavigator } from "./src/navigation/RootTabNavigator";
+import { accentColors, darkColors, lightColors } from "./src/theme/colors";
 
-export default function App() {
+function AppContent() {
+  const { darkMode, accentTheme } = useAppSettings();
+  const primaryColor = darkMode
+    ? accentColors[accentTheme].dark
+    : accentColors[accentTheme].light;
+  const appTheme = darkMode
+    ? {
+        ...DarkTheme,
+        colors: {
+          ...DarkTheme.colors,
+          background: darkColors.background,
+          primary: primaryColor,
+          card: darkColors.card,
+          text: darkColors.textPrimary,
+          border: darkColors.border,
+        },
+      }
+    : {
+        ...DefaultTheme,
+        colors: {
+          ...DefaultTheme.colors,
+          background: lightColors.background,
+          primary: primaryColor,
+          card: lightColors.card,
+          text: lightColors.textPrimary,
+          border: lightColors.border,
+        },
+      };
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <NavigationContainer theme={appTheme}>
+      <StatusBar style={darkMode ? "light" : "dark"} />
+      <RootTabNavigator />
+    </NavigationContainer>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppSettingsProvider>
+        <ScanProvider>
+          <AppContent />
+        </ScanProvider>
+      </AppSettingsProvider>
+    </SafeAreaProvider>
+  );
+}
