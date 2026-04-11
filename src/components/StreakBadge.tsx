@@ -1,0 +1,69 @@
+import { Pressable, StyleSheet, Text } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import * as Haptics from "expo-haptics";
+import { FireIcon } from "./FireIcon";
+import { useAppSettings } from "../context/AppSettingsContext";
+import { useStreak } from "../context/StreakContext";
+import type { ScanStackParamList } from "../navigation/types";
+import { darkColors, lightColors } from "../theme/colors";
+
+type Nav = NativeStackNavigationProp<ScanStackParamList, "ScanCamera">;
+
+/** Cal AI–style pill: flame + streak count; opens Streak details screen. */
+export function StreakBadge() {
+  const navigation = useNavigation<Nav>();
+  const { darkMode } = useAppSettings();
+  const { streak } = useStreak();
+
+  const openStreakDetails = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    navigation.navigate("StreakDetails");
+  };
+
+  return (
+    <Pressable
+      onPress={openStreakDetails}
+      style={({ pressed }) => [
+        styles.pill,
+        darkMode && styles.pillDark,
+        pressed && styles.pillPressed,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={`${streak.currentStreak} day streak. Opens streak details.`}
+      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+    >
+      <FireIcon size={16} />
+      <Text style={[styles.count, darkMode && styles.countDark]}>{streak.currentStreak}</Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#f1f5f9",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(15,23,42,0.08)",
+  },
+  pillDark: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  pillPressed: {
+    opacity: 0.75,
+  },
+  count: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: lightColors.textPrimary,
+  },
+  countDark: {
+    color: darkColors.textPrimary,
+  },
+});
