@@ -2,8 +2,11 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-nati
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
+import { RichNoteText } from "../components/RichNoteText";
+import { StudySettingsSummaryCard } from "../components/StudySettingsSummaryCard";
 import { useAppSettings } from "../context/AppSettingsContext";
 import type { ScanStackParamList } from "../navigation/types";
+import { DEFAULT_STUDY_PREFERENCES } from "../types/studyPreferences";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<ScanStackParamList, "Results">;
@@ -11,6 +14,7 @@ type Props = NativeStackScreenProps<ScanStackParamList, "Results">;
 export function ResultsScreen({ route }: Props) {
   const { darkMode, accentColor } = useAppSettings();
   const { item } = route.params;
+  const studyPrefsUsed = item.studyPreferences ?? DEFAULT_STUDY_PREFERENCES;
   const createdAt = new Date(item.createdAt);
   const createdLabel = createdAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
   const readingMinutes = Math.max(1, Math.round((item.notes.detailedNotes.length || 120) / 900));
@@ -33,9 +37,14 @@ export function ResultsScreen({ route }: Props) {
           </View>
         </View>
 
+        <StudySettingsSummaryCard prefs={studyPrefsUsed} darkMode={darkMode} accentColor={accentColor} />
+
         <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
           <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Summary</Text>
-          <Text style={[styles.sectionText, darkMode && styles.textSecondaryDark]}>{item.notes.summary}</Text>
+          <RichNoteText
+            text={item.notes.summary}
+            style={[styles.sectionText, darkMode && styles.textSecondaryDark]}
+          />
         </View>
 
         <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
@@ -46,20 +55,56 @@ export function ResultsScreen({ route }: Props) {
                 <View style={[styles.ideaIndex, { borderColor: accentColor }]}>
                   <Text style={[styles.ideaIndexText, { color: accentColor }]}>{index + 1}</Text>
                 </View>
-                <Text style={[styles.sectionText, styles.ideaText, darkMode && styles.textSecondaryDark]}>
-                  {idea}
-                </Text>
+                <RichNoteText
+                  text={idea}
+                  style={[styles.sectionText, styles.ideaText, darkMode && styles.textSecondaryDark]}
+                />
               </View>
             ))}
           </View>
         </View>
 
+        {item.notes.sectionHeadings && item.notes.sectionHeadings.length > 0 ? (
+          <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
+            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Section headings</Text>
+            <View style={styles.headingsList}>
+              {item.notes.sectionHeadings.map((heading, index) => (
+                <RichNoteText
+                  key={`${index}-${heading.slice(0, 32)}`}
+                  text={heading}
+                  style={[styles.sectionText, styles.headingLine, darkMode && styles.textSecondaryDark]}
+                />
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
           <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Detailed Notes</Text>
-          <Text style={[styles.sectionText, darkMode && styles.textSecondaryDark]}>
-            {item.notes.detailedNotes}
-          </Text>
+          <RichNoteText
+            text={item.notes.detailedNotes}
+            style={[styles.sectionText, darkMode && styles.textSecondaryDark]}
+          />
         </View>
+
+        {item.notes.quotes && item.notes.quotes.length > 0 ? (
+          <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
+            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Quotes</Text>
+            <View style={styles.quotesList}>
+              {item.notes.quotes.map((quote, index) => (
+                <View
+                  key={`${index}-${quote.slice(0, 24)}`}
+                  style={[styles.quoteBlock, { borderLeftColor: accentColor }]}
+                >
+                  <RichNoteText
+                    text={quote}
+                    style={[styles.sectionText, styles.quoteText, darkMode && styles.textSecondaryDark]}
+                  />
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
           <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Keywords</Text>
@@ -171,6 +216,12 @@ const styles = StyleSheet.create({
   ideasList: {
     gap: 10,
   },
+  headingsList: {
+    gap: 8,
+  },
+  headingLine: {
+    fontWeight: "600",
+  },
   ideaRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -191,6 +242,16 @@ const styles = StyleSheet.create({
   },
   ideaText: {
     flex: 1,
+  },
+  quotesList: {
+    gap: 12,
+  },
+  quoteBlock: {
+    borderLeftWidth: 3,
+    paddingLeft: 12,
+  },
+  quoteText: {
+    fontStyle: "italic",
   },
   keywordWrap: {
     flexDirection: "row",

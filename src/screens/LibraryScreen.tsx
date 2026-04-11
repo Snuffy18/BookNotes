@@ -32,15 +32,13 @@ export function LibraryScreen() {
   const [bookCoverUri, setBookCoverUri] = useState<string | null>(activeBook?.coverUri ?? null);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
-  const [showBookCapture, setShowBookCapture] = useState(books.length === 0);
+  /** Capture card only after the user taps Add book — not by default on an empty library. */
+  const [showBookCapture, setShowBookCapture] = useState(false);
 
   useEffect(() => {
     setBookTitle(activeBook?.title ?? "");
     setBookAuthor(activeBook?.author ?? "");
     setBookCoverUri(activeBook?.coverUri ?? null);
-    if (books.length === 0) {
-      setShowBookCapture(true);
-    }
   }, [activeBook, books.length]);
 
   useFocusEffect(
@@ -169,14 +167,10 @@ export function LibraryScreen() {
             ]}
           >
             <View style={styles.emptyStateInner}>
-              <Ionicons
-                name="library-outline"
-                size={42}
-                color={darkMode ? darkColors.textSecondary : lightColors.textMuted}
-              />
+              <Ionicons name="library-outline" size={42} color={accentColor} />
               <Text style={[styles.emptyTitle, darkMode && styles.emptyTitleDark]}>Add your first book</Text>
               <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>
-                Scan a cover above to extract the title and author.
+                Tap Add your first book, then scan a cover to extract the title and author.
               </Text>
             </View>
           </View>

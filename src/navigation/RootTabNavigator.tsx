@@ -38,6 +38,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
     activeNestedRouteName === "Processing" ||
     activeNestedRouteName === "Results" ||
     activeNestedRouteName === "StreakDetails" ||
+    activeNestedRouteName === "ReadingHistory" ||
     activeNestedRouteName === "ExportSettings" ||
     activeNestedRouteName === "StudyPreferences" ||
     activeNestedRouteName === "AppBehavior" ||

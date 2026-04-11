@@ -1,5 +1,8 @@
 import * as FileSystem from "expo-file-system/legacy";
+import { buildStudyPreferencesInstructions } from "../study/buildStudyPrompt";
 import type { GeneratedNotes } from "../types/note";
+import type { StudyPreferencesSnapshot } from "../types/studyPreferences";
+import { DEFAULT_STUDY_PREFERENCES } from "../types/studyPreferences";
 
 const API_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-4.1-mini";
@@ -47,7 +50,10 @@ function extractTextFromResponse(data: any): string | null {
   return null;
 }
 
-export async function generateNotesFromImage(imageUri: string): Promise<GeneratedNotes> {
+export async function generateNotesFromImage(
+  imageUri: string,
+  studyPreferences: StudyPreferencesSnapshot = DEFAULT_STUDY_PREFERENCES
+): Promise<GeneratedNotes> {
   const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("Missing EXPO_PUBLIC_OPENAI_API_KEY in your Expo environment.");
@@ -56,6 +62,8 @@ export async function generateNotesFromImage(imageUri: string): Promise<Generate
   const base64Image = await FileSystem.readAsStringAsync(imageUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
+
+  const studyInstructions = buildStudyPreferencesInstructions(studyPreferences);
 
   const response = await fetch(API_URL, {
     method: "POST",
@@ -77,11 +85,17 @@ export async function generateNotesFromImage(imageUri: string): Promise<Generate
             {
               type: "input_text",
               text:
-                "Analyze this image and return ONLY JSON with this schema: " +
-                '{"isBookPage":boolean,"rejectionReason":"string","summary":"string","mainIdeas":["string"],"detailedNotes":"string","keywords":["string"]}. ' +
+                studyInstructions +
+                " Analyze this image and return ONLY JSON with this schema: " +
+                '{"isBookPage":boolean,"rejectionReason":"string","summary":"string","mainIdeas":["string"],"detailedNotes":"string","keywords":["string"],"quotes":["string"],"sectionHeadings":["string"]}. ' +
                 "Set isBookPage=true ONLY if this is clearly a readable book page with meaningful text. " +
                 "If image is blank, blurry, random scene/object, handwriting-only, or non-book content, set isBookPage=false and fill rejectionReason with a short message; keep notes fields empty. " +
-                "If isBookPage=true, mainIdeas must have 3-6 bullet points and summary under 60 words.",
+                "If isBookPage=true, mainIdeas must have 3-6 bullet points and summary under 60 words. " +
+                "quotes: extract notable quotations actually visible on the page — text in quotation marks, block quotes, pull quotes, dialogue, epigraphs, or clearly set-off citations. " +
+                "Each array item is one quote string (verbatim or lightly cleaned for OCR). If there are no quotes on the page, use quotes:[]. Do not invent quotes. " +
+                "sectionHeadings: list every section/chapter/subsection heading visibly printed on the page (e.g. numbered headings like 1.2, bold or larger titles, running headers, sidebar section titles). " +
+                "Preserve top-to-bottom reading order. One string per heading. If there are no such headings, use sectionHeadings:[]. Do not invent headings or repeat body text. " +
+                "If isBookPage=false, use quotes:[] and sectionHeadings:[].",
             },
             {
               type: "input_image",
@@ -119,11 +133,23 @@ export async function generateNotesFromImage(imageUri: string): Promise<Generate
     throw new Error("Could not detect enough readable text. Please retake the photo.");
   }
 
+  const quotesRaw = parsed.quotes ?? [];
+  const quotes = Array.isArray(quotesRaw)
+    ? quotesRaw.map((q) => (typeof q === "string" ? q.trim() : "")).filter((q) => q.length > 0)
+    : [];
+
+  const headingsRaw = parsed.sectionHeadings ?? [];
+  const sectionHeadings = Array.isArray(headingsRaw)
+    ? headingsRaw.map((h) => (typeof h === "string" ? h.trim() : "")).filter((h) => h.length > 0)
+    : [];
+
   return {
     summary: parsed.summary ?? "",
     mainIdeas: parsed.mainIdeas ?? [],
     detailedNotes: parsed.detailedNotes ?? "",
     keywords: parsed.keywords ?? [],
+    ...(quotes.length > 0 ? { quotes } : {}),
+    ...(sectionHeadings.length > 0 ? { sectionHeadings } : {}),
   };
 }
 

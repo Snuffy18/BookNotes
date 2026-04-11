@@ -19,64 +19,52 @@ import { HighlighterIcon } from "../components/HighlighterIcon";
 import { RulerIcon } from "../components/RulerIcon";
 import { SettingsOptionHeroCard } from "../components/SettingsOptionHeroCard";
 import { useAppSettings } from "../context/AppSettingsContext";
+import { useStudyPreferences } from "../context/StudyPreferencesContext";
 import type { ProfileStackParamList } from "../navigation/types";
+import { formatLengthDropdown, labelHighlightSummary, labelTone } from "../study/studyPreferenceLabels";
+import type { StudyLength, StudyTone } from "../types/studyPreferences";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "StudyPreferences">;
 
-type ToneOption = "simple" | "academic" | "exam";
-type LengthOption = "short" | "medium" | "detailed";
-
 type Choice<T extends string> = { id: T; title: string; subtitle: string };
 
-const TONE_CHOICES: Choice<ToneOption>[] = [
+const TONE_CHOICES: Choice<StudyTone>[] = [
   { id: "simple", title: "Simple", subtitle: "Like explaining to a beginner" },
   { id: "academic", title: "Academic", subtitle: "Formal" },
   { id: "exam", title: "Exam-ready", subtitle: "Focused, structured" },
 ];
 
-const LENGTH_CHOICES: Choice<LengthOption>[] = [
+const LENGTH_CHOICES: Choice<StudyLength>[] = [
   { id: "short", title: "Short", subtitle: "3–5 bullets" },
   { id: "medium", title: "Medium", subtitle: "" },
   { id: "detailed", title: "Detailed", subtitle: "" },
 ];
 
-function labelForTone(id: ToneOption): string {
-  return TONE_CHOICES.find((c) => c.id === id)?.title ?? id;
-}
-
-function labelForLength(id: LengthOption): string {
-  const c = LENGTH_CHOICES.find((x) => x.id === id);
-  if (!c) return id;
-  return c.subtitle ? `${c.title} · ${c.subtitle}` : c.title;
-}
-
-function labelForHighlights(
-  master: boolean,
-  keyTerms: boolean,
-  definitions: boolean,
-  numbersDates: boolean,
-): string {
-  if (!master) return "Off";
-  const n = [keyTerms, definitions, numbersDates].filter(Boolean).length;
-  if (n === 3) return "All";
-  if (n === 0) return "None";
-  return `${n} of 3`;
-}
-
 export function StudyPreferencesScreen() {
   const navigation = useNavigation<Nav>();
   const { darkMode, accentColor } = useAppSettings();
   const insets = useSafeAreaInsets();
+  const {
+    tone,
+    length,
+    highlightKeyElements,
+    highlightKeyTerms,
+    highlightDefinitions,
+    highlightNumbersDates,
+    setStudyPreferences,
+  } = useStudyPreferences();
 
-  const [tone, setTone] = useState<ToneOption>("simple");
-  const [length, setLength] = useState<LengthOption>("medium");
   const [openMenu, setOpenMenu] = useState<"tone" | "length" | "highlight" | null>(null);
 
-  const [highlightKeyElements, setHighlightKeyElements] = useState(true);
-  const [highlightKeyTerms, setHighlightKeyTerms] = useState(true);
-  const [highlightDefinitions, setHighlightDefinitions] = useState(true);
-  const [highlightNumbersDates, setHighlightNumbersDates] = useState(true);
+  const highlightSummary = labelHighlightSummary({
+    tone,
+    length,
+    highlightKeyElements,
+    highlightKeyTerms,
+    highlightDefinitions,
+    highlightNumbersDates,
+  });
 
   const switchTrack = { false: darkMode ? "#3f3f3f" : "#d1d5db", true: "#34c759" } as const;
 
@@ -138,7 +126,7 @@ export function StudyPreferencesScreen() {
               activeOpacity={0.8}
             >
               <Text style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]} numberOfLines={1}>
-                {labelForTone(tone)}
+                {labelTone(tone)}
               </Text>
               <Ionicons name="chevron-down" size={18} color={accentColor} style={styles.dropdownChevron} />
             </TouchableOpacity>
@@ -162,7 +150,7 @@ export function StudyPreferencesScreen() {
               activeOpacity={0.8}
             >
               <Text style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]} numberOfLines={1}>
-                {labelForLength(length)}
+                {formatLengthDropdown(length)}
               </Text>
               <Ionicons name="chevron-down" size={18} color={accentColor} style={styles.dropdownChevron} />
             </TouchableOpacity>
@@ -190,12 +178,7 @@ export function StudyPreferencesScreen() {
               activeOpacity={0.8}
             >
               <Text style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]} numberOfLines={1}>
-                {labelForHighlights(
-                  highlightKeyElements,
-                  highlightKeyTerms,
-                  highlightDefinitions,
-                  highlightNumbersDates,
-                )}
+                {highlightSummary}
               </Text>
               <Ionicons name="chevron-down" size={18} color={accentColor} style={styles.dropdownChevron} />
             </TouchableOpacity>
@@ -255,7 +238,7 @@ export function StudyPreferencesScreen() {
                     value={highlightKeyElements}
                     onValueChange={(v) => {
                       hapticLight();
-                      setHighlightKeyElements(v);
+                      setStudyPreferences({ highlightKeyElements: v });
                     }}
                     trackColor={switchTrack}
                     thumbColor="#ffffff"
@@ -269,7 +252,7 @@ export function StudyPreferencesScreen() {
                     value={highlightKeyTerms}
                     onValueChange={(v) => {
                       hapticLight();
-                      setHighlightKeyTerms(v);
+                      setStudyPreferences({ highlightKeyTerms: v });
                     }}
                     disabled={!highlightKeyElements}
                     trackColor={switchTrack}
@@ -284,7 +267,7 @@ export function StudyPreferencesScreen() {
                     value={highlightDefinitions}
                     onValueChange={(v) => {
                       hapticLight();
-                      setHighlightDefinitions(v);
+                      setStudyPreferences({ highlightDefinitions: v });
                     }}
                     disabled={!highlightKeyElements}
                     trackColor={switchTrack}
@@ -299,7 +282,7 @@ export function StudyPreferencesScreen() {
                     value={highlightNumbersDates}
                     onValueChange={(v) => {
                       hapticLight();
-                      setHighlightNumbersDates(v);
+                      setStudyPreferences({ highlightNumbersDates: v });
                     }}
                     disabled={!highlightKeyElements}
                     trackColor={switchTrack}
@@ -320,7 +303,7 @@ export function StudyPreferencesScreen() {
                         ]}
                         onPress={() => {
                           hapticSelect();
-                          setTone(opt.id);
+                          setStudyPreferences({ tone: opt.id });
                           setOpenMenu(null);
                         }}
                       >
@@ -346,7 +329,7 @@ export function StudyPreferencesScreen() {
                         ]}
                         onPress={() => {
                           hapticSelect();
-                          setLength(opt.id);
+                          setStudyPreferences({ length: opt.id });
                           setOpenMenu(null);
                         }}
                       >

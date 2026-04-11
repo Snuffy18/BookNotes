@@ -12,9 +12,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
+import { RichNoteText } from "../components/RichNoteText";
+import { StudySettingsSummaryCard } from "../components/StudySettingsSummaryCard";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { useScanContext } from "../context/ScanContext";
 import type { LibraryStackParamList } from "../navigation/types";
+import { DEFAULT_STUDY_PREFERENCES } from "../types/studyPreferences";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<LibraryStackParamList, "ReportDetails">;
@@ -23,6 +26,7 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
   const { darkMode, accentColor } = useAppSettings();
   const { removeScan } = useScanContext();
   const { item, highlightQuery } = route.params;
+  const studyPrefsUsed = item.studyPreferences ?? DEFAULT_STUDY_PREFERENCES;
 
   const onDeleteReport = () => {
     Alert.alert(
@@ -71,7 +75,11 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
     if (item.notes.summary.toLowerCase().includes(normalizedQuery)) return "summary";
     if (item.notes.mainIdeas.some((idea) => idea.toLowerCase().includes(normalizedQuery)))
       return "mainIdeas";
+    const sectionHeadings = item.notes.sectionHeadings ?? [];
+    if (sectionHeadings.some((h) => h.toLowerCase().includes(normalizedQuery))) return "sectionHeadings";
     if (item.notes.detailedNotes.toLowerCase().includes(normalizedQuery)) return "detailedNotes";
+    const quotes = item.notes.quotes ?? [];
+    if (quotes.some((q) => q.toLowerCase().includes(normalizedQuery))) return "quotes";
     if (item.notes.keywords.some((k) => k.toLowerCase().includes(normalizedQuery))) return "keywords";
     return null;
   }, [item.notes, normalizedQuery]);
@@ -110,6 +118,15 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
       scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
     }
   }, [matchedSection]);
+
+  const showSearchHighlight = Boolean(normalizedQuery) && highlightActive;
+
+  const renderBodyText = (text: string, baseStyle: any) => {
+    if (showSearchHighlight) {
+      return renderHighlightedText(text, baseStyle);
+    }
+    return <RichNoteText text={text} style={baseStyle} />;
+  };
 
   const renderHighlightedText = (text: string, baseStyle: any) => {
     if (!normalizedQuery || !highlightActive) {
@@ -172,6 +189,8 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
           </View>
         </View>
 
+        <StudySettingsSummaryCard prefs={studyPrefsUsed} darkMode={darkMode} accentColor={accentColor} />
+
         <View
           style={[styles.sectionCard, darkMode && styles.cardDark]}
           onLayout={(e) => {
@@ -179,7 +198,7 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
           }}
         >
           <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Summary</Text>
-          {renderHighlightedText(item.notes.summary, [
+          {renderBodyText(item.notes.summary, [
             styles.sectionText,
             darkMode && styles.textSecondaryDark,
           ])}
@@ -198,7 +217,7 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
                 <View style={[styles.ideaIndex, { borderColor: accentColor }]}>
                   <Text style={[styles.ideaIndexText, { color: accentColor }]}>{index + 1}</Text>
                 </View>
-                {renderHighlightedText(idea, [
+                {renderBodyText(idea, [
                   styles.sectionText,
                   styles.ideaText,
                   darkMode && styles.textSecondaryDark,
@@ -208,6 +227,28 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
           </View>
         </View>
 
+        {item.notes.sectionHeadings && item.notes.sectionHeadings.length > 0 ? (
+          <View
+            style={[styles.sectionCard, darkMode && styles.cardDark]}
+            onLayout={(e) => {
+              sectionY.current.sectionHeadings = e.nativeEvent.layout.y;
+            }}
+          >
+            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Section headings</Text>
+            <View style={styles.headingsList}>
+              {item.notes.sectionHeadings.map((heading, index) => (
+                <View key={`${index}-${heading.slice(0, 32)}`} style={styles.headingRow}>
+                  {renderBodyText(heading, [
+                    styles.sectionText,
+                    styles.headingLine,
+                    darkMode && styles.textSecondaryDark,
+                  ])}
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         <View
           style={[styles.sectionCard, darkMode && styles.cardDark]}
           onLayout={(e) => {
@@ -215,11 +256,36 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
           }}
         >
           <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Detailed Notes</Text>
-          {renderHighlightedText(item.notes.detailedNotes, [
+          {renderBodyText(item.notes.detailedNotes, [
             styles.sectionText,
             darkMode && styles.textSecondaryDark,
           ])}
         </View>
+
+        {item.notes.quotes && item.notes.quotes.length > 0 ? (
+          <View
+            style={[styles.sectionCard, darkMode && styles.cardDark]}
+            onLayout={(e) => {
+              sectionY.current.quotes = e.nativeEvent.layout.y;
+            }}
+          >
+            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Quotes</Text>
+            <View style={styles.quotesList}>
+              {item.notes.quotes.map((quote, index) => (
+                <View
+                  key={`${index}-${quote.slice(0, 24)}`}
+                  style={[styles.quoteBlock, { borderLeftColor: accentColor }]}
+                >
+                  {renderBodyText(quote, [
+                    styles.sectionText,
+                    styles.quoteText,
+                    darkMode && styles.textSecondaryDark,
+                  ])}
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         <View
           style={[styles.sectionCard, darkMode && styles.cardDark]}
@@ -363,6 +429,15 @@ const styles = StyleSheet.create({
   ideasList: {
     gap: 10,
   },
+  headingsList: {
+    gap: 8,
+  },
+  headingRow: {
+    paddingVertical: 2,
+  },
+  headingLine: {
+    fontWeight: "600",
+  },
   ideaRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -383,6 +458,16 @@ const styles = StyleSheet.create({
   },
   ideaText: {
     flex: 1,
+  },
+  quotesList: {
+    gap: 12,
+  },
+  quoteBlock: {
+    borderLeftWidth: 3,
+    paddingLeft: 12,
+  },
+  quoteText: {
+    fontStyle: "italic",
   },
   keywordWrap: {
     flexDirection: "row",

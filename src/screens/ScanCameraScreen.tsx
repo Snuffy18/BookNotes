@@ -5,6 +5,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import {
+  ActivityIndicator,
   FlatList,
   LayoutAnimation,
   Modal,
@@ -24,8 +25,10 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useAppSettings } from "../context/AppSettingsContext";
 import type { ScanStackParamList } from "../navigation/types";
 import { HeaderText } from "../components/HeaderText";
+import { ReadingTimerCard } from "../components/ReadingTimerCard";
 import { StreakBadge } from "../components/StreakBadge";
 import { useScanContext } from "../context/ScanContext";
+import { extractBookMetadataFromImage } from "../services/ai";
 import { hexWithAlpha } from "../theme/colorUtils";
 import { darkColors, lightColors } from "../theme/colors";
 
@@ -79,7 +82,7 @@ export function ScanCameraScreen({ navigation }: Props) {
   );
   const topFadeHeight = artificialTopSpacer + 36;
 
-  const { books, scans, activeBookId, setActiveBookId } = useScanContext();
+  const { books, activeBookId, setActiveBookId, addOrActivateBook } = useScanContext();
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView | null>(null);
   const [isBookModalOpen, setIsBookModalOpen] = useState(false);
@@ -95,6 +98,10 @@ export function ScanCameraScreen({ navigation }: Props) {
   }>({ ultraWide: null, wide: null });
   /** Which segment shows the nested white "active" chip while the camera is open. */
   const [scanPillActive, setScanPillActive] = useState<"lens" | "gallery">("lens");
+  const [coverExtracting, setCoverExtracting] = useState(false);
+  const [coverExtractError, setCoverExtractError] = useState<string | null>(null);
+
+  const needsFirstBook = books.length === 0;
 
   const applyAvailableLenses = useCallback((names: string[]) => {
     setIosLensRoles(resolveIosLensRoles(names));
@@ -106,7 +113,17 @@ export function ScanCameraScreen({ navigation }: Props) {
     }
   }, [isCameraOpen]);
 
-  const frameTips = useMemo(
+  const coverFrameTips = useMemo(
+    () => [
+      "Fill the frame with the front cover",
+      "Keep the title and author readable",
+      "Avoid glare on the cover",
+      "Hold steady for a sharp photo",
+    ],
+    []
+  );
+
+  const pageFrameTips = useMemo(
     () => [
       "Align your page in the frame",
       "Keep the page flat and fully visible",
@@ -115,6 +132,31 @@ export function ScanCameraScreen({ navigation }: Props) {
       "Hold still for a sharper scan",
     ],
     []
+  );
+
+  const frameTips = needsFirstBook ? coverFrameTips : pageFrameTips;
+
+  const processCoverFromUri = useCallback(
+    async (coverUri: string) => {
+      setCoverExtracting(true);
+      setCoverExtractError(null);
+      try {
+        const metadata = await extractBookMetadataFromImage(coverUri);
+        addOrActivateBook({
+          title: metadata.title,
+          author: metadata.author,
+          coverUri,
+        });
+        setIsCameraOpen(false);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to read the cover.";
+        setCoverExtractError(message);
+      } finally {
+        setCoverExtracting(false);
+      }
+    },
+    [addOrActivateBook]
   );
 
   const activeBook = books.find((book) => book.id === activeBookId) ?? null;
@@ -128,82 +170,9 @@ export function ScanCameraScreen({ navigation }: Props) {
     });
   }, [books, searchQuery]);
 
-  const streakStats = useMemo(() => {
-    if (scans.length === 0) {
-      return { streak: 0, lastScanLabel: "No scans yet" };
-    }
-
-    const daySet = new Set(
-      scans.map((scan) => new Date(scan.createdAt).toISOString().slice(0, 10))
-    );
-    const scanDays = Array.from(daySet).sort((a, b) => (a > b ? -1 : 1));
-
-    const today = new Date();
-    const latest = new Date(scanDays[0]);
-    const diffFromToday = Math.floor(
-      (new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() -
-        new Date(latest.getFullYear(), latest.getMonth(), latest.getDate()).getTime()) /
-        86400000
-    );
-
-    // If latest scan is older than yesterday, streak is broken.
-    if (diffFromToday > 1) {
-      return {
-        streak: 0,
-        lastScanLabel: new Date(scans[0].createdAt).toLocaleString([], {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }),
-      };
-    }
-
-    let streak = 1;
-    let cursor = new Date(scanDays[0]);
-    for (let i = 1; i < scanDays.length; i += 1) {
-      const prev = new Date(cursor);
-      prev.setDate(prev.getDate() - 1);
-      if (scanDays[i] === prev.toISOString().slice(0, 10)) {
-        streak += 1;
-        cursor = new Date(scanDays[i]);
-      } else {
-        break;
-      }
-    }
-
-    return {
-      streak,
-      lastScanLabel: new Date(scans[0].createdAt).toLocaleString([], {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }),
-    };
-  }, [scans]);
-
-  const weekProgress = useMemo(() => {
-    const daySet = new Set(
-      scans.map((scan) => new Date(scan.createdAt).toISOString().slice(0, 10))
-    );
-
-    const now = new Date();
-    const jsDay = now.getDay(); // 0=Sun, 1=Mon, ...
-    const mondayOffset = jsDay === 0 ? 6 : jsDay - 1;
-    const weekStart = new Date(now);
-    weekStart.setHours(0, 0, 0, 0);
-    weekStart.setDate(weekStart.getDate() - mondayOffset);
-
-    const labels = ["M", "T", "W", "T", "F", "S", "S"];
-    return labels.map((label, index) => {
-      const date = new Date(weekStart);
-      date.setDate(weekStart.getDate() + index);
-      const dayKey = date.toISOString().slice(0, 10);
-      const isToday = dayKey === new Date().toISOString().slice(0, 10);
-      return {
-        label,
-        hasScan: daySet.has(dayKey),
-        isToday,
-      };
-    });
-  }, [scans]);
+  useEffect(() => {
+    setTipIndex(0);
+  }, [needsFirstBook]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -235,6 +204,7 @@ export function ScanCameraScreen({ navigation }: Props) {
   );
 
   const onPickFromGallery = async () => {
+    if (coverExtracting) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     if (isCameraOpen) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -247,7 +217,12 @@ export function ScanCameraScreen({ navigation }: Props) {
     });
 
     if (!result.canceled) {
-      navigation.navigate("Processing", { imageUri: result.assets[0].uri });
+      const uri = result.assets[0].uri;
+      if (needsFirstBook) {
+        await processCoverFromUri(uri);
+      } else {
+        navigation.navigate("Processing", { imageUri: uri });
+      }
     } else if (isCameraOpen) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setScanPillActive("lens");
@@ -257,16 +232,21 @@ export function ScanCameraScreen({ navigation }: Props) {
   const onCapture = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     if (!isCameraOpen) {
+      setCoverExtractError(null);
       setIsCameraOpen(true);
       return;
     }
+    if (coverExtracting) return;
     const photo = await cameraRef.current?.takePictureAsync({
       quality: 0.9,
       skipProcessing: true,
     });
-    if (photo?.uri) {
-      navigation.navigate("Processing", { imageUri: photo.uri });
+    if (!photo?.uri) return;
+    if (needsFirstBook) {
+      await processCoverFromUri(photo.uri);
+      return;
     }
+    navigation.navigate("Processing", { imageUri: photo.uri });
   };
 
   const selectedLens = useMemo(() => {
@@ -327,9 +307,21 @@ export function ScanCameraScreen({ navigation }: Props) {
           paddingRight: 18 + insets.right,
         }}
       >
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, styles.scrollContentFlex]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.scanPageTitleWrap}>
-          <HeaderText title="Scan Page" style={styles.scanPageHeaderBlock} trailing={<StreakBadge />} />
+          <HeaderText
+            title={needsFirstBook ? "Add your first book" : "Scan Page"}
+            subtitle={
+              needsFirstBook
+                ? "Scan the cover to add title and author. Then you can scan pages."
+                : undefined
+            }
+            style={styles.scanPageHeaderBlock}
+            trailing={<StreakBadge />}
+          />
         </View>
 
         {books.length > 0 && books.length < 4 ? (
@@ -407,20 +399,24 @@ export function ScanCameraScreen({ navigation }: Props) {
                 <View style={styles.overlayBox}>
                   <Text style={styles.cameraHint}>{frameTips[tipIndex]}</Text>
                 </View>
+                {coverExtracting ? (
+                  <View style={styles.coverExtractingOverlay} pointerEvents="auto">
+                    <ActivityIndicator size="large" color="#ffffff" />
+                    <Text style={styles.coverExtractingLabel}>Reading cover…</Text>
+                  </View>
+                ) : null}
               </CameraView>
             ) : (
               <View style={styles.cameraClosedOuter}>
                 <View style={[styles.cameraClosedCard, darkMode && styles.cameraClosedCardDark]}>
-                  <Ionicons
-                    name="camera-outline"
-                    size={44}
-                    color={darkMode ? darkColors.textSecondary : lightColors.textMuted}
-                  />
+                  <Ionicons name="camera-outline" size={44} color={accentColor} />
                   <Text style={[styles.cameraClosedTitle, darkMode && styles.cameraClosedTitleDark]}>
-                    Ready to scan
+                    {needsFirstBook ? "Add your first book" : "Ready to scan"}
                   </Text>
                   <Text style={[styles.cameraClosedHint, darkMode && styles.cameraClosedHintDark]}>
-                    Start scanning your page — tap Open camera below.
+                    {needsFirstBook
+                      ? "Tap Add your first book below, then photograph the front cover."
+                      : "Start scanning your page — tap Open camera below."}
                   </Text>
                 </View>
               </View>
@@ -443,6 +439,7 @@ export function ScanCameraScreen({ navigation }: Props) {
                         setLensMode((current) => (current === "1x" ? "0.5x" : "1x"));
                       }}
                       activeOpacity={0.85}
+                      disabled={coverExtracting}
                     >
                       {scanPillActive === "lens" ? (
                         <View style={styles.scanOptionInnerActive}>
@@ -459,6 +456,7 @@ export function ScanCameraScreen({ navigation }: Props) {
                       style={styles.scanOptionSegmentWrap}
                       onPress={() => setFlashEnabled((v) => !v)}
                       activeOpacity={0.85}
+                      disabled={coverExtracting}
                     >
                       {flashEnabled ? (
                         <View style={styles.scanOptionInnerActive}>
@@ -475,6 +473,7 @@ export function ScanCameraScreen({ navigation }: Props) {
                       style={styles.scanOptionSegmentWrap}
                       onPress={onPickFromGallery}
                       activeOpacity={0.85}
+                      disabled={coverExtracting}
                     >
                       {scanPillActive === "gallery" ? (
                         <View style={[styles.scanOptionInnerActive, styles.scanOptionInnerActiveGallery]}>
@@ -498,49 +497,43 @@ export function ScanCameraScreen({ navigation }: Props) {
         </View>
 
         <View style={[styles.sectionBlock, darkMode && styles.sectionBlockDark]}>
-          <TouchableOpacity style={styles.primaryButtonWrap} onPress={onCapture} activeOpacity={0.9}>
+          {coverExtractError ? (
+            <Text style={[styles.coverExtractError, darkMode && styles.coverExtractErrorDark]}>{coverExtractError}</Text>
+          ) : null}
+          <TouchableOpacity
+            style={styles.primaryButtonWrap}
+            onPress={onCapture}
+            activeOpacity={0.9}
+            disabled={coverExtracting}
+          >
             <LinearGradient
               colors={accentGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.primaryButtonGradient}
+              style={[styles.primaryButtonGradient, coverExtracting && styles.primaryButtonGradientDisabled]}
             >
               <Ionicons name="camera" size={22} color="#fff" />
-              <Text style={styles.primaryButtonText}>{isCameraOpen ? "Capture page" : "Open camera"}</Text>
+              <Text style={styles.primaryButtonText}>
+                {coverExtracting
+                  ? "Reading cover…"
+                  : needsFirstBook
+                    ? isCameraOpen
+                      ? "Scan cover"
+                      : "Add your first book"
+                    : isCameraOpen
+                      ? "Capture page"
+                      : "Open camera"}
+              </Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.streakCard, darkMode && styles.streakCardDark]}>
-          <Text style={[styles.sectionLabel, darkMode && styles.sectionLabelDark, styles.streakSectionLabel]}>
-            Activity
-          </Text>
-          <Text style={[styles.streakTitle, darkMode && styles.streakTitleDark]}>
-            Learning Streak
-          </Text>
-          <Text style={[styles.streakValue, darkMode && styles.streakValueDark]}>
-            {streakStats.streak} day{streakStats.streak === 1 ? "" : "s"}
-          </Text>
-          <Text style={[styles.streakSubtext, darkMode && styles.streakSubtextDark]}>
-            Last scan: {streakStats.lastScanLabel}
-          </Text>
-          <View style={styles.weekRow}>
-            {weekProgress.map((day, index) => (
-              <View key={`${day.label}-${index}`} style={styles.weekItem}>
-                <View
-                  style={[
-                    styles.weekCircle,
-                    darkMode && styles.weekCircleDark,
-                    day.isToday && { borderColor: hexWithAlpha(accentColor, 0.5) },
-                  ]}
-                >
-                  <Text style={styles.weekCircleEmoji}>{day.hasScan ? "🔥" : ""}</Text>
-                </View>
-                <Text style={[styles.weekLabel, darkMode && styles.weekLabelDark]}>{day.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
+        {books.length > 0 ? (
+          <>
+            <View style={styles.readingTimerSpacer} />
+            <ReadingTimerCard />
+          </>
+        ) : null}
       </ScrollView>
       </View>
 
@@ -626,6 +619,14 @@ const styles = StyleSheet.create({
     paddingBottom: 110,
     gap: 8,
   },
+  /** Lets the reading timer sit at the bottom when the scroll view is taller than content. */
+  scrollContentFlex: {
+    flexGrow: 1,
+  },
+  readingTimerSpacer: {
+    flexGrow: 1,
+    minHeight: 12,
+  },
   scanPageTitleWrap: {
     marginTop: 40,
   },
@@ -636,19 +637,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   sectionBlockDark: {},
-  sectionLabel: {
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 0.9,
-    color: lightColors.textMuted,
-    textTransform: "uppercase",
-  },
-  sectionLabelDark: {
-    color: darkColors.textSecondary,
-  },
-  streakSectionLabel: {
-    marginBottom: 2,
-  },
   cameraShell: {
     borderRadius: 16,
     marginBottom: 8,
@@ -860,6 +848,32 @@ const styles = StyleSheet.create({
     color: "#e2e8f0",
     fontWeight: "600",
   },
+  coverExtractingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 30,
+    gap: 12,
+  },
+  coverExtractingLabel: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  coverExtractError: {
+    color: "#b91c1c",
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 10,
+    lineHeight: 20,
+  },
+  coverExtractErrorDark: {
+    color: "#fca5a5",
+  },
+  primaryButtonGradientDisabled: {
+    opacity: 0.75,
+  },
   scanOptionsOverlay: {
     position: "absolute",
     bottom: 10,
@@ -942,77 +956,6 @@ const styles = StyleSheet.create({
     height: 16,
     marginHorizontal: 2,
     backgroundColor: "rgba(15, 23, 42, 0.1)",
-  },
-  streakCard: {
-    backgroundColor: lightColors.card,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    borderRadius: 14,
-    padding: 14,
-    marginTop: 4,
-    gap: 4,
-  },
-  streakCardDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
-  },
-  streakTitle: {
-    color: lightColors.textPrimary,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  streakTitleDark: {
-    color: darkColors.textPrimary,
-  },
-  streakValue: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: lightColors.textPrimary,
-  },
-  streakValueDark: {
-    color: darkColors.textPrimary,
-  },
-  streakSubtext: {
-    color: lightColors.textMuted,
-    fontSize: 12,
-  },
-  streakSubtextDark: {
-    color: darkColors.textSecondary,
-  },
-  weekRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 8,
-  },
-  weekItem: {
-    alignItems: "center",
-    gap: 6,
-    width: 34,
-  },
-  weekCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#f1f5f9",
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  weekCircleDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
-  },
-  weekCircleEmoji: {
-    fontSize: 14,
-  },
-  weekLabel: {
-    color: lightColors.textMuted,
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  weekLabelDark: {
-    color: darkColors.textSecondary,
   },
   primaryButtonWrap: {
     borderRadius: 14,

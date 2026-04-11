@@ -2,8 +2,10 @@ import { StatusBar } from "expo-status-bar";
 import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppSettingsProvider, useAppSettings } from "./src/context/AppSettingsContext";
+import { ReadingSessionProvider } from "./src/context/ReadingSessionContext";
 import { ScanProvider } from "./src/context/ScanContext";
 import { StreakProvider } from "./src/context/StreakContext";
+import { StudyPreferencesProvider } from "./src/context/StudyPreferencesContext";
 import { RootTabNavigator } from "./src/navigation/RootTabNavigator";
 import { accentColors, darkColors, lightColors } from "./src/theme/colors";
 
@@ -45,11 +47,15 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AppSettingsProvider>
-        <ScanProvider>
-          <StreakProvider>
-            <AppContent />
-          </StreakProvider>
-        </ScanProvider>
+        <StudyPreferencesProvider>
+          <ScanProvider>
+            <ReadingSessionProvider>
+              <StreakProvider>
+                <AppContent />
+              </StreakProvider>
+            </ReadingSessionProvider>
+          </ScanProvider>
+        </StudyPreferencesProvider>
       </AppSettingsProvider>
     </SafeAreaProvider>
   );

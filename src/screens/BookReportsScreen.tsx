@@ -45,8 +45,14 @@ export function BookReportsScreen() {
         if (report.notes.mainIdeas.some((idea) => idea.toLowerCase().includes(query))) {
           matches.push("Main Ideas");
         }
+        if ((report.notes.sectionHeadings ?? []).some((h) => h.toLowerCase().includes(query))) {
+          matches.push("Section headings");
+        }
         if (report.notes.detailedNotes.toLowerCase().includes(query)) {
           matches.push("Detailed Notes");
+        }
+        if ((report.notes.quotes ?? []).some((q) => q.toLowerCase().includes(query))) {
+          matches.push("Quotes");
         }
         return { report, matches };
       })

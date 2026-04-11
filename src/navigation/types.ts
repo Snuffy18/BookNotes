@@ -3,6 +3,7 @@ import type { NavigatorScreenParams } from "@react-navigation/native";
 
 export type ScanStackParamList = {
   ScanCamera: undefined;
+  ReadingHistory: undefined;
   StreakDetails: undefined;
   Processing: { imageUri: string };
   Results: { item: ScanItem };
