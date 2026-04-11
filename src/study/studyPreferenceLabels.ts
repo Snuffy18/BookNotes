@@ -33,6 +33,7 @@ export function formatLengthDropdown(length: StudyLength): string {
   return m.subtitle ? `${m.title} · ${m.subtitle}` : m.title;
 }
 
+/** Longer description for report cards and detail UI. */
 export function labelHighlightSummary(p: StudyPreferencesSnapshot): string {
   if (!p.highlightKeyElements) return "Off";
   const n = [p.highlightKeyTerms, p.highlightDefinitions, p.highlightNumbersDates].filter(Boolean).length;
@@ -43,4 +44,18 @@ export function labelHighlightSummary(p: StudyPreferencesSnapshot): string {
   if (p.highlightDefinitions) parts.push("definitions");
   if (p.highlightNumbersDates) parts.push("numbers/dates");
   return parts.join(", ");
+}
+
+type HighlightPick = Pick<
+  StudyPreferencesSnapshot,
+  "highlightKeyElements" | "highlightKeyTerms" | "highlightDefinitions" | "highlightNumbersDates"
+>;
+
+/** Short label for the Study Preferences dropdown row (fits one line). */
+export function formatHighlightDropdown(p: HighlightPick): string {
+  if (!p.highlightKeyElements) return "Off";
+  const n = [p.highlightKeyTerms, p.highlightDefinitions, p.highlightNumbersDates].filter(Boolean).length;
+  if (n === 3) return "All";
+  if (n === 0) return "None";
+  return `${n} of 3`;
 }

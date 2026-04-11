@@ -12,7 +12,7 @@ export type StudyPreferencesSnapshot = {
 };
 
 export const DEFAULT_STUDY_PREFERENCES: StudyPreferencesSnapshot = {
-  tone: "simple",
+  tone: "academic",
   length: "medium",
   highlightKeyElements: true,
   highlightKeyTerms: true,

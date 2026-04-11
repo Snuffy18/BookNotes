@@ -5,7 +5,7 @@ export type ScanStackParamList = {
   ScanCamera: undefined;
   ReadingHistory: undefined;
   StreakDetails: undefined;
-  Processing: { imageUri: string };
+  Processing: { imageUri: string; page?: string };
   Results: { item: ScanItem };
 };
 

@@ -4,6 +4,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useState } from "react";
 import {
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -21,8 +22,8 @@ import { SettingsOptionHeroCard } from "../components/SettingsOptionHeroCard";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { useStudyPreferences } from "../context/StudyPreferencesContext";
 import type { ProfileStackParamList } from "../navigation/types";
-import { formatLengthDropdown, labelHighlightSummary, labelTone } from "../study/studyPreferenceLabels";
-import type { StudyLength, StudyTone } from "../types/studyPreferences";
+import { formatHighlightDropdown, formatLengthDropdown, labelTone } from "../study/studyPreferenceLabels";
+import { DEFAULT_STUDY_PREFERENCES, type StudyLength, type StudyTone } from "../types/studyPreferences";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "StudyPreferences">;
@@ -37,8 +38,16 @@ const TONE_CHOICES: Choice<StudyTone>[] = [
 
 const LENGTH_CHOICES: Choice<StudyLength>[] = [
   { id: "short", title: "Short", subtitle: "3–5 bullets" },
-  { id: "medium", title: "Medium", subtitle: "" },
-  { id: "detailed", title: "Detailed", subtitle: "" },
+  {
+    id: "medium",
+    title: "Medium",
+    subtitle: "Balanced depth — clear notes without extra padding",
+  },
+  {
+    id: "detailed",
+    title: "Detailed",
+    subtitle: "Richer notes — more coverage when the page supports it",
+  },
 ];
 
 export function StudyPreferencesScreen() {
@@ -53,13 +62,12 @@ export function StudyPreferencesScreen() {
     highlightDefinitions,
     highlightNumbersDates,
     setStudyPreferences,
+    replaceStudyPreferences,
   } = useStudyPreferences();
 
   const [openMenu, setOpenMenu] = useState<"tone" | "length" | "highlight" | null>(null);
 
-  const highlightSummary = labelHighlightSummary({
-    tone,
-    length,
+  const highlightDropdownLabel = formatHighlightDropdown({
     highlightKeyElements,
     highlightKeyTerms,
     highlightDefinitions,
@@ -111,12 +119,14 @@ export function StudyPreferencesScreen() {
 
         <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
           <View style={styles.settingInlineRow}>
-            <View style={styles.settingTextBlock}>
-              <View style={[styles.blockTitleRow, styles.blockTitleRowOnly]}>
-                <Graph2DIcon size={20} color={accentColor} opacity={darkMode ? 0.95 : 1} />
-                <Text style={[styles.blockTitle, darkMode && styles.textDark]}>Tone / complexity</Text>
-              </View>
-            </View>
+            <Graph2DIcon size={20} color={accentColor} opacity={darkMode ? 0.95 : 1} />
+            <Text
+              style={[styles.settingRowLabel, darkMode && styles.textDark]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              Tone / complexity
+            </Text>
             <TouchableOpacity
               style={[styles.dropdown, styles.dropdownInline, darkMode && styles.dropdownDark]}
               onPress={() => {
@@ -125,7 +135,11 @@ export function StudyPreferencesScreen() {
               }}
               activeOpacity={0.8}
             >
-              <Text style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]} numberOfLines={1}>
+              <Text
+                style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {labelTone(tone)}
               </Text>
               <Ionicons name="chevron-down" size={18} color={accentColor} style={styles.dropdownChevron} />
@@ -135,12 +149,14 @@ export function StudyPreferencesScreen() {
 
         <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
           <View style={styles.settingInlineRow}>
-            <View style={styles.settingTextBlock}>
-              <View style={[styles.blockTitleRow, styles.blockTitleRowOnly]}>
-                <RulerIcon size={22} color={accentColor} opacity={darkMode ? 0.95 : 1} />
-                <Text style={[styles.blockTitle, darkMode && styles.textDark]}>Length</Text>
-              </View>
-            </View>
+            <RulerIcon size={22} color={accentColor} opacity={darkMode ? 0.95 : 1} />
+            <Text
+              style={[styles.settingRowLabel, darkMode && styles.textDark]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              Length
+            </Text>
             <TouchableOpacity
               style={[styles.dropdown, styles.dropdownInline, darkMode && styles.dropdownDark]}
               onPress={() => {
@@ -149,7 +165,11 @@ export function StudyPreferencesScreen() {
               }}
               activeOpacity={0.8}
             >
-              <Text style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]} numberOfLines={1}>
+              <Text
+                style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {formatLengthDropdown(length)}
               </Text>
               <Ionicons name="chevron-down" size={18} color={accentColor} style={styles.dropdownChevron} />
@@ -163,12 +183,14 @@ export function StudyPreferencesScreen() {
 
         <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
           <View style={styles.settingInlineRow}>
-            <View style={styles.settingTextBlock}>
-              <View style={[styles.blockTitleRow, styles.blockTitleRowOnly]}>
-                <HighlighterIcon size={20} color={accentColor} opacity={darkMode ? 0.95 : 1} />
-                <Text style={[styles.blockTitle, darkMode && styles.textDark]}>Highlight key elements</Text>
-              </View>
-            </View>
+            <HighlighterIcon size={20} color={accentColor} opacity={darkMode ? 0.95 : 1} />
+            <Text
+              style={[styles.settingRowLabel, darkMode && styles.textDark]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              Highlight key elements
+            </Text>
             <TouchableOpacity
               style={[styles.dropdown, styles.dropdownInline, darkMode && styles.dropdownDark]}
               onPress={() => {
@@ -177,12 +199,43 @@ export function StudyPreferencesScreen() {
               }}
               activeOpacity={0.8}
             >
-              <Text style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]} numberOfLines={1}>
-                {highlightSummary}
+              <Text
+                style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {highlightDropdownLabel}
               </Text>
               <Ionicons name="chevron-down" size={18} color={accentColor} style={styles.dropdownChevron} />
             </TouchableOpacity>
           </View>
+        </View>
+
+        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
+          <TouchableOpacity
+            style={styles.restoreRow}
+            onPress={() => {
+              hapticLight();
+              Alert.alert(
+                "Restore to default?",
+                "Tone, length, and highlight options will be reset to their original values.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Restore",
+                    onPress: () => {
+                      hapticSelect();
+                      replaceStudyPreferences({ ...DEFAULT_STUDY_PREFERENCES });
+                    },
+                  },
+                ]
+              );
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="refresh-outline" size={22} color={accentColor} />
+            <Text style={[styles.restoreLabel, darkMode && styles.textDark]}>Restore to Default</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -425,25 +478,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
-  settingTextBlock: {
+  settingRowLabel: {
     flex: 1,
     minWidth: 0,
-  },
-  blockTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 4,
-  },
-  blockTitleRowOnly: {
-    marginBottom: 0,
-  },
-  blockTitle: {
     fontSize: 15,
     fontWeight: "700",
     color: lightColors.textPrimary,
+  },
+  restoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 2,
+  },
+  restoreLabel: {
     flex: 1,
-    minWidth: 0,
+    fontSize: 15,
+    fontWeight: "600",
+    color: lightColors.textPrimary,
   },
   dropdown: {
     flexDirection: "row",
@@ -458,11 +510,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   dropdownInline: {
-    alignSelf: "center",
     flexGrow: 0,
     flexShrink: 0,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    minWidth: 0,
+    maxWidth: "46%",
+    paddingVertical: 7,
+    paddingHorizontal: 8,
     justifyContent: "flex-start",
   },
   dropdownDark: {
@@ -476,7 +529,8 @@ const styles = StyleSheet.create({
     color: lightColors.textPrimary,
   },
   dropdownValueInline: {
-    flex: 0,
+    flex: 1,
+    minWidth: 0,
     fontSize: 14,
   },
   dropdownChevron: {

@@ -1,5 +1,6 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { buildStudyPreferencesInstructions } from "../study/buildStudyPrompt";
+import { stripMarkdownBoldMarkers } from "../utils/stripMarkdownBoldMarkers";
 import type { GeneratedNotes } from "../types/note";
 import type { StudyPreferencesSnapshot } from "../types/studyPreferences";
 import { DEFAULT_STUDY_PREFERENCES } from "../types/studyPreferences";
@@ -64,6 +65,13 @@ export async function generateNotesFromImage(
   });
 
   const studyInstructions = buildStudyPreferencesInstructions(studyPreferences);
+  const highlightSuffix =
+    studyPreferences.highlightKeyElements &&
+    (studyPreferences.highlightKeyTerms ||
+      studyPreferences.highlightDefinitions ||
+      studyPreferences.highlightNumbersDates)
+      ? " Reminder: include literal ** markers inside summary, detailedNotes, and mainIdeas strings for every applicable term, number, date, and definition from the page."
+      : "";
 
   const response = await fetch(API_URL, {
     method: "POST",
@@ -86,6 +94,7 @@ export async function generateNotesFromImage(
               type: "input_text",
               text:
                 studyInstructions +
+                highlightSuffix +
                 " Analyze this image and return ONLY JSON with this schema: " +
                 '{"isBookPage":boolean,"rejectionReason":"string","summary":"string","mainIdeas":["string"],"detailedNotes":"string","keywords":["string"],"quotes":["string"],"sectionHeadings":["string"]}. ' +
                 "Set isBookPage=true ONLY if this is clearly a readable book page with meaningful text. " +
@@ -143,11 +152,16 @@ export async function generateNotesFromImage(
     ? headingsRaw.map((h) => (typeof h === "string" ? h.trim() : "")).filter((h) => h.length > 0)
     : [];
 
+  const keywordsRaw = Array.isArray(parsed.keywords) ? parsed.keywords : [];
+  const keywords = keywordsRaw
+    .map((k) => (typeof k === "string" ? stripMarkdownBoldMarkers(k) : ""))
+    .filter((k) => k.length > 0);
+
   return {
     summary: parsed.summary ?? "",
     mainIdeas: parsed.mainIdeas ?? [],
     detailedNotes: parsed.detailedNotes ?? "",
-    keywords: parsed.keywords ?? [],
+    keywords,
     ...(quotes.length > 0 ? { quotes } : {}),
     ...(sectionHeadings.length > 0 ? { sectionHeadings } : {}),
   };

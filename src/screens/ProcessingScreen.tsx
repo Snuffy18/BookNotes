@@ -222,6 +222,7 @@ export function ProcessingScreen({ navigation, route }: Props) {
           imageUri: route.params.imageUri,
           bookId: activeBook?.id,
           book: activeBook?.title,
+          ...(route.params.page?.trim() ? { page: route.params.page.trim() } : {}),
           notes,
           studyPreferences: studyPreferencesSnapshot,
         };
@@ -247,6 +248,7 @@ export function ProcessingScreen({ navigation, route }: Props) {
     navigation,
     recordSuccessfulScan,
     route.params.imageUri,
+    route.params.page,
     activeBook,
     studyPrefs.tone,
     studyPrefs.length,
@@ -461,6 +463,7 @@ export function ProcessingScreen({ navigation, route }: Props) {
             onPress={() =>
               navigation.replace("Processing", {
                 imageUri: route.params.imageUri,
+                ...(route.params.page ? { page: route.params.page } : {}),
               })
             }
           >

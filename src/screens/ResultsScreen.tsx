@@ -7,6 +7,7 @@ import { StudySettingsSummaryCard } from "../components/StudySettingsSummaryCard
 import { useAppSettings } from "../context/AppSettingsContext";
 import type { ScanStackParamList } from "../navigation/types";
 import { DEFAULT_STUDY_PREFERENCES } from "../types/studyPreferences";
+import { stripMarkdownBoldMarkers } from "../utils/stripMarkdownBoldMarkers";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<ScanStackParamList, "Results">;
@@ -109,11 +110,14 @@ export function ResultsScreen({ route }: Props) {
         <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
           <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Keywords</Text>
           <View style={styles.keywordWrap}>
-            {item.notes.keywords.map((keyword) => (
-              <View key={keyword} style={[styles.keywordChip, { borderColor: accentColor }]}>
-                <Text style={[styles.keywordText, { color: accentColor }]}>{keyword}</Text>
-              </View>
-            ))}
+            {item.notes.keywords.map((keyword) => {
+              const label = stripMarkdownBoldMarkers(keyword);
+              return (
+                <View key={label || keyword} style={[styles.keywordChip, { borderColor: accentColor }]}>
+                  <Text style={[styles.keywordText, { color: accentColor }]}>{label}</Text>
+                </View>
+              );
+            })}
           </View>
         </View>
       </ScrollView>

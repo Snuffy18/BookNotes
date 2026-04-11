@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  Animated,
-  Easing,
+  Dimensions,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,12 +12,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { RichNoteText } from "../components/RichNoteText";
 import { StudySettingsSummaryCard } from "../components/StudySettingsSummaryCard";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { useScanContext } from "../context/ScanContext";
 import type { LibraryStackParamList } from "../navigation/types";
 import { DEFAULT_STUDY_PREFERENCES } from "../types/studyPreferences";
+import { splitCaseInsensitive } from "../utils/splitCaseInsensitive";
+import { stripMarkdownBoldMarkers } from "../utils/stripMarkdownBoldMarkers";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<LibraryStackParamList, "ReportDetails">;
@@ -51,65 +54,38 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
   const scrollRef = useRef<ScrollView | null>(null);
   const sectionY = useRef<Record<string, number>>({});
   const [highlightActive, setHighlightActive] = useState(Boolean(highlightQuery));
-  const highlightOpacity = useRef(new Animated.Value(0)).current;
+  /** Keyword chip tap: highlight this term everywhere until user taps to dismiss. */
+  const [keywordTapHighlight, setKeywordTapHighlight] = useState<string | null>(null);
 
   const normalizedQuery = useMemo(
     () => (highlightQuery ?? "").trim().toLowerCase(),
     [highlightQuery]
   );
   const accentRgb = useMemo(() => hexToRgb(accentColor), [accentColor]);
-  const highlightBgColor = useMemo(
-    () =>
-      highlightOpacity.interpolate({
-        inputRange: [0, 1],
-        outputRange: [
-          `rgba(${accentRgb.r},${accentRgb.g},${accentRgb.b},0)`,
-          `rgba(${accentRgb.r},${accentRgb.g},${accentRgb.b},0.95)`,
-        ],
-      }),
-    [accentRgb, highlightOpacity]
-  );
 
   const matchedSection = useMemo(() => {
     if (!normalizedQuery) return null;
     if (item.notes.summary.toLowerCase().includes(normalizedQuery)) return "summary";
     if (item.notes.mainIdeas.some((idea) => idea.toLowerCase().includes(normalizedQuery)))
       return "mainIdeas";
-    const sectionHeadings = item.notes.sectionHeadings ?? [];
-    if (sectionHeadings.some((h) => h.toLowerCase().includes(normalizedQuery))) return "sectionHeadings";
     if (item.notes.detailedNotes.toLowerCase().includes(normalizedQuery)) return "detailedNotes";
     const quotes = item.notes.quotes ?? [];
     if (quotes.some((q) => q.toLowerCase().includes(normalizedQuery))) return "quotes";
-    if (item.notes.keywords.some((k) => k.toLowerCase().includes(normalizedQuery))) return "keywords";
+    if (
+      item.notes.keywords.some((k) =>
+        stripMarkdownBoldMarkers(k).toLowerCase().includes(normalizedQuery)
+      )
+    )
+      return "keywords";
     return null;
   }, [item.notes, normalizedQuery]);
 
   useEffect(() => {
     if (!normalizedQuery) return;
     setHighlightActive(true);
-    const sequence = Animated.sequence([
-      Animated.timing(highlightOpacity, {
-        toValue: 1,
-        duration: 600,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }),
-      Animated.delay(1800),
-      Animated.timing(highlightOpacity, {
-        toValue: 0,
-        duration: 1200,
-        easing: Easing.inOut(Easing.cubic),
-        useNativeDriver: false,
-      }),
-    ]);
-
-    sequence.start();
-    const timer = setTimeout(() => {
-      setHighlightActive(false);
-      highlightOpacity.setValue(0);
-    }, 3600);
+    const timer = setTimeout(() => setHighlightActive(false), 3600);
     return () => clearTimeout(timer);
-  }, [normalizedQuery, highlightOpacity]);
+  }, [normalizedQuery]);
 
   useEffect(() => {
     if (!matchedSection) return;
@@ -120,12 +96,50 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
   }, [matchedSection]);
 
   const showSearchHighlight = Boolean(normalizedQuery) && highlightActive;
+  const keywordNeedle = keywordTapHighlight?.trim() ?? "";
 
   const renderBodyText = (text: string, baseStyle: any) => {
     if (showSearchHighlight) {
       return renderHighlightedText(text, baseStyle);
     }
+    if (keywordNeedle.length > 0) {
+      return renderKeywordHighlightText(text, baseStyle, keywordNeedle);
+    }
     return <RichNoteText text={text} style={baseStyle} />;
+  };
+
+  /**
+   * Keyword matches use accent + bold. Non-matching segments use the same **bold** rules as
+   * RichNoteText but as flat sibling <Text> nodes — nesting RichNoteText inside <Text> inverted
+   * bold vs regular weight on some platforms.
+   */
+  const renderKeywordHighlightText = (text: string, baseStyle: any, needle: string) => {
+    const parts = splitCaseInsensitive(text, needle);
+    return (
+      <Text style={baseStyle}>
+        {parts.flatMap((part, partIndex) => {
+          if (part.hit) {
+            return [
+              <Text
+                key={`kw-hit-${partIndex}`}
+                style={{ color: accentColor, fontWeight: "700" }}
+              >
+                {part.value}
+              </Text>,
+            ];
+          }
+          const md = part.value.split("**");
+          return md.map((seg, j) => (
+            <Text
+              key={`kw-md-${partIndex}-${j}`}
+              style={j % 2 === 1 ? [baseStyle, { fontWeight: "700" }] : baseStyle}
+            >
+              {seg}
+            </Text>
+          ));
+        })}
+      </Text>
+    );
   };
 
   const renderHighlightedText = (text: string, baseStyle: any) => {
@@ -156,136 +170,137 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
     return (
       <Text style={baseStyle}>
         {parts.map((part, index) => (
-          <Animated.Text
+          <Text
             key={`${part.value}-${index}`}
-            style={
-              part.hit
-                ? [styles.highlightText, { backgroundColor: highlightBgColor, color: "#fff" }]
-                : undefined
-            }
+            style={part.hit ? { color: accentColor, fontWeight: "700" } : undefined}
           >
             {part.value}
-          </Animated.Text>
+          </Text>
         ))}
       </Text>
     );
   };
 
-  return (
-    <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
-      <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContent}>
-        <View style={[styles.heroCard, darkMode && styles.cardDark]}>
-          <Text style={[styles.heroTitle, darkMode && styles.textPrimaryDark]}>
-            {item.book ?? "Report Details"}
-          </Text>
-          <Text style={[styles.heroMeta, darkMode && styles.textMutedDark]}>{createdLabel}</Text>
-          <View style={styles.heroMetaRow}>
-            <View style={[styles.badge, { borderColor: accentColor }]}>
-              <Text style={[styles.badgeText, { color: accentColor }]}>High confidence</Text>
-            </View>
-            <Text style={[styles.heroMeta, darkMode && styles.textMutedDark]}>
-              ~{readingMinutes} min read
-            </Text>
+  const renderReportUpperSections = () => (
+    <>
+      <View style={[styles.heroCard, darkMode && styles.cardDark]}>
+        <Text style={[styles.heroTitle, darkMode && styles.textPrimaryDark]}>
+          {item.book ?? "Report Details"}
+        </Text>
+        <Text style={[styles.heroMeta, darkMode && styles.textMutedDark]}>{createdLabel}</Text>
+        {item.page?.trim() ? (
+          <Text style={[styles.heroPage, darkMode && styles.textMutedDark]}>Page {item.page.trim()}</Text>
+        ) : null}
+        <View style={styles.heroMetaRow}>
+          <View style={[styles.badge, { borderColor: accentColor }]}>
+            <Text style={[styles.badgeText, { color: accentColor }]}>High confidence</Text>
           </View>
+          <Text style={[styles.heroMeta, darkMode && styles.textMutedDark]}>
+            ~{readingMinutes} min read
+          </Text>
         </View>
+      </View>
 
-        <StudySettingsSummaryCard prefs={studyPrefsUsed} darkMode={darkMode} accentColor={accentColor} />
+      <StudySettingsSummaryCard prefs={studyPrefsUsed} darkMode={darkMode} accentColor={accentColor} />
 
+      <View
+        style={[styles.sectionCard, darkMode && styles.cardDark]}
+        onLayout={(e) => {
+          sectionY.current.summary = e.nativeEvent.layout.y;
+        }}
+      >
+        <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Summary</Text>
+        {renderBodyText(item.notes.summary, [
+          styles.sectionText,
+          darkMode && styles.textSecondaryDark,
+        ])}
+      </View>
+
+      <View
+        style={[styles.sectionCard, darkMode && styles.cardDark]}
+        onLayout={(e) => {
+          sectionY.current.mainIdeas = e.nativeEvent.layout.y;
+        }}
+      >
+        <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Main Ideas</Text>
+        <View style={styles.ideasList}>
+          {item.notes.mainIdeas.map((idea, index) => (
+            <View key={`${idea}-${index}`} style={styles.ideaRow}>
+              <View style={[styles.ideaIndex, { borderColor: accentColor }]}>
+                <Text style={[styles.ideaIndexText, { color: accentColor }]}>{index + 1}</Text>
+              </View>
+              {renderBodyText(idea, [
+                styles.sectionText,
+                styles.ideaText,
+                darkMode && styles.textSecondaryDark,
+              ])}
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View
+        style={[styles.sectionCard, darkMode && styles.cardDark]}
+        onLayout={(e) => {
+          sectionY.current.detailedNotes = e.nativeEvent.layout.y;
+        }}
+      >
+        <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Detailed Notes</Text>
+        {renderBodyText(item.notes.detailedNotes, [
+          styles.sectionText,
+          darkMode && styles.textSecondaryDark,
+        ])}
+      </View>
+
+      {item.notes.quotes && item.notes.quotes.length > 0 ? (
         <View
           style={[styles.sectionCard, darkMode && styles.cardDark]}
           onLayout={(e) => {
-            sectionY.current.summary = e.nativeEvent.layout.y;
+            sectionY.current.quotes = e.nativeEvent.layout.y;
           }}
         >
-          <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Summary</Text>
-          {renderBodyText(item.notes.summary, [
-            styles.sectionText,
-            darkMode && styles.textSecondaryDark,
-          ])}
-        </View>
-
-        <View
-          style={[styles.sectionCard, darkMode && styles.cardDark]}
-          onLayout={(e) => {
-            sectionY.current.mainIdeas = e.nativeEvent.layout.y;
-          }}
-        >
-          <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Main Ideas</Text>
-          <View style={styles.ideasList}>
-            {item.notes.mainIdeas.map((idea, index) => (
-              <View key={`${idea}-${index}`} style={styles.ideaRow}>
-                <View style={[styles.ideaIndex, { borderColor: accentColor }]}>
-                  <Text style={[styles.ideaIndexText, { color: accentColor }]}>{index + 1}</Text>
-                </View>
-                {renderBodyText(idea, [
+          <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Quotes</Text>
+          <View style={styles.quotesList}>
+            {item.notes.quotes.map((quote, index) => (
+              <View
+                key={`${index}-${quote.slice(0, 24)}`}
+                style={[styles.quoteBlock, { borderLeftColor: accentColor }]}
+              >
+                {renderBodyText(quote, [
                   styles.sectionText,
-                  styles.ideaText,
+                  styles.quoteText,
                   darkMode && styles.textSecondaryDark,
                 ])}
               </View>
             ))}
           </View>
         </View>
+      ) : null}
+    </>
+  );
 
-        {item.notes.sectionHeadings && item.notes.sectionHeadings.length > 0 ? (
-          <View
-            style={[styles.sectionCard, darkMode && styles.cardDark]}
-            onLayout={(e) => {
-              sectionY.current.sectionHeadings = e.nativeEvent.layout.y;
-            }}
+  return (
+    <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.scrollInner}>
+        {keywordNeedle.length > 0 ? (
+          <Pressable
+            onPress={() => setKeywordTapHighlight(null)}
+            style={styles.keywordDismissPressable}
           >
-            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Section headings</Text>
-            <View style={styles.headingsList}>
-              {item.notes.sectionHeadings.map((heading, index) => (
-                <View key={`${index}-${heading.slice(0, 32)}`} style={styles.headingRow}>
-                  {renderBodyText(heading, [
-                    styles.sectionText,
-                    styles.headingLine,
-                    darkMode && styles.textSecondaryDark,
-                  ])}
-                </View>
-              ))}
+            <View
+              style={[
+                styles.reportUpper,
+                styles.keywordDismissFill,
+                { minHeight: Dimensions.get("window").height * 0.55 },
+              ]}
+            >
+              {renderReportUpperSections()}
             </View>
-          </View>
-        ) : null}
-
-        <View
-          style={[styles.sectionCard, darkMode && styles.cardDark]}
-          onLayout={(e) => {
-            sectionY.current.detailedNotes = e.nativeEvent.layout.y;
-          }}
-        >
-          <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Detailed Notes</Text>
-          {renderBodyText(item.notes.detailedNotes, [
-            styles.sectionText,
-            darkMode && styles.textSecondaryDark,
-          ])}
-        </View>
-
-        {item.notes.quotes && item.notes.quotes.length > 0 ? (
-          <View
-            style={[styles.sectionCard, darkMode && styles.cardDark]}
-            onLayout={(e) => {
-              sectionY.current.quotes = e.nativeEvent.layout.y;
-            }}
-          >
-            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Quotes</Text>
-            <View style={styles.quotesList}>
-              {item.notes.quotes.map((quote, index) => (
-                <View
-                  key={`${index}-${quote.slice(0, 24)}`}
-                  style={[styles.quoteBlock, { borderLeftColor: accentColor }]}
-                >
-                  {renderBodyText(quote, [
-                    styles.sectionText,
-                    styles.quoteText,
-                    darkMode && styles.textSecondaryDark,
-                  ])}
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : null}
+          </Pressable>
+        ) : (
+          <View style={styles.reportUpper}>{renderReportUpperSections()}</View>
+        )}
 
         <View
           style={[styles.sectionCard, darkMode && styles.cardDark]}
@@ -296,30 +311,43 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
           <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Keywords</Text>
           <View style={styles.keywordWrap}>
             {item.notes.keywords.map((keyword) => {
-              const isMatch =
+              const label = stripMarkdownBoldMarkers(keyword);
+              const isSearchMatch =
                 Boolean(normalizedQuery) &&
                 highlightActive &&
-                keyword.toLowerCase().includes(normalizedQuery);
+                label.toLowerCase().includes(normalizedQuery);
+              const isKeywordSelected = keywordNeedle.length > 0 && label === keywordTapHighlight;
               return (
-                <Animated.View
-                  key={keyword}
-                  style={[
+                <Pressable
+                  key={label || keyword}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setKeywordTapHighlight((prev) => (prev === label ? null : label));
+                  }}
+                  style={({ pressed }) => [
                     styles.keywordChip,
                     { borderColor: accentColor },
-                    isMatch
-                      ? [
-                          styles.keywordChipHighlight,
-                          {
-                            backgroundColor: highlightBgColor,
-                          },
-                        ]
-                      : null,
+                    isSearchMatch && {
+                      backgroundColor: `rgba(${accentRgb.r},${accentRgb.g},${accentRgb.b},0.14)`,
+                    },
+                    isKeywordSelected && {
+                      backgroundColor: `rgba(${accentRgb.r},${accentRgb.g},${accentRgb.b},0.22)`,
+                      borderWidth: 2,
+                    },
+                    pressed && styles.keywordChipPressed,
                   ]}
                 >
-                  <Text style={[styles.keywordText, { color: isMatch ? "#fff" : accentColor }]}>
-                    {keyword}
+                  <Text
+                    style={[
+                      styles.keywordText,
+                      { color: accentColor },
+                      isSearchMatch && { fontWeight: "800" },
+                      isKeywordSelected && { fontWeight: "800" },
+                    ]}
+                  >
+                    {label}
                   </Text>
-                </Animated.View>
+                </Pressable>
               );
             })}
           </View>
@@ -329,6 +357,7 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
           <Ionicons name="trash-outline" size={18} color="#dc2626" />
           <Text style={styles.deleteReportText}>Delete report</Text>
         </TouchableOpacity>
+        </View>
       </ScrollView>
 
       <View style={[styles.stickyActionBar, darkMode && styles.cardDark]}>
@@ -361,6 +390,9 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 110 + 72,
+  },
+  /** Gap between report cards (ScrollView gap only applies to direct children). */
+  scrollInner: {
     gap: 12,
   },
   cardDark: {
@@ -383,6 +415,12 @@ const styles = StyleSheet.create({
   heroMeta: {
     color: lightColors.textMuted,
     fontSize: 12,
+  },
+  heroPage: {
+    color: lightColors.textMuted,
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 2,
   },
   heroMetaRow: {
     flexDirection: "row",
@@ -429,15 +467,6 @@ const styles = StyleSheet.create({
   ideasList: {
     gap: 10,
   },
-  headingsList: {
-    gap: 8,
-  },
-  headingRow: {
-    paddingVertical: 2,
-  },
-  headingLine: {
-    fontWeight: "600",
-  },
   ideaRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -474,21 +503,28 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
+  /** Hero + notes + quotes column (inside dismiss Pressable or plain). */
+  reportUpper: {
+    gap: 12,
+  },
+  keywordDismissPressable: {
+    flexGrow: 1,
+  },
+  keywordDismissFill: {
+    flexGrow: 1,
+  },
   keywordChip: {
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  keywordChipHighlight: {
-    borderColor: "transparent",
+  keywordChipPressed: {
+    opacity: 0.85,
   },
   keywordText: {
     fontSize: 12,
     fontWeight: "700",
-  },
-  highlightText: {
-    borderRadius: 4,
   },
   deleteReportBtn: {
     flexDirection: "row",

@@ -9,6 +9,7 @@ import { useAppSettings } from "../context/AppSettingsContext";
 import { useScanContext } from "../context/ScanContext";
 import type { LibraryStackParamList } from "../navigation/types";
 import type { ScanItem } from "../types/note";
+import { stripMarkdownBoldMarkers } from "../utils/stripMarkdownBoldMarkers";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Navigation = NativeStackNavigationProp<LibraryStackParamList, "BookReports">;
@@ -36,7 +37,11 @@ export function BookReportsScreen() {
     return reports
       .map((report) => {
         const matches: string[] = [];
-        if (report.notes.keywords.some((k) => k.toLowerCase().includes(query))) {
+        if (
+          report.notes.keywords.some((k) =>
+            stripMarkdownBoldMarkers(k).toLowerCase().includes(query)
+          )
+        ) {
           matches.push("Keywords");
         }
         if (report.notes.summary.toLowerCase().includes(query)) {
@@ -167,18 +172,12 @@ export function BookReportsScreen() {
 }
 
 function buildReportTitle(report: ScanItem) {
-  const pageValue = (report as { page?: string | number }).page;
-  const page =
-    typeof pageValue === "number"
-      ? String(pageValue)
-      : typeof pageValue === "string"
-      ? pageValue.trim()
-      : "";
+  const page = report.page?.trim() ?? "";
 
   const topic =
     report.chapter?.trim() ||
     report.notes.mainIdeas[0]?.trim() ||
-    report.notes.keywords[0]?.trim() ||
+    stripMarkdownBoldMarkers(report.notes.keywords[0]?.trim() ?? "") ||
     getSummaryTopic(report.notes.summary);
 
   if (page) {

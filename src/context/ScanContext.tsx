@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { loadScanLibrary, saveScanLibrary } from "../storage/scanLibraryStorage";
 import type { BookItem, BookReport, ScanItem } from "../types/note";
 
 type ScanContextValue = {
@@ -20,6 +21,23 @@ export function ScanProvider({ children }: { children: ReactNode }) {
   const [scans, setScans] = useState<ScanItem[]>([]);
   const [books, setBooks] = useState<BookItem[]>([]);
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
+  const [restoredFromStorage, setRestoredFromStorage] = useState(false);
+
+  useEffect(() => {
+    loadScanLibrary()
+      .then(({ scans: s, books: b, activeBookId: a }) => {
+        setScans(s);
+        setBooks(b);
+        setActiveBookId(a);
+      })
+      .catch(() => {})
+      .finally(() => setRestoredFromStorage(true));
+  }, []);
+
+  useEffect(() => {
+    if (!restoredFromStorage) return;
+    saveScanLibrary({ scans, books, activeBookId }).catch(() => {});
+  }, [scans, books, activeBookId, restoredFromStorage]);
 
   const addScan = (scan: ScanItem) => {
     setScans((current) => [scan, ...current]);

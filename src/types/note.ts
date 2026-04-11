@@ -17,6 +17,8 @@ export type ScanItem = {
   imageUri: string;
   bookId?: string;
   book?: string;
+  /** Page label if the user or flow provided one (e.g. "42" or "xii"). */
+  page?: string;
   chapter?: string;
   notes: GeneratedNotes;
   /** Preferences used when this scan was generated (for report UI). */
