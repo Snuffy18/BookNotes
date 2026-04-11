@@ -3,14 +3,13 @@ import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppSettingsProvider, useAppSettings } from "./src/context/AppSettingsContext";
 import { ScanProvider } from "./src/context/ScanContext";
+import { StreakProvider } from "./src/context/StreakContext";
 import { RootTabNavigator } from "./src/navigation/RootTabNavigator";
 import { accentColors, darkColors, lightColors } from "./src/theme/colors";
 
 function AppContent() {
   const { darkMode, accentTheme } = useAppSettings();
-  const primaryColor = darkMode
-    ? accentColors[accentTheme].dark
-    : accentColors[accentTheme].light;
+  const primaryColor = accentColors[accentTheme];
   const appTheme = darkMode
     ? {
         ...DarkTheme,
@@ -47,7 +46,9 @@ export default function App() {
     <SafeAreaProvider>
       <AppSettingsProvider>
         <ScanProvider>
-          <AppContent />
+          <StreakProvider>
+            <AppContent />
+          </StreakProvider>
         </ScanProvider>
       </AppSettingsProvider>
     </SafeAreaProvider>

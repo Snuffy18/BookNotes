@@ -6,6 +6,7 @@ import { HeaderText } from "../components/HeaderText";
 import { useAppSettings } from "../context/AppSettingsContext";
 import type { ScanStackParamList } from "../navigation/types";
 import { generateNotesFromImage } from "../services/ai";
+import { useStreak } from "../context/StreakContext";
 import { useScanContext } from "../context/ScanContext";
 
 type Props = NativeStackScreenProps<ScanStackParamList, "Processing">;
@@ -13,6 +14,7 @@ type Props = NativeStackScreenProps<ScanStackParamList, "Processing">;
 export function ProcessingScreen({ navigation, route }: Props) {
   const { accentColor } = useAppSettings();
   const { addScan, activeBook } = useScanContext();
+  const { recordSuccessfulScan } = useStreak();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -37,6 +39,7 @@ export function ProcessingScreen({ navigation, route }: Props) {
         };
 
         addScan(item);
+        recordSuccessfulScan();
         navigation.replace("Results", { item });
       } catch (e) {
         if (!mounted) return;
@@ -51,7 +54,7 @@ export function ProcessingScreen({ navigation, route }: Props) {
     return () => {
       mounted = false;
     };
-  }, [addScan, navigation, route.params.imageUri, activeBook]);
+  }, [addScan, navigation, recordSuccessfulScan, route.params.imageUri, activeBook]);
 
   useEffect(() => {
     if (!loading) return;

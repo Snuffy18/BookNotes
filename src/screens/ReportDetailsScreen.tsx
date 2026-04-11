@@ -1,17 +1,46 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Alert,
+  Animated,
+  Easing,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppSettings } from "../context/AppSettingsContext";
+import { useScanContext } from "../context/ScanContext";
 import type { LibraryStackParamList } from "../navigation/types";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<LibraryStackParamList, "ReportDetails">;
 
-export function ReportDetailsScreen({ route }: Props) {
+export function ReportDetailsScreen({ route, navigation }: Props) {
   const { darkMode, accentColor } = useAppSettings();
+  const { removeScan } = useScanContext();
   const { item, highlightQuery } = route.params;
+
+  const onDeleteReport = () => {
+    Alert.alert(
+      "Delete report",
+      "This report will be permanently removed.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            removeScan(item.id);
+            navigation.goBack();
+          },
+        },
+      ]
+    );
+  };
   const createdAt = new Date(item.createdAt);
   const createdLabel = createdAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
   const readingMinutes = Math.max(1, Math.round((item.notes.detailedNotes.length || 120) / 900));
@@ -229,6 +258,11 @@ export function ReportDetailsScreen({ route }: Props) {
             })}
           </View>
         </View>
+
+        <TouchableOpacity style={styles.deleteReportBtn} onPress={onDeleteReport} activeOpacity={0.75}>
+          <Ionicons name="trash-outline" size={18} color="#dc2626" />
+          <Text style={styles.deleteReportText}>Delete report</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       <View style={[styles.stickyActionBar, darkMode && styles.cardDark]}>
@@ -370,6 +404,19 @@ const styles = StyleSheet.create({
   },
   highlightText: {
     borderRadius: 4,
+  },
+  deleteReportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  deleteReportText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#dc2626",
   },
   stickyActionBar: {
     position: "absolute",

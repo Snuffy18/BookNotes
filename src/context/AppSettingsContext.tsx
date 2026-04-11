@@ -21,12 +21,8 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
   const [accentTheme, setAccentTheme] = useState<AccentTheme>("blue");
   const darkMode = themeMode === "dark";
   const setDarkMode = (value: boolean) => setThemeMode(value ? "dark" : "light");
-  const accentColor = darkMode
-    ? accentColors[accentTheme].dark
-    : accentColors[accentTheme].light;
-  const accentGradient = darkMode
-    ? accentGradients[accentTheme].dark
-    : accentGradients[accentTheme].light;
+  const accentColor = accentColors[accentTheme];
+  const accentGradient = accentGradients[accentTheme];
 
   const value = useMemo(
     () => ({
@@ -39,7 +35,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       accentColor,
       accentGradient,
     }),
-    [themeMode, darkMode, accentTheme, accentColor, accentGradient]
+    [themeMode, darkMode, accentTheme]
   );
   return <AppSettingsContext.Provider value={value}>{children}</AppSettingsContext.Provider>;
 }

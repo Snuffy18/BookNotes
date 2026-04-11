@@ -9,6 +9,7 @@ type ScanContextValue = {
   activeBook: BookItem | null;
   setActiveBookId: (bookId: string) => void;
   addScan: (scan: ScanItem) => void;
+  removeScan: (scanId: string) => void;
   addOrActivateBook: (book: { title: string; author: string; coverUri: string }) => void;
   reports: BookReport[];
 };
@@ -22,6 +23,10 @@ export function ScanProvider({ children }: { children: ReactNode }) {
 
   const addScan = (scan: ScanItem) => {
     setScans((current) => [scan, ...current]);
+  };
+
+  const removeScan = (scanId: string) => {
+    setScans((current) => current.filter((s) => s.id !== scanId));
   };
 
   const addOrActivateBook = ({
@@ -68,6 +73,7 @@ export function ScanProvider({ children }: { children: ReactNode }) {
       activeBook,
       setActiveBookId,
       addScan,
+      removeScan,
       addOrActivateBook,
       reports,
     }),

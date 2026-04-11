@@ -5,8 +5,8 @@ import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { darkColors, lightColors } from "../theme/colors";
-import { ProfileScreen } from "../screens/ProfileScreen";
 import { LibraryStackNavigator } from "./LibraryStackNavigator";
+import { ProfileStackNavigator } from "./ProfileStackNavigator";
 import { ScanStackNavigator } from "./ScanStackNavigator";
 import type { RootTabParamList } from "./types";
 
@@ -36,7 +36,14 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   if (
     activeNestedRouteName === "ReportDetails" ||
     activeNestedRouteName === "Processing" ||
-    activeNestedRouteName === "Results"
+    activeNestedRouteName === "Results" ||
+    activeNestedRouteName === "StreakDetails" ||
+    activeNestedRouteName === "ExportSettings" ||
+    activeNestedRouteName === "StudyPreferences" ||
+    activeNestedRouteName === "AppBehavior" ||
+    activeNestedRouteName === "Appearance" ||
+    activeNestedRouteName === "Themes" ||
+    activeNestedRouteName === "ReadingReminders"
   ) {
     return null;
   }
@@ -52,6 +59,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       <View
         style={[
           styles.leftPill,
+          darkMode ? styles.navChromeShadowDark : styles.navChromeShadowLight,
           {
             backgroundColor: darkMode ? darkColors.card : lightColors.card,
             borderColor: darkMode ? darkColors.border : lightColors.border,
@@ -136,11 +144,12 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       <TouchableOpacity
         style={[
           styles.profileCircle,
+          darkMode ? styles.navChromeShadowDark : styles.navChromeShadowLight,
           {
             backgroundColor: darkMode ? darkColors.card : lightColors.card,
             borderColor: darkMode ? darkColors.border : lightColors.border,
           },
-              isProfileActive && styles.profileCircleActive,
+          isProfileActive && styles.profileCircleActive,
         ]}
         onPress={() => {
           triggerNavHaptic();
@@ -163,7 +172,7 @@ export function RootTabNavigator() {
     <Tab.Navigator screenOptions={{ headerShown: false }} tabBar={(props) => <CustomTabBar {...props} />}>
       <Tab.Screen name="ScanFlow" component={ScanStackNavigator} />
       <Tab.Screen name="Library" component={LibraryStackNavigator} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Profile" component={ProfileStackNavigator} />
     </Tab.Navigator>
   );
 }
@@ -178,6 +187,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  /** Base chrome — shadow applied via navChromeShadowLight / navChromeShadowDark. */
   leftPill: {
     width: "50%",
     marginRight: 10,
@@ -188,11 +198,20 @@ const styles = StyleSheet.create({
     borderColor: lightColors.border,
     flexDirection: "row",
     padding: 6,
-    elevation: 8,
-    shadowColor: lightColors.textPrimary,
+  },
+  navChromeShadowLight: {
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.12,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 14,
+    shadowRadius: 18,
+    elevation: 14,
+  },
+  navChromeShadowDark: {
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.55,
+    shadowRadius: 28,
+    elevation: 22,
   },
   leftButton: {
     flex: 1,
@@ -231,11 +250,6 @@ const styles = StyleSheet.create({
     borderColor: lightColors.border,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 8,
-    shadowColor: lightColors.textPrimary,
-    shadowOpacity: 0.12,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 14,
   },
   profileCircleActive: {
     backgroundColor: lightColors.textPrimary,

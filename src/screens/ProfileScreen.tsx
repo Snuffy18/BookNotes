@@ -1,38 +1,96 @@
-import { useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
-import {
-  FlatList,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { HeaderText } from "../components/HeaderText";
+import { OneTimeOfferModal } from "../components/OneTimeOfferModal";
+import { PromoParticleStarsLayer } from "../components/PromoParticleField";
+import { SparkleIcon } from "../components/SparkleDecor";
+import type { ProfileStackParamList } from "../navigation/types";
 import { useAppSettings } from "../context/AppSettingsContext";
-import type { AccentTheme } from "../theme/colors";
-import { accentColors, accentGradients, darkColors, lightColors } from "../theme/colors";
+import { mixHex } from "../theme/colorUtils";
+import { darkColors, lightColors } from "../theme/colors";
 
-const accentLabels: Record<AccentTheme, string> = {
-  blue: "Blue",
-  purple: "Purple",
-  pink: "Pink",
-  emerald: "Emerald",
-  orange: "Orange",
-  red: "Red",
-  teal: "Teal",
-};
+type ProfileHomeNav = NativeStackNavigationProp<ProfileStackParamList, "ProfileHome">;
+
+const LAST_SYNC_KEY = "profile_last_sync_iso";
+const SUPPORT_EMAIL = "support@booknotes.app";
+const PRIVACY_URL = "https://example.com/privacy";
+const TERMS_URL = "https://example.com/terms";
+
+function formatSyncedTime(d: Date): string {
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
 
 export function ProfileScreen() {
-  const { darkMode, themeMode, setThemeMode, accentTheme, setAccentTheme } = useAppSettings();
-  const [autoSave, setAutoSave] = useState(true);
-  const [hapticsEnabled, setHapticsEnabled] = useState(true);
-  const [offlineQueue, setOfflineQueue] = useState(true);
-  const [showThemeDropdown, setShowThemeDropdown] = useState(false);
+  const navigation = useNavigation<ProfileHomeNav>();
+  const { darkMode, accentColor, accentGradient } = useAppSettings();
+  const [offerModalVisible, setOfferModalVisible] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(LAST_SYNC_KEY).then((raw) => {
+      if (cancelled || !raw) return;
+      const t = new Date(raw);
+      if (!Number.isNaN(t.getTime())) setLastSyncedAt(t);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openUrl = useCallback(async (url: string, label: string) => {
+    if (url.startsWith("mailto:")) {
+      try {
+        await Linking.openURL(url);
+      } catch {
+        Alert.alert(label, `Email us at ${SUPPORT_EMAIL}`);
+      }
+      return;
+    }
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        Alert.alert(label, "Could not open this link on your device.");
+        return;
+      }
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(label, "Something went wrong opening the link.");
+    }
+  }, []);
+
+  const onRequestFeature = useCallback(() => {
+    const q = encodeURIComponent("Feature request");
+    void openUrl(`mailto:${SUPPORT_EMAIL}?subject=${q}`, "Request a feature");
+  }, [openUrl]);
+
+  const onContactUs = useCallback(() => {
+    void openUrl(`mailto:${SUPPORT_EMAIL}`, "Contact us");
+  }, [openUrl]);
+
+  const onSyncData = useCallback(async () => {
+    const now = new Date();
+    try {
+      await AsyncStorage.setItem(LAST_SYNC_KEY, now.toISOString());
+      setLastSyncedAt(now);
+    } catch {
+      Alert.alert("Sync", "Could not save sync time.");
+    }
+  }, []);
+
+  const promoGradientColors = useMemo(() => {
+    const [c0, c1] = accentGradient;
+    const top = mixHex("#000000", c0, 0.16);
+    const mid = mixHex("#0c0a14", mixHex(c0, c1, 0.4), 0.62);
+    const bottom = mixHex(c0, c1, 0.58);
+    return [top, mid, bottom] as [string, string, string];
+  }, [accentGradient]);
 
   return (
     <SafeAreaView
@@ -45,74 +103,171 @@ export function ProfileScreen() {
       />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
-          <Text style={[styles.sectionTitle, darkMode && styles.textDark]}>Themes</Text>
-          <Text style={[styles.description, darkMode && styles.descriptionDark]}>
-            Choose accent color style.
+        <TouchableOpacity
+          style={styles.promoWrap}
+          activeOpacity={0.96}
+          onPress={() => setOfferModalVisible(true)}
+        >
+          <LinearGradient
+            colors={promoGradientColors}
+            locations={[0, 0.48, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.promoGradient}
+          >
+            <PromoParticleStarsLayer />
+            <View style={styles.promoSparkleWatermark} pointerEvents="none">
+              <SparkleIcon size={130} color={accentColor} opacity={0.16} />
+            </View>
+            <View style={styles.promoInner}>
+              <Text style={styles.promoTitle}>Unlock BookNotes+</Text>
+              <Text style={styles.promoSubtitle}>
+                Unlimited scans, smarter notes, and exports — everything you need to study faster.
+              </Text>
+              <View style={styles.promoCta}>
+                <Text style={styles.promoCtaText}>Upgrade now</Text>
+              </View>
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        <View style={styles.restoreRow}>
+          <Text style={[styles.restorePrefix, darkMode && styles.restorePrefixDark]}>
+            Already a Pro member?{" "}
           </Text>
+          <TouchableOpacity onPress={() => {}} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+            <Text style={[styles.restoreLink, darkMode && styles.restoreLinkDark]}>Restore purchase</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
           <TouchableOpacity
-            style={[styles.dropdownTrigger, darkMode && styles.dropdownTriggerDark]}
-            onPress={() => setShowThemeDropdown(true)}
+            style={styles.exportHeaderRow}
+            onPress={() => navigation.navigate("Appearance")}
             activeOpacity={0.85}
           >
-            <View style={styles.dropdownTriggerLeft}>
-              <LinearGradient
-                colors={accentGradients[accentTheme][darkMode ? "dark" : "light"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.dropdownAccentDot}
-              />
-              <Text style={[styles.dropdownText, darkMode && styles.textDark]}>
-                {accentLabels[accentTheme]}
-              </Text>
+            <View style={styles.exportHeaderLeft}>
+              <Ionicons name="color-palette-outline" size={22} color={accentColor} />
+              <Text style={[styles.exportHeaderLabel, darkMode && styles.textDark]}>Appearance</Text>
             </View>
-            <Text style={[styles.dropdownChevron, darkMode && styles.dropdownChevronDark]}>v</Text>
+            <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.accentChevron} />
           </TouchableOpacity>
-          <SettingToggle
-            label="Dark mode"
-            description="Use dark app appearance."
-            value={themeMode === "dark"}
-            onValueChange={(value) => setThemeMode(value ? "dark" : "light")}
-            darkMode={darkMode}
-          />
         </View>
 
         <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
-          <Text style={[styles.sectionTitle, darkMode && styles.textDark]}>Study Preferences</Text>
-          <SettingRow label="Note style" value="Concise" darkMode={darkMode} />
-          <SettingRow label="Summary depth" value="Standard" darkMode={darkMode} />
-          <SettingRow label="Output language" value="English" darkMode={darkMode} />
+          <TouchableOpacity
+            style={styles.exportHeaderRow}
+            onPress={() => navigation.navigate("StudyPreferences")}
+            activeOpacity={0.85}
+          >
+            <View style={styles.exportHeaderLeft}>
+              <Ionicons name="school-outline" size={22} color={accentColor} />
+              <Text style={[styles.exportHeaderLabel, darkMode && styles.textDark]}>Study Preferences</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.accentChevron} />
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
-          <Text style={[styles.sectionTitle, darkMode && styles.textDark]}>App Behavior</Text>
-          <SettingToggle
-            label="Auto-save scans"
-            description="Save each generated report automatically."
-            value={autoSave}
-            onValueChange={setAutoSave}
-            darkMode={darkMode}
-          />
-          <SettingToggle
-            label="Haptic feedback"
-            description="Vibrate lightly on key actions."
-            value={hapticsEnabled}
-            onValueChange={setHapticsEnabled}
-            darkMode={darkMode}
-          />
-          <SettingToggle
-            label="Offline queue"
-            description="Queue scans while internet is unavailable."
-            value={offlineQueue}
-            onValueChange={setOfflineQueue}
-            darkMode={darkMode}
-          />
+          <TouchableOpacity
+            style={styles.exportHeaderRow}
+            onPress={() => navigation.navigate("AppBehavior")}
+            activeOpacity={0.85}
+          >
+            <View style={styles.exportHeaderLeft}>
+              <Ionicons name="options-outline" size={22} color={accentColor} />
+              <Text style={[styles.exportHeaderLabel, darkMode && styles.textDark]}>App Behavior</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.accentChevron} />
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
-          <Text style={[styles.sectionTitle, darkMode && styles.textDark]}>Export</Text>
-          <SettingRow label="Default format" value="PDF" darkMode={darkMode} />
-          <SettingRow label="Include keywords" value="Enabled" darkMode={darkMode} />
+          <TouchableOpacity
+            style={styles.exportHeaderRow}
+            onPress={() => navigation.navigate("ExportSettings")}
+            activeOpacity={0.85}
+          >
+            <View style={styles.exportHeaderLeft}>
+              <Ionicons name="share-outline" size={22} color={accentColor} />
+              <Text style={[styles.exportHeaderLabel, darkMode && styles.textDark]}>Export</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.accentChevron} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
+          <TouchableOpacity
+            style={styles.exportHeaderRow}
+            onPress={() => navigation.navigate("ReadingReminders")}
+            activeOpacity={0.85}
+          >
+            <View style={styles.exportHeaderLeft}>
+              <Ionicons name="notifications-outline" size={22} color={accentColor} />
+              <Text style={[styles.exportHeaderLabel, darkMode && styles.textDark]}>Reading reminders</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.accentChevron} />
+          </TouchableOpacity>
+        </View>
+
+        <Text style={[styles.sectionHeading, darkMode && styles.sectionHeadingDark]}>Support & Legal</Text>
+        <View style={[styles.settingsCard, styles.supportLegalCard, darkMode && styles.settingsCardDark]}>
+          <TouchableOpacity
+            style={styles.supportRow}
+            onPress={onRequestFeature}
+            activeOpacity={0.85}
+          >
+            <View style={styles.supportRowLeft}>
+              <Ionicons name="megaphone-outline" size={22} color={accentColor} />
+              <Text style={[styles.supportLabel, darkMode && styles.textDark]}>Request a Feature</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.mutedChevron} />
+          </TouchableOpacity>
+          <View style={[styles.supportSeparator, darkMode && styles.supportSeparatorDark]} />
+          <TouchableOpacity style={styles.supportRow} onPress={onContactUs} activeOpacity={0.85}>
+            <View style={styles.supportRowLeft}>
+              <Ionicons name="mail-outline" size={22} color={accentColor} />
+              <Text style={[styles.supportLabel, darkMode && styles.textDark]}>Contact Us</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.mutedChevron} />
+          </TouchableOpacity>
+          <View style={[styles.supportSeparator, darkMode && styles.supportSeparatorDark]} />
+          <TouchableOpacity
+            style={styles.supportRow}
+            onPress={() => openUrl(PRIVACY_URL, "Privacy Policy")}
+            activeOpacity={0.85}
+          >
+            <View style={styles.supportRowLeft}>
+              <Ionicons name="document-text-outline" size={22} color={accentColor} />
+              <Text style={[styles.supportLabel, darkMode && styles.textDark]}>Privacy Policy</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.mutedChevron} />
+          </TouchableOpacity>
+          <View style={[styles.supportSeparator, darkMode && styles.supportSeparatorDark]} />
+          <TouchableOpacity
+            style={styles.supportRow}
+            onPress={() => openUrl(TERMS_URL, "Terms of Service")}
+            activeOpacity={0.85}
+          >
+            <View style={styles.supportRowLeft}>
+              <Ionicons name="document-outline" size={22} color={accentColor} />
+              <Text style={[styles.supportLabel, darkMode && styles.textDark]}>Terms of Service</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.mutedChevron} />
+          </TouchableOpacity>
+          <View style={[styles.supportSeparator, darkMode && styles.supportSeparatorDark]} />
+          <TouchableOpacity style={styles.supportRow} onPress={onSyncData} activeOpacity={0.85}>
+            <View style={styles.supportRowLeft}>
+              <Ionicons name="sync-outline" size={22} color={accentColor} />
+              <Text style={[styles.supportLabel, darkMode && styles.textDark]}>Sync Data</Text>
+            </View>
+            <View style={styles.supportRowRight}>
+              <Text style={[styles.supportDetail, darkMode && styles.supportDetailDark]} numberOfLines={1}>
+                {lastSyncedAt ? `Last synced: ${formatSyncedTime(lastSyncedAt)}` : "Never synced"}
+              </Text>
+              <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.mutedChevron} />
+            </View>
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
@@ -122,87 +277,8 @@ export function ProfileScreen() {
         </View>
       </ScrollView>
 
-      <Modal visible={showThemeDropdown} transparent animationType="fade">
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowThemeDropdown(false)}>
-          <Pressable style={[styles.modalCard, darkMode && styles.modalCardDark]} onPress={() => {}}>
-            <Text style={[styles.modalTitle, darkMode && styles.textDark]}>Choose Accent Theme</Text>
-            <FlatList
-              data={(Object.keys(accentColors) as AccentTheme[]).map((key) => ({
-                key,
-                label: accentLabels[key],
-                color: accentColors[key][darkMode ? "dark" : "light"],
-                gradient: accentGradients[key][darkMode ? "dark" : "light"],
-              }))}
-              keyExtractor={(item) => item.key}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.themeRow,
-                    accentTheme === item.key && styles.themeRowActive,
-                    accentTheme === item.key ? { borderColor: item.color } : null,
-                    darkMode && accentTheme === item.key && styles.themeRowActiveDark,
-                  ]}
-                  onPress={() => {
-                    setAccentTheme(item.key);
-                    setShowThemeDropdown(false);
-                  }}
-                >
-                  <LinearGradient
-                    colors={item.gradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.dropdownAccentDot}
-                  />
-                  <Text style={[styles.themeRowText, darkMode && styles.textDark]}>{item.label}</Text>
-                  {accentTheme === item.key ? (
-                    <Text style={[styles.themeRowSelected, darkMode && styles.textDark]}>Selected</Text>
-                  ) : null}
-                </TouchableOpacity>
-              )}
-              ItemSeparatorComponent={() => (
-                <View style={[styles.themeRowSeparator, darkMode && styles.themeRowSeparatorDark]} />
-              )}
-            />
-            <Text style={[styles.tapOutsideHint, darkMode && styles.tapOutsideHintDark]}>
-              Tap outside to close
-            </Text>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <OneTimeOfferModal visible={offerModalVisible} onClose={() => setOfferModalVisible(false)} />
     </SafeAreaView>
-  );
-}
-
-function SettingRow({ label, value, darkMode }: { label: string; value: string; darkMode: boolean }) {
-  return (
-    <View style={styles.row}>
-      <Text style={[styles.label, darkMode && styles.textDark]}>{label}</Text>
-      <Text style={[styles.value, darkMode && styles.valueDark]}>{value}</Text>
-    </View>
-  );
-}
-
-function SettingToggle({
-  label,
-  description,
-  value,
-  onValueChange,
-  darkMode,
-}: {
-  label: string;
-  description: string;
-  value: boolean;
-  onValueChange: (value: boolean) => void;
-  darkMode: boolean;
-}) {
-  return (
-    <View style={styles.row}>
-      <View style={styles.rowTextWrap}>
-        <Text style={[styles.label, darkMode && styles.textDark]}>{label}</Text>
-        <Text style={[styles.description, darkMode && styles.descriptionDark]}>{description}</Text>
-      </View>
-      <Switch value={value} onValueChange={onValueChange} />
-    </View>
   );
 }
 
@@ -220,6 +296,76 @@ const styles = StyleSheet.create({
     paddingBottom: 110,
     gap: 12,
   },
+  promoWrap: {
+    borderRadius: 28,
+    overflow: "hidden",
+    marginBottom: 2,
+  },
+  promoGradient: {
+    borderRadius: 28,
+    overflow: "hidden",
+    minHeight: 200,
+  },
+  promoSparkleWatermark: {
+    position: "absolute",
+    right: -18,
+    top: -12,
+    zIndex: 0,
+  },
+  promoInner: {
+    position: "relative",
+    zIndex: 1,
+    padding: 22,
+    gap: 12,
+  },
+  promoTitle: {
+    color: "#ffffff",
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
+  promoSubtitle: {
+    color: "rgba(255,255,255,0.88)",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "400",
+  },
+  promoCta: {
+    alignSelf: "flex-start",
+    backgroundColor: "#ffffff",
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    borderRadius: 999,
+    marginTop: 4,
+  },
+  promoCtaText: {
+    color: "#0f172a",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  restoreRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  restorePrefix: {
+    fontSize: 13,
+    color: lightColors.textMuted,
+  },
+  restorePrefixDark: {
+    color: darkColors.textMuted,
+  },
+  restoreLink: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: lightColors.textPrimary,
+  },
+  restoreLinkDark: {
+    color: darkColors.textPrimary,
+  },
   settingsCard: {
     backgroundColor: lightColors.card,
     borderRadius: 14,
@@ -232,140 +378,87 @@ const styles = StyleSheet.create({
     backgroundColor: darkColors.card,
     borderColor: darkColors.border,
   },
-  sectionTitle: {
-    color: lightColors.textPrimary,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  row: {
+  exportHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10,
-  },
-  rowTextWrap: {
-    flex: 1,
-    gap: 2,
-  },
-  dropdownTrigger: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: lightColors.borderStrong,
-    backgroundColor: lightColors.card,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  dropdownTriggerDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.borderStrong,
-  },
-  dropdownTriggerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  dropdownText: {
-    color: lightColors.textPrimary,
-    fontWeight: "600",
-  },
-  dropdownChevron: {
-    color: lightColors.textMuted,
-    fontWeight: "700",
-  },
-  dropdownChevronDark: {
-    color: darkColors.textSecondary,
-  },
-  dropdownAccentDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: darkColors.overlay,
-    justifyContent: "center",
-    paddingHorizontal: 18,
-  },
-  modalCard: {
-    backgroundColor: lightColors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    padding: 12,
-    gap: 10,
-    maxHeight: "65%",
-  },
-  modalCardDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
-  },
-  modalTitle: {
-    color: lightColors.textPrimary,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  themeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: "transparent",
+    paddingVertical: 4,
+    marginHorizontal: -4,
+    paddingHorizontal: 4,
     borderRadius: 10,
-    paddingHorizontal: 10,
   },
-  themeRowActive: {
-    backgroundColor: "#f8fafc",
+  exportHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
-  themeRowActiveDark: {
-    backgroundColor: "#2a2a2a",
-  },
-  themeRowText: {
+  exportHeaderLabel: {
     color: lightColors.textPrimary,
-    flex: 1,
-  },
-  themeRowSelected: {
-    color: lightColors.textPrimary,
+    fontSize: 16,
     fontWeight: "700",
-    fontSize: 12,
   },
-  themeRowSeparator: {
-    height: 1,
-    backgroundColor: lightColors.border,
+  accentChevron: {
+    opacity: 0.55,
   },
-  themeRowSeparatorDark: {
-    backgroundColor: darkColors.borderStrong,
-  },
-  tapOutsideHint: {
-    textAlign: "center",
+  sectionHeading: {
+    fontSize: 13,
+    fontWeight: "600",
     color: lightColors.textMuted,
-    fontSize: 12,
+    marginBottom: 2,
     marginTop: 4,
   },
-  tapOutsideHintDark: {
+  sectionHeadingDark: {
     color: darkColors.textSecondary,
   },
-  label: {
-    color: lightColors.textPrimary,
-    fontSize: 15,
+  supportLegalCard: {
+    gap: 0,
+    paddingVertical: 4,
+  },
+  supportRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    gap: 10,
+  },
+  supportRowLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minWidth: 0,
+  },
+  supportRowRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 1,
+    maxWidth: "52%",
+  },
+  supportLabel: {
+    fontSize: 16,
     fontWeight: "600",
+    color: lightColors.textPrimary,
   },
-  value: {
-    color: lightColors.textSecondary,
-    fontSize: 14,
-  },
-  valueDark: {
-    color: darkColors.textPrimary,
-  },
-  description: {
+  supportDetail: {
+    fontSize: 13,
+    fontWeight: "500",
     color: lightColors.textMuted,
-    fontSize: 12,
+    textAlign: "right",
   },
-  descriptionDark: {
+  supportDetailDark: {
     color: darkColors.textSecondary,
+  },
+  supportSeparator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 50,
+    backgroundColor: lightColors.borderStrong,
+  },
+  supportSeparatorDark: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  mutedChevron: {
+    opacity: 0.45,
   },
   hint: {
     color: lightColors.textMuted,

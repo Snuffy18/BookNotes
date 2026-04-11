@@ -41,22 +41,23 @@ export type AccentTheme =
   | "red"
   | "teal";
 
-export const accentGradients: Record<AccentTheme, { light: [string, string]; dark: [string, string] }> = {
-  blue: { light: ["#2563eb", "#3b82f6"], dark: ["#60a5fa", "#93c5fd"] },
-  purple: { light: ["#7c3aed", "#8b5cf6"], dark: ["#a78bfa", "#c4b5fd"] },
-  pink: { light: ["#db2777", "#ec4899"], dark: ["#f472b6", "#f9a8d4"] },
-  emerald: { light: ["#059669", "#10b981"], dark: ["#34d399", "#6ee7b7"] },
-  orange: { light: ["#ea580c", "#f97316"], dark: ["#fb923c", "#fdba74"] },
-  red: { light: ["#dc2626", "#ef4444"], dark: ["#f87171", "#fca5a5"] },
-  teal: { light: ["#0d9488", "#14b8a6"], dark: ["#2dd4bf", "#5eead4"] },
+/** Same accent hues in light and dark mode (primary + highlight stop). */
+export const accentGradients: Record<AccentTheme, [string, string]> = {
+  blue: ["#2563eb", "#3b82f6"],
+  purple: ["#7c3aed", "#8b5cf6"],
+  pink: ["#db2777", "#ec4899"],
+  emerald: ["#059669", "#10b981"],
+  orange: ["#ea580c", "#f97316"],
+  red: ["#dc2626", "#ef4444"],
+  teal: ["#0d9488", "#14b8a6"],
 };
 
-export const accentColors: Record<AccentTheme, { light: string; dark: string }> = {
-  blue: { light: accentGradients.blue.light[0], dark: accentGradients.blue.dark[0] },
-  purple: { light: accentGradients.purple.light[0], dark: accentGradients.purple.dark[0] },
-  pink: { light: accentGradients.pink.light[0], dark: accentGradients.pink.dark[0] },
-  emerald: { light: accentGradients.emerald.light[0], dark: accentGradients.emerald.dark[0] },
-  orange: { light: accentGradients.orange.light[0], dark: accentGradients.orange.dark[0] },
-  red: { light: accentGradients.red.light[0], dark: accentGradients.red.dark[0] },
-  teal: { light: accentGradients.teal.light[0], dark: accentGradients.teal.dark[0] },
+export const accentColors: Record<AccentTheme, string> = {
+  blue: accentGradients.blue[0],
+  purple: accentGradients.purple[0],
+  pink: accentGradients.pink[0],
+  emerald: accentGradients.emerald[0],
+  orange: accentGradients.orange[0],
+  red: accentGradients.red[0],
+  teal: accentGradients.teal[0],
 };

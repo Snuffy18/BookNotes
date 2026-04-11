@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import {
+  ActivityIndicator,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderText } from "../components/HeaderText";
 import { useAppSettings } from "../context/AppSettingsContext";
@@ -13,7 +23,8 @@ import { extractBookMetadataFromImage } from "../services/ai";
 import { darkColors, lightColors } from "../theme/colors";
 
 export function LibraryScreen() {
-  const { darkMode, accentColor } = useAppSettings();
+  const { darkMode, accentColor, accentGradient } = useAppSettings();
+  const { height: windowHeight } = useWindowDimensions();
   const { books, scans, activeBook, addOrActivateBook } = useScanContext();
   const navigation = useNavigation<NativeStackNavigationProp<LibraryStackParamList, "LibraryHome">>();
   const [bookTitle, setBookTitle] = useState(activeBook?.title ?? "");
@@ -79,8 +90,10 @@ export function LibraryScreen() {
       />
 
       <ScrollView
+        style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
+          books.length === 0 && styles.scrollContentEmpty,
         ]}
       >
         {showBookCapture ? (
@@ -124,7 +137,7 @@ export function LibraryScreen() {
           </View>
         ) : (
           <TouchableOpacity
-            style={[styles.addBookButton, darkMode && styles.addBookButtonDark]}
+            style={styles.addBookButtonWrap}
             onPress={() => {
               setBookTitle("");
               setBookAuthor("");
@@ -132,23 +145,40 @@ export function LibraryScreen() {
               setExtractError(null);
               setShowBookCapture(true);
             }}
+            activeOpacity={0.85}
           >
-            <Text style={styles.addBookButtonText}>+ Add Another Book</Text>
+            <LinearGradient
+              colors={accentGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.addBookButtonGradient}
+            >
+              <Text style={styles.addBookButtonText}>
+                {books.length === 0 ? "Add your first book" : "+ Add another book"}
+              </Text>
+            </LinearGradient>
           </TouchableOpacity>
         )}
         {extractError ? <Text style={[styles.errorText, darkMode && styles.errorTextDark]}>{extractError}</Text> : null}
 
         {books.length === 0 ? (
-          <View style={styles.emptyStateWrap}>
-            <Ionicons
-              name="library-outline"
-              size={42}
-              color={darkMode ? darkColors.textSecondary : lightColors.textMuted}
-            />
-            <Text style={[styles.emptyTitle, darkMode && styles.emptyTitleDark]}>No books yet</Text>
-            <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>
-              Add a title, author, and cover above.
-            </Text>
+          <View
+            style={[
+              styles.emptyStateFill,
+              { minHeight: Math.max(200, windowHeight * 0.38) },
+            ]}
+          >
+            <View style={styles.emptyStateInner}>
+              <Ionicons
+                name="library-outline"
+                size={42}
+                color={darkMode ? darkColors.textSecondary : lightColors.textMuted}
+              />
+              <Text style={[styles.emptyTitle, darkMode && styles.emptyTitleDark]}>Add your first book</Text>
+              <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>
+                Scan a cover above to extract the title and author.
+              </Text>
+            </View>
           </View>
         ) : (
           books.map((book) => {
@@ -203,9 +233,15 @@ const styles = StyleSheet.create({
   screenDark: {
     backgroundColor: darkColors.background,
   },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
     paddingBottom: 110,
     gap: 12,
+  },
+  scrollContentEmpty: {
+    flexGrow: 1,
   },
   bookCard: {
     flexDirection: "row",
@@ -279,15 +315,14 @@ const styles = StyleSheet.create({
   aiValueDark: {
     color: darkColors.textPrimary,
   },
-  addBookButton: {
+  addBookButtonWrap: {
     alignSelf: "flex-start",
-    backgroundColor: "#0f172a",
     borderRadius: 10,
+    overflow: "hidden",
+  },
+  addBookButtonGradient: {
     paddingHorizontal: 12,
     paddingVertical: 9,
-  },
-  addBookButtonDark: {
-    backgroundColor: darkColors.card,
   },
   addBookButtonText: {
     color: "#fff",
@@ -321,19 +356,28 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#64748b",
     textAlign: "center",
+    paddingHorizontal: 24,
+    lineHeight: 20,
+    fontSize: 14,
   },
   emptyTextDark: {
     color: darkColors.textSecondary,
   },
-  emptyStateWrap: {
+  emptyStateFill: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  emptyStateInner: {
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 10,
   },
   emptyTitle: {
     color: lightColors.textSecondary,
     fontSize: 18,
     fontWeight: "700",
+    textAlign: "center",
   },
   emptyTitleDark: {
     color: darkColors.textPrimary,
