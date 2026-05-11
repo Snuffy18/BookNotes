@@ -25,7 +25,6 @@ async function ensureAudioMode(): Promise<void> {
 const SOUND_FILES = {
   bookAddedSuccessful: require("../../assets/sound-effects/book-added-sucessful.wav"),
   takePhoto: require("../../assets/sound-effects/take-photo.wav"),
-  swipeBetweenFromYourLibraryCards: require("../../assets/sound-effects/swipe-between-from-your-library-cards.wav"),
   summarizeAiSuccess: require("../../assets/sound-effects/summarize-ai-success.wav"),
   pdfExtracted: require("../../assets/sound-effects/pdf-extracted.wav"),
   aiExtractionCompleted: require("../../assets/sound-effects/ai-extraction-completed.wav"),

@@ -5,6 +5,7 @@ import { ThemesScreen } from "../screens/ThemesScreen";
 import { ExportSettingsScreen } from "../screens/ExportSettingsScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { ReadingRemindersScreen } from "../screens/ReadingRemindersScreen";
+import { OutputLanguageScreen } from "../screens/OutputLanguageScreen";
 import { StudyPreferencesScreen } from "../screens/StudyPreferencesScreen";
 import type { ProfileStackParamList } from "./types";
 
@@ -22,6 +23,7 @@ export function ProfileStackNavigator() {
       <ProfileStack.Screen name="Appearance" component={AppearanceScreen} />
       <ProfileStack.Screen name="Themes" component={ThemesScreen} />
       <ProfileStack.Screen name="StudyPreferences" component={StudyPreferencesScreen} />
+      <ProfileStack.Screen name="OutputLanguage" component={OutputLanguageScreen} />
       <ProfileStack.Screen name="AppBehavior" component={AppBehaviorScreen} />
       <ProfileStack.Screen name="ExportSettings" component={ExportSettingsScreen} />
       <ProfileStack.Screen name="ReadingReminders" component={ReadingRemindersScreen} />

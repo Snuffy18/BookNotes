@@ -2,9 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useAppSettings } from "../context/AppSettingsContext";
-import { darkColors, lightColors } from "../theme/colors";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Animated, Easing, LayoutChangeEvent, Pressable, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LibraryStackNavigator } from "./LibraryStackNavigator";
 import { ProfileStackNavigator } from "./ProfileStackNavigator";
 import { ScanStackNavigator } from "./ScanStackNavigator";
@@ -12,28 +12,65 @@ import type { RootTabParamList } from "./types";
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
-function getDeepestRouteName(route: any): string | null {
-  let current = route;
+const PILL_BG = "#252525";
+const PILL_BORDER = "rgba(255,255,255,0.1)";
+const HIGHLIGHT_BG = "rgba(255,255,255,0.1)";
+const ICON_ACTIVE = "#ffffff";
+const ICON_INACTIVE = "rgba(255,255,255,0.6)";
+const LABEL_COLOR = "#ffffff";
+const ICON_SIZE = 20;
+
+const TAB_GAP = 0;
+const PILL_PAD_V = 4;
+const PILL_PAD_H = 6;
+/** Inner “pill” behind icon + label; large enough to read as a capsule on the cluster height. */
+const HIGHLIGHT_RADIUS = 26;
+const PILL_RADIUS = 40;
+const MOVE_MS = 200;
+const LABEL_MS = 150;
+
+const TABS = [
+  { routeName: "ScanFlow" as const, label: "Scan", icon: "scan-outline" as const },
+  { routeName: "Library" as const, label: "Library", icon: "library-outline" as const },
+  { routeName: "Profile" as const, label: "Profile", icon: "person-outline" as const },
+];
+
+function getDeepestRouteName(route: { state?: unknown; name?: string } | undefined): string | null {
+  let current: any = route;
   while (current?.state?.routes && typeof current.state.index === "number") {
     current = current.state.routes[current.state.index];
   }
-  return current?.name ?? null;
+  return (current?.name as string | undefined) ?? null;
 }
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
-  const { darkMode } = useAppSettings();
-  const scanRoute = state.routes.find((route) => route.name === "ScanFlow");
-  const libraryRoute = state.routes.find((route) => route.name === "Library");
-  const profileRoute = state.routes.find((route) => route.name === "Profile");
+  const insets = useSafeAreaInsets();
+  const [tabLayouts, setTabLayouts] = useState<
+    { x: number; width: number; height: number }[] | null
+  >(null);
+  const [trackSize, setTrackSize] = useState<{ width: number; height: number }>({ width: 0, height: 44 });
+  /** Measured icon+label cluster for the tab at `index` (only valid when that tab is active). */
+  const [activeCluster, setActiveCluster] = useState<{ index: number; width: number; height: number } | null>(
+    null
+  );
 
-  const isScanActive = state.routes[state.index]?.name === "ScanFlow";
-  const isLibraryActive = state.routes[state.index]?.name === "Library";
-  const isProfileActive = state.routes[state.index]?.name === "Profile";
+  const activeIndex = state.index;
+  const prevActiveIndexRef = useRef(activeIndex);
+  const hasCompletedInitialHighlightRef = useRef(false);
+
+  const highlightX = useRef(new Animated.Value(0)).current;
+  const highlightY = useRef(new Animated.Value(0)).current;
+  const highlightW = useRef(new Animated.Value(0)).current;
+  const highlightH = useRef(new Animated.Value(44)).current;
+
+  /** Fade-in for the active tab label only (inactive tabs show icon-only → narrower pill). */
+  const activeLabelOpacity = useRef(new Animated.Value(1)).current;
+  const skipLabelFadeOnMountRef = useRef(true);
+
   const activeRootRoute = state.routes[state.index];
   const activeNestedRouteName = getDeepestRouteName(activeRootRoute);
 
-  // Hide bottom nav on full-screen detail/result flows to avoid overlap.
-  if (
+  const hidden =
     activeNestedRouteName === "ReportDetails" ||
     activeNestedRouteName === "CropPhoto" ||
     activeNestedRouteName === "ExtractionOptions" ||
@@ -46,126 +83,208 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
     activeNestedRouteName === "AppBehavior" ||
     activeNestedRouteName === "Appearance" ||
     activeNestedRouteName === "Themes" ||
-    activeNestedRouteName === "ReadingReminders"
-  ) {
+    activeNestedRouteName === "OutputLanguage" ||
+    activeNestedRouteName === "ReadingReminders";
+
+  const applyHighlight = useCallback(
+    (index: number, layouts: { x: number; width: number; height: number }[], animated: boolean) => {
+      const cell = layouts[index];
+      if (!cell) return;
+      const inner =
+        activeCluster && activeCluster.index === index && activeCluster.width > 0 ? activeCluster : null;
+      const innerW = inner ? inner.width : cell.width;
+      const innerH = inner ? inner.height : Math.max(cell.height, 40);
+      const targetX = cell.x + (cell.width - innerW) / 2;
+      const trackH = trackSize.height > 0 ? trackSize.height : Math.max(cell.height, 44);
+      const targetY = Math.max(0, (trackH - innerH) / 2);
+      if (!animated) {
+        highlightX.setValue(targetX);
+        highlightY.setValue(targetY);
+        highlightW.setValue(innerW);
+        highlightH.setValue(innerH);
+        return;
+      }
+      Animated.parallel([
+        Animated.timing(highlightX, {
+          toValue: targetX,
+          duration: MOVE_MS,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+        Animated.timing(highlightY, {
+          toValue: targetY,
+          duration: MOVE_MS,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+        Animated.timing(highlightW, {
+          toValue: innerW,
+          duration: MOVE_MS,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+        Animated.timing(highlightH, {
+          toValue: innerH,
+          duration: MOVE_MS,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+      ]).start();
+    },
+    [activeCluster, highlightH, highlightW, highlightX, highlightY, trackSize.height]
+  );
+
+  useEffect(() => {
+    if (skipLabelFadeOnMountRef.current) {
+      skipLabelFadeOnMountRef.current = false;
+      return;
+    }
+    activeLabelOpacity.setValue(0);
+    Animated.timing(activeLabelOpacity, {
+      toValue: 1,
+      duration: LABEL_MS,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [activeIndex, activeLabelOpacity]);
+
+  useEffect(() => {
+    if (!tabLayouts || tabLayouts.length !== TABS.length) return;
+    if (tabLayouts.some((t) => t.width <= 0)) return;
+
+    const indexChanged = prevActiveIndexRef.current !== activeIndex;
+    if (!hasCompletedInitialHighlightRef.current) {
+      hasCompletedInitialHighlightRef.current = true;
+      applyHighlight(activeIndex, tabLayouts, false);
+      activeLabelOpacity.setValue(1);
+      prevActiveIndexRef.current = activeIndex;
+      return;
+    }
+
+    if (indexChanged) {
+      applyHighlight(activeIndex, tabLayouts, true);
+      prevActiveIndexRef.current = activeIndex;
+    } else {
+      applyHighlight(activeIndex, tabLayouts, false);
+    }
+  }, [activeIndex, tabLayouts, applyHighlight, activeLabelOpacity, activeCluster, trackSize]);
+
+  const onTabLayout = useCallback((index: number, e: LayoutChangeEvent) => {
+    const { x, width, height } = e.nativeEvent.layout;
+    setTabLayouts((prev) => {
+      const next = prev ? [...prev] : TABS.map(() => ({ x: 0, width: 0, height: 0 }));
+      next[index] = { x, width, height };
+      return next;
+    });
+  }, []);
+
+  const triggerNavHaptic = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+  }, []);
+
+  const navigateTo = useCallback(
+    (routeName: keyof RootTabParamList) => {
+      triggerNavHaptic();
+      navigation.navigate(routeName);
+    },
+    [navigation, triggerNavHaptic]
+  );
+
+  if (hidden) {
     return null;
   }
 
-  const triggerNavHaptic = () => {
-    Haptics.selectionAsync().catch(() => {
-      // Ignore haptics failures on unsupported devices.
-    });
-  };
-
   return (
-    <View style={styles.wrapper}>
-      <View
-        style={[
-          styles.leftPill,
-          darkMode ? styles.navChromeShadowDark : styles.navChromeShadowLight,
-          {
-            backgroundColor: darkMode ? darkColors.card : lightColors.card,
-            borderColor: darkMode ? darkColors.border : lightColors.border,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={[
-            styles.leftButton,
-            isScanActive && styles.leftButtonActive,
-            isScanActive && darkMode && styles.leftButtonActiveDark,
-          ]}
-          onPress={() => {
-            triggerNavHaptic();
-            if (scanRoute) navigation.navigate(scanRoute.name);
-          }}
-          activeOpacity={0.85}
-        >
-          <Ionicons
-            name="scan"
-            size={18}
-            color={
-              isScanActive
-                ? darkMode
-                  ? darkColors.textPrimary
-                  : "#000"
-                : darkMode
-                ? darkColors.textSecondary
-                : lightColors.textMuted
-            }
-          />
-          <Text
-            style={[
-              styles.leftLabel,
-              isScanActive && styles.leftLabelActive,
-              isScanActive && darkMode && styles.leftLabelActiveDark,
-              !isScanActive && darkMode && styles.leftLabelDark,
-            ]}
-          >
-            Scan
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.leftButton,
-            isLibraryActive && styles.leftButtonActive,
-            isLibraryActive && darkMode && styles.leftButtonActiveDark,
-          ]}
-          onPress={() => {
-            triggerNavHaptic();
-            if (libraryRoute) navigation.navigate(libraryRoute.name);
-          }}
-          activeOpacity={0.85}
-        >
-          <Ionicons
-            name="library-outline"
-            size={18}
-            color={
-              isLibraryActive
-                ? darkMode
-                  ? darkColors.textPrimary
-                  : "#000"
-                : darkMode
-                ? darkColors.textSecondary
-                : lightColors.textMuted
-            }
-          />
-          <Text
-            style={[
-              styles.leftLabel,
-              isLibraryActive && styles.leftLabelActive,
-              isLibraryActive && darkMode && styles.leftLabelActiveDark,
-              !isLibraryActive && darkMode && styles.leftLabelDark,
-            ]}
-          >
-            Library
-          </Text>
-        </TouchableOpacity>
+    <View
+      pointerEvents="box-none"
+      style={[styles.screenOverlay, { paddingBottom: 24 + insets.bottom }]}
+    >
+      <View style={styles.pillOuter}>
+        <View style={styles.pill}>
+          <View style={styles.pillTrack}>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.highlight,
+                {
+                  left: highlightX,
+                  top: highlightY,
+                  width: highlightW,
+                  height: highlightH,
+                },
+              ]}
+            />
+            <View
+              style={styles.tabRow}
+              onLayout={(e) => {
+                const { width, height } = e.nativeEvent.layout;
+                setTrackSize((prev) =>
+                  prev.width === width && prev.height === height ? prev : { width, height }
+                );
+              }}
+            >
+              {TABS.map((tab, i) => {
+                const isActive = activeIndex === i;
+                return (
+                  <Pressable
+                    key={tab.routeName}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isActive }}
+                    accessibilityLabel={tab.label}
+                    onLayout={(e) => onTabLayout(i, e)}
+                    onPress={() => navigateTo(tab.routeName)}
+                    style={({ pressed }) => [
+                      styles.tabPressable,
+                      !isActive && styles.tabPressableInactive,
+                      pressed && styles.tabPressed,
+                    ]}
+                  >
+                    {isActive ? (
+                      <View
+                        style={styles.activeCluster}
+                        onLayout={(e) => {
+                          const { width, height } = e.nativeEvent.layout;
+                          setActiveCluster((prev) => {
+                            const next = { index: i, width, height };
+                            if (
+                              prev &&
+                              prev.index === next.index &&
+                              prev.width === next.width &&
+                              prev.height === next.height
+                            ) {
+                              return prev;
+                            }
+                            return next;
+                          });
+                        }}
+                      >
+                        <Ionicons
+                          name={tab.icon}
+                          size={ICON_SIZE}
+                          color={ICON_ACTIVE}
+                        />
+                        <Animated.Text
+                          pointerEvents="none"
+                          style={[styles.tabLabel, { color: LABEL_COLOR, opacity: activeLabelOpacity }]}
+                          numberOfLines={1}
+                        >
+                          {tab.label}
+                        </Animated.Text>
+                      </View>
+                    ) : (
+                      <Ionicons
+                        name={tab.icon}
+                        size={ICON_SIZE}
+                        color={ICON_INACTIVE}
+                      />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </View>
       </View>
-
-      <TouchableOpacity
-        style={[
-          styles.profileCircle,
-          darkMode ? styles.navChromeShadowDark : styles.navChromeShadowLight,
-          {
-            backgroundColor: darkMode ? darkColors.card : lightColors.card,
-            borderColor: darkMode ? darkColors.border : lightColors.border,
-          },
-          isProfileActive && styles.profileCircleActive,
-        ]}
-        onPress={() => {
-          triggerNavHaptic();
-          if (profileRoute) navigation.navigate(profileRoute.name);
-        }}
-        activeOpacity={0.85}
-      >
-        <Ionicons
-          name="person-outline"
-          size={20}
-          color={isProfileActive ? "#fff" : darkMode ? darkColors.textPrimary : lightColors.textPrimary}
-        />
-      </TouchableOpacity>
     </View>
   );
 }
@@ -181,81 +300,76 @@ export function RootTabNavigator() {
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
+  screenOverlay: {
     position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 24,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  pillOuter: {
+    alignItems: "center",
+  },
+  pill: {
+    alignSelf: "center",
+    overflow: "hidden",
+    backgroundColor: PILL_BG,
+    borderWidth: 0.5,
+    borderColor: PILL_BORDER,
+    borderRadius: PILL_RADIUS,
+    paddingVertical: PILL_PAD_V,
+    paddingHorizontal: PILL_PAD_H,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 16,
+  },
+  pillTrack: {
+    position: "relative",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
   },
-  /** Base chrome — shadow applied via navChromeShadowLight / navChromeShadowDark. */
-  leftPill: {
-    width: "50%",
-    marginRight: 10,
-    height: 56,
-    borderRadius: 999,
-    backgroundColor: lightColors.card,
-    borderWidth: 1,
-    borderColor: lightColors.border,
+  highlight: {
+    position: "absolute",
+    top: 0,
+    borderRadius: HIGHLIGHT_RADIUS,
+    backgroundColor: HIGHLIGHT_BG,
+    zIndex: 0,
+  },
+  tabRow: {
     flexDirection: "row",
-    padding: 6,
+    alignItems: "center",
+    gap: TAB_GAP,
+    zIndex: 1,
   },
-  navChromeShadowLight: {
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 14,
-  },
-  navChromeShadowDark: {
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.55,
-    shadowRadius: 28,
-    elevation: 22,
-  },
-  leftButton: {
-    flex: 1,
-    borderRadius: 999,
+  tabPressable: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    zIndex: 1,
   },
-  leftButtonActive: {
-    backgroundColor: "#f1f5f9",
+  tabPressableInactive: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
   },
-  leftButtonActiveDark: {
-    backgroundColor: darkColors.border,
+  tabPressed: {
+    opacity: 0.85,
   },
-  leftLabel: {
-    color: lightColors.textMuted,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  leftLabelDark: {
-    color: darkColors.textSecondary,
-  },
-  leftLabelActive: {
-    color: lightColors.textPrimary,
-  },
-  leftLabelActiveDark: {
-    color: darkColors.textPrimary,
-  },
-  profileCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: lightColors.card,
-    borderWidth: 1,
-    borderColor: lightColors.border,
+  activeCluster: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
   },
-  profileCircleActive: {
-    backgroundColor: lightColors.textPrimary,
-    borderColor: lightColors.textPrimary,
+  tabLabel: {
+    flexShrink: 0,
+    fontSize: 14,
+    fontWeight: "500",
+    textAlign: "center",
   },
 });

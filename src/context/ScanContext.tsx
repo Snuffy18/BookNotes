@@ -1,8 +1,47 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { loadScanLibrary, saveScanLibrary } from "../storage/scanLibraryStorage";
-import type { BookInsightsPayload, BookItem, BookReport, ChapterRange, ScanItem } from "../types/note";
+import type {
+  BookInsightsPayload,
+  BookInsightsSummary,
+  BookItem,
+  BookReport,
+  ChapterRange,
+  ScanItem,
+} from "../types/note";
 import { playSoundEffect } from "../utils/soundEffects";
+
+/**
+ * Persists a full replace of book insights (no merge with the previous summary).
+ * New structured insights omit legacy `body`; legacy-only payloads omit v2 fields.
+ */
+function snapshotInsightsForStore(
+  payload: BookInsightsPayload & { updatedAt: string },
+): BookInsightsSummary {
+  const { updatedAt, headline, stats, facts, themesSynthesis, kicker, body } = payload;
+  const hasV2 = Boolean(headline?.trim() && facts && facts.length > 0);
+  if (hasV2) {
+    return {
+      updatedAt,
+      headline: headline!.trim(),
+      ...(stats && stats.length > 0 ? { stats } : {}),
+      facts: facts!,
+      ...(themesSynthesis?.trim() ? { themesSynthesis: themesSynthesis.trim() } : {}),
+      ...(kicker?.trim() ? { kicker: kicker.trim() } : {}),
+    };
+  }
+  if (body?.trim()) {
+    return { updatedAt, body: body.trim() };
+  }
+  return {
+    updatedAt,
+    ...(headline?.trim() ? { headline: headline.trim() } : {}),
+    ...(stats && stats.length > 0 ? { stats } : {}),
+    ...(facts && facts.length > 0 ? { facts } : {}),
+    ...(themesSynthesis?.trim() ? { themesSynthesis: themesSynthesis.trim() } : {}),
+    ...(kicker?.trim() ? { kicker: kicker.trim() } : {}),
+  };
+}
 
 type ScanContextValue = {
   scans: ScanItem[];
@@ -104,8 +143,9 @@ export function ScanProvider({ children }: { children: ReactNode }) {
     bookId: string,
     summary: BookInsightsPayload & { updatedAt: string },
   ) => {
+    const stored = snapshotInsightsForStore(summary);
     setBooks((current) =>
-      current.map((book) => (book.id === bookId ? { ...book, insightsSummary: summary } : book))
+      current.map((book) => (book.id === bookId ? { ...book, insightsSummary: stored } : book))
     );
   };
 

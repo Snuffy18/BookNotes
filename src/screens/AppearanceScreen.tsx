@@ -13,9 +13,22 @@ import { darkColors, lightColors } from "../theme/colors";
 
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "Appearance">;
 
+const ROW_ICON_BLUE = "#60a5fa";
+const SWITCH_ON_BLUE = "#2563eb";
+const CHEVRON_SIZE = 15;
+const ROW_ICON_SIZE = 18;
+
 export function AppearanceScreen() {
   const navigation = useNavigation<Nav>();
-  const { darkMode, themeMode, setThemeMode, accentTheme, accentColor } = useAppSettings();
+  const { darkMode, themeMode, setThemeMode, accentTheme } = useAppSettings();
+
+  const switchTrack = {
+    false: darkMode ? "#3f3f3f" : "#d1d5db",
+    true: SWITCH_ON_BLUE,
+  } as const;
+
+  const chevronColor = darkMode ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.35)";
+  const subtitleColor = darkMode ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)";
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
@@ -42,48 +55,47 @@ export function AppearanceScreen() {
         <SettingsOptionHeroCard
           icon="color-palette-outline"
           title="Appearance"
-          description="Switch between light and dark mode, then open Themes to pick an accent palette for buttons and highlights."
+          description="Theme, accent color and display mode."
+          compactDescription
         />
 
         <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
           <View style={styles.row}>
-            <View style={styles.darkModeRowLeft}>
-              <MoonIcon size={22} color={accentColor} />
+            <View style={styles.rowLeft}>
+              <MoonIcon size={ROW_ICON_SIZE} color={ROW_ICON_BLUE} />
               <View style={styles.rowTextWrap}>
-                <Text style={[styles.label, darkMode && styles.textDark]}>Dark mode</Text>
-                <Text style={[styles.description, darkMode && styles.descriptionDark]}>
-                  Use dark app appearance.
-                </Text>
+                <Text style={[styles.label, darkMode && styles.labelDark]}>Dark mode</Text>
+                <Text style={[styles.subtitle, { color: subtitleColor }]}>Use dark app appearance.</Text>
               </View>
             </View>
             <Switch
               value={themeMode === "dark"}
               onValueChange={(value) => setThemeMode(value ? "dark" : "light")}
+              trackColor={switchTrack}
+              thumbColor="#ffffff"
+              ios_backgroundColor={darkMode ? "#3f3f3f" : "#d1d5db"}
             />
           </View>
 
           <View style={[styles.settingsSeparator, darkMode && styles.settingsSeparatorDark]} />
 
           <TouchableOpacity
-            style={styles.themesRow}
+            style={styles.linkRow}
             onPress={() => navigation.navigate("Themes")}
             activeOpacity={0.85}
           >
-            <View style={styles.themesRowLeft}>
-              <PaintbrushIcon size={22} color={accentColor} />
-              <Text style={[styles.label, darkMode && styles.textDark]} numberOfLines={1}>
-                Themes
-              </Text>
+            <View style={styles.rowLeft}>
+              <PaintbrushIcon size={ROW_ICON_SIZE} color={ROW_ICON_BLUE} />
+              <View style={styles.rowTextWrap}>
+                <Text style={[styles.label, darkMode && styles.labelDark]} numberOfLines={1}>
+                  Themes
+                </Text>
+                <Text style={[styles.subtitle, { color: subtitleColor }]} numberOfLines={1}>
+                  Current: {accentLabels[accentTheme]}
+                </Text>
+              </View>
             </View>
-            <View style={styles.themesRowRight}>
-              <Text
-                style={[styles.themesCurrent, darkMode && styles.themesCurrentDark]}
-                numberOfLines={1}
-              >
-                {accentLabels[accentTheme]}
-              </Text>
-              <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.accentChevron} />
-            </View>
+            <Ionicons name="chevron-forward" size={CHEVRON_SIZE} color={chevronColor} />
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -149,8 +161,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
+    paddingVertical: 18,
   },
-  darkModeRowLeft: {
+  linkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingVertical: 18,
+  },
+  rowLeft: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
@@ -160,53 +180,18 @@ const styles = StyleSheet.create({
   rowTextWrap: {
     flex: 1,
     gap: 2,
+    minWidth: 0,
   },
   label: {
     color: lightColors.textPrimary,
     fontSize: 15,
-    fontWeight: "600",
-  },
-  description: {
-    color: lightColors.textMuted,
-    fontSize: 12,
-  },
-  descriptionDark: {
-    color: darkColors.textSecondary,
-  },
-  textDark: {
-    color: darkColors.textPrimary,
-  },
-  themesRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  themesRowLeft: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    minWidth: 0,
-  },
-  themesRowRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  themesCurrent: {
-    flexShrink: 1,
-    fontSize: 13,
-    color: lightColors.textMuted,
     fontWeight: "500",
-    textAlign: "right",
   },
-  themesCurrentDark: {
-    color: darkColors.textSecondary,
+  labelDark: {
+    color: "#ffffff",
   },
-  accentChevron: {
-    opacity: 0.55,
+  subtitle: {
+    fontSize: 11,
+    fontWeight: "400",
   },
 });

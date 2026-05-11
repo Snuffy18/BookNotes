@@ -5,8 +5,18 @@ import { Text, type StyleProp, type TextStyle } from "react-native";
  * study highlight preferences request emphasis. Splits on `**` pairs so
  * multiple spans and phrases with internal punctuation work.
  */
-export function RichNoteText({ text, style }: { text: string; style?: StyleProp<TextStyle> }) {
+export function RichNoteText({
+  text,
+  style,
+  boldStyle,
+}: {
+  text: string;
+  style?: StyleProp<TextStyle>;
+  /** Overrides default bold span style (`fontWeight: "700"`). */
+  boldStyle?: StyleProp<TextStyle>;
+}) {
   const segments = text.split("**");
+  const boldDefault = { fontWeight: "700" as const };
   if (segments.length === 1) {
     return <Text style={style}>{text}</Text>;
   }
@@ -18,7 +28,7 @@ export function RichNoteText({ text, style }: { text: string; style?: StyleProp<
           return null;
         }
         return (
-          <Text key={i} style={isBold ? [style, { fontWeight: "700" }] : style}>
+          <Text key={i} style={isBold ? [style, boldStyle ?? boldDefault] : style}>
             {segment}
           </Text>
         );

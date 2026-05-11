@@ -3,7 +3,6 @@ import { CropPhotoScreen } from "../screens/CropPhotoScreen";
 import { ExtractionOptionsScreen } from "../screens/ExtractionOptionsScreen";
 import { ProcessingScreen } from "../screens/ProcessingScreen";
 import { ReadingHistoryScreen } from "../screens/ReadingHistoryScreen";
-import { ReportDetailsScreen } from "../screens/ReportDetailsScreen";
 import { ResultsScreen } from "../screens/ResultsScreen";
 import { ScanCameraScreen } from "../screens/ScanCameraScreen";
 import { StreakDetailsScreen } from "../screens/StreakDetailsScreen";
@@ -29,7 +28,6 @@ export function ScanStackNavigator() {
       <ScanStack.Screen name="ExtractionOptions" component={ExtractionOptionsScreen} />
       <ScanStack.Screen name="Processing" component={ProcessingScreen} />
       <ScanStack.Screen name="Results" component={ResultsScreen} />
-      <ScanStack.Screen name="ReportDetails" component={ReportDetailsScreen} />
     </ScanStack.Navigator>
   );
 }

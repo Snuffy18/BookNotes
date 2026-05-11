@@ -7,6 +7,7 @@ import { AppSettingsProvider, useAppSettings } from "./src/context/AppSettingsCo
 import { ReadingSessionProvider } from "./src/context/ReadingSessionContext";
 import { ScanProvider } from "./src/context/ScanContext";
 import { StreakProvider } from "./src/context/StreakContext";
+import { ExportPreferencesProvider } from "./src/context/ExportPreferencesContext";
 import { StudyPreferencesProvider } from "./src/context/StudyPreferencesContext";
 import { RootTabNavigator } from "./src/navigation/RootTabNavigator";
 import { accentColors, darkColors, lightColors } from "./src/theme/colors";
@@ -60,15 +61,17 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AppSettingsProvider>
-          <StudyPreferencesProvider>
-            <ScanProvider>
-              <ReadingSessionProvider>
-                <StreakProvider>
-                  <AppContent />
-                </StreakProvider>
-              </ReadingSessionProvider>
-            </ScanProvider>
-          </StudyPreferencesProvider>
+          <ExportPreferencesProvider>
+            <StudyPreferencesProvider>
+              <ScanProvider>
+                <ReadingSessionProvider>
+                  <StreakProvider>
+                    <AppContent />
+                  </StreakProvider>
+                </ReadingSessionProvider>
+              </ScanProvider>
+            </StudyPreferencesProvider>
+          </ExportPreferencesProvider>
         </AppSettingsProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

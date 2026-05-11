@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  ActionSheetIOS,
   Alert,
   Animated,
   Dimensions,
   Easing,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,28 +15,32 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import type { NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as Clipboard from "expo-clipboard";
 import { PdfExportToast, type PdfExportToastMode } from "../components/PdfExportToast";
+import { ReportStudySettingsModal } from "../components/ReportStudySettingsModal";
 import { RichNoteText } from "../components/RichNoteText";
-import { StudySettingsSummaryCard } from "../components/StudySettingsSummaryCard";
 import { useAppSettings } from "../context/AppSettingsContext";
+import { useExportPreferences } from "../context/ExportPreferencesContext";
 import { useScanContext } from "../context/ScanContext";
-import type { LibraryStackParamList, ScanStackParamList } from "../navigation/types";
+import type { LibraryStackParamList, RootTabParamList, ScanStackParamList } from "../navigation/types";
 import type { ExtractionMode, ScanItem } from "../types/note";
-import { DEFAULT_STUDY_PREFERENCES } from "../types/studyPreferences";
+import { pdfContentOptionsFromPrefs } from "../types/exportPreferences";
+import { DEFAULT_STUDY_PREFERENCES, type StudyPreferencesSnapshot } from "../types/studyPreferences";
+import { labelLength, labelTone } from "../study/studyPreferenceLabels";
 import {
   createSingleReportPdf,
   sanitizeFileBase,
   singleReportShareLabel,
 } from "../utils/bookReportsPdf";
+import { playSoundEffect } from "../utils/soundEffects";
 import { splitCaseInsensitive } from "../utils/splitCaseInsensitive";
 import { stripMarkdownBoldMarkers } from "../utils/stripMarkdownBoldMarkers";
 import { darkColors, lightColors } from "../theme/colors";
 import { FONT_CANELA_TEXT_BOLD } from "../theme/fonts";
-import { hexWithAlpha } from "../theme/colorUtils";
 
 const COPIED_TOAST_H = 32;
 const COPIED_TOAST_W_START = 32;
@@ -45,11 +51,15 @@ const COPIED_TOAST_EXPAND_MS = 650;
 const COPIED_TOAST_VISIBLE_MS =
   COPIED_TOAST_HOLD_MS + COPIED_TOAST_EXPAND_MS + 1800;
 
-type Props =
-  | NativeStackScreenProps<LibraryStackParamList, "ReportDetails">
-  | NativeStackScreenProps<ScanStackParamList, "ReportDetails">;
-type CopyOptionKey = "summary" | "bulletPoints" | "detailedNotes" | "quotes";
+type Props = NativeStackScreenProps<LibraryStackParamList, "ReportDetails">;
 
+type CopySectionKey =
+  | "summary"
+  | "bulletPoints"
+  | "detailedNotes"
+  | "reinforcedIdeas"
+  | "quotes"
+  | "keywords";
 function pushCopySection(lines: string[], title: string, body: string | string[]) {
   lines.push(title);
   if (Array.isArray(body)) {
@@ -90,8 +100,40 @@ function formatExtractionLabel(modes: ExtractionMode[]) {
   return modes.map((mode) => EXTRACTION_LABELS[mode]).join(" + ");
 }
 
+const RPT = {
+  blue: "#60a5fa",
+  blueBg: "rgba(59,130,246,0.12)",
+  blueMutedBg: "rgba(59,130,246,0.08)",
+  purple: "#a855f7",
+  purpleBg: "rgba(168,85,247,0.12)",
+  amber: "#fbbf24",
+  amberBg: "rgba(251,191,36,0.12)",
+  green: "#4ade80",
+  greenBg: "rgba(74,222,128,0.1)",
+  slate: "#94a3b8",
+  slateBg: "rgba(148,163,184,0.12)",
+  primaryBtn: "#2563eb",
+  orange: "#fb923c",
+  orangeBg: "rgba(251,146,60,0.12)",
+};
+
+function formatReportMetaTime(d: Date): string {
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (isToday) return `Today, ${timeStr}`;
+  return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function keywordSentenceCase(raw: string): string {
+  const t = stripMarkdownBoldMarkers(raw).trim();
+  if (!t) return t;
+  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+}
+
 export function ReportDetailsScreen({ route, navigation }: Props) {
   const { darkMode, accentColor } = useAppSettings();
+  const exportPrefs = useExportPreferences();
   const insets = useSafeAreaInsets();
   const { removeScan, books, scans, updateScan } = useScanContext();
   const { item: routeItem, highlightQuery } = route.params;
@@ -103,6 +145,8 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
     () => (item.bookId ? books.find((b) => b.id === item.bookId) : undefined),
     [books, item.bookId],
   );
+  const reportBookTitle = bookForReport?.title ?? item.book ?? "Report";
+  const chapterHeadline = item.chapter?.trim() || "This page";
   const studyPrefsUsed = item.studyPreferences ?? DEFAULT_STUDY_PREFERENCES;
   const extractionModes = getExtractionModes(item.extractionMode, item.extractionModes);
   const showEverything = extractionModes.includes("everything");
@@ -113,7 +157,7 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
   const showKeywords = showEverything || extractionModes.includes("words");
   const showVocabularyDefinitions = !showEverything && extractionModes.includes("words");
 
-  const onDeleteReport = () => {
+  const onDeleteReport = useCallback(() => {
     Alert.alert(
       "Delete report",
       "This report will be permanently removed.",
@@ -129,7 +173,7 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
         },
       ]
     );
-  };
+  }, [item.id, navigation, removeScan]);
 
   const createdAt = new Date(item.createdAt);
   const createdLabel = createdAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -139,14 +183,94 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
   const [highlightActive, setHighlightActive] = useState(Boolean(highlightQuery));
   /** Keyword chip tap: highlight this term everywhere until user taps to dismiss. */
   const [keywordTapHighlight, setKeywordTapHighlight] = useState<string | null>(null);
-  /** Per-section copy icons only while true; cleared after a successful copy or by Done. */
+  /** When true, each section header shows a copy control for that section only. */
   const [sectionCopyMode, setSectionCopyMode] = useState(false);
+  const [studySettingsModalVisible, setStudySettingsModalVisible] = useState(false);
   const [copiedToastVisible, setCopiedToastVisible] = useState(false);
   const [pdfToastMode, setPdfToastMode] = useState<PdfExportToastMode | null>(null);
   const copiedToastExpand = useRef(new Animated.Value(0)).current;
   const [pageEditorOpen, setPageEditorOpen] = useState(false);
   const [pageDraft, setPageDraft] = useState("");
   const missingPage = !item.page?.trim();
+
+  const studySettingTags = useMemo(
+    () => [
+      labelTone(studyPrefsUsed.tone),
+      labelLength(studyPrefsUsed.length),
+      studyPrefsUsed.highlightKeyTerms ? "Key terms" : "No key terms",
+    ],
+    [studyPrefsUsed]
+  );
+
+  const sheet = useMemo(
+    () =>
+      darkMode
+        ? {
+            screenBg: darkColors.background,
+            navCircle: "rgba(255,255,255,0.08)",
+            navIconMuted: "rgba(255,255,255,0.6)",
+            breadcrumb: "rgba(255,255,255,0.4)",
+            chapter: "#ffffff",
+            pillBg: "rgba(255,255,255,0.06)",
+            pillBorder: "rgba(255,255,255,0.1)",
+            pillText: "rgba(255,255,255,0.4)",
+            extractPillBg: "rgba(59,130,246,0.1)",
+            extractPillBorder: "rgba(59,130,246,0.35)",
+            extractPillText: RPT.blue,
+            headerRule: "rgba(255,255,255,0.07)",
+            studyRowBg: "rgba(255,255,255,0.04)",
+            studyRowBorder: "rgba(255,255,255,0.07)",
+            studyIcon: "rgba(255,255,255,0.4)",
+            studyLabel: "rgba(255,255,255,0.3)",
+            studyTagBg: "rgba(255,255,255,0.06)",
+            studyTagText: "rgba(255,255,255,0.35)",
+            studyChevron: "rgba(255,255,255,0.2)",
+            sectionCardBg: "rgba(255,255,255,0.05)",
+            sectionCardBorder: "rgba(255,255,255,0.08)",
+            sectionHeaderRule: "rgba(255,255,255,0.06)",
+            sectionTitle: "#ffffff",
+            bodyMuted: "rgba(255,255,255,0.7)",
+            quoteMuted: "rgba(255,255,255,0.6)",
+            actionBarBg: darkColors.background,
+            actionBarBorder: "rgba(255,255,255,0.07)",
+            actionSecondaryBg: "rgba(255,255,255,0.07)",
+            actionSecondaryBorder: "rgba(255,255,255,0.1)",
+            actionSecondaryLabel: "rgba(255,255,255,0.6)",
+          }
+        : {
+            screenBg: lightColors.background,
+            navCircle: "rgba(15,23,42,0.06)",
+            navIconMuted: "rgba(15,23,42,0.55)",
+            breadcrumb: "rgba(15,23,42,0.45)",
+            chapter: lightColors.textPrimary,
+            pillBg: "rgba(15,23,42,0.06)",
+            pillBorder: "rgba(15,23,42,0.1)",
+            pillText: "rgba(15,23,42,0.5)",
+            extractPillBg: "rgba(59,130,246,0.08)",
+            extractPillBorder: "rgba(37,99,235,0.25)",
+            extractPillText: "#2563eb",
+            headerRule: "rgba(15,23,42,0.08)",
+            studyRowBg: "rgba(15,23,42,0.04)",
+            studyRowBorder: "rgba(15,23,42,0.08)",
+            studyIcon: "rgba(15,23,42,0.45)",
+            studyLabel: "rgba(15,23,42,0.35)",
+            studyTagBg: "rgba(15,23,42,0.06)",
+            studyTagText: "rgba(15,23,42,0.45)",
+            studyChevron: "rgba(15,23,42,0.25)",
+            sectionCardBg: lightColors.card,
+            sectionCardBorder: "rgba(15,23,42,0.1)",
+            sectionHeaderRule: "rgba(15,23,42,0.08)",
+            sectionTitle: lightColors.textPrimary,
+            bodyMuted: "rgba(15,23,42,0.75)",
+            quoteMuted: "rgba(15,23,42,0.65)",
+            actionBarBg: lightColors.card,
+            actionBarBorder: "rgba(15,23,42,0.1)",
+            actionSecondaryBg: "rgba(15,23,42,0.05)",
+            actionSecondaryBorder: "rgba(15,23,42,0.12)",
+            actionSecondaryLabel: "rgba(15,23,42,0.65)",
+          },
+    [darkMode]
+  );
 
   const pdfShareDialogTitle = useMemo(
     () => `Export ${sanitizeFileBase(singleReportShareLabel(item, bookForReport ?? null))}`,
@@ -156,14 +280,18 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
   const onExportReportPdf = useCallback(async () => {
     setPdfToastMode("loading");
     try {
-      const uri = await createSingleReportPdf(item, bookForReport ?? null);
+      const uri = await createSingleReportPdf(
+        item,
+        bookForReport ?? null,
+        pdfContentOptionsFromPrefs(exportPrefs)
+      );
       setPdfToastMode({ type: "ready", uri });
     } catch (e) {
       setPdfToastMode(null);
       const message = e instanceof Error ? e.message : "Could not create the PDF.";
       Alert.alert("Export failed", message);
     }
-  }, [item, bookForReport]);
+  }, [item, bookForReport, exportPrefs]);
 
   const onPdfToastDismissComplete = useCallback(() => {
     setPdfToastMode(null);
@@ -272,108 +400,134 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
     outputRange: [0, 0, 6],
   });
 
-  const onCopySucceeded = () => {
+  const onCopySucceeded = useCallback(() => {
     setSectionCopyMode(false);
     setCopiedToastVisible(true);
-  };
+  }, []);
+
+  const runSectionCopy = useCallback(
+    async (key: CopySectionKey) => {
+      const lines = [...buildReportHeaderLines(item, createdLabel)];
+
+      if (key === "summary") {
+        if (!showSummary) return;
+        pushCopySection(lines, "Summary", stripMarkdownBoldMarkers(item.notes.summary));
+      } else if (key === "bulletPoints") {
+        if (!showMainIdeas) return;
+        pushCopySection(
+          lines,
+          "Bullet Points",
+          item.notes.mainIdeas.map((idea) => stripMarkdownBoldMarkers(idea))
+        );
+      } else if (key === "detailedNotes") {
+        if (!showDetailedNotes) return;
+        pushCopySection(lines, "Detailed Notes", stripMarkdownBoldMarkers(item.notes.detailedNotes));
+      } else if (key === "reinforcedIdeas") {
+        if (!item.reinforcedIdeas?.length) return;
+        pushCopySection(
+          lines,
+          "Reinforced Ideas",
+          item.reinforcedIdeas.map((match) => {
+            const idea = stripMarkdownBoldMarkers(match.idea);
+            return match.matchedPage ? `${idea} (also seen on page ${match.matchedPage})` : idea;
+          })
+        );
+      } else if (key === "quotes") {
+        if (!showQuotes) return;
+        const quotes = item.notes.quotes ?? [];
+        pushCopySection(
+          lines,
+          "Quotes",
+          quotes.map((quote) => stripMarkdownBoldMarkers(quote))
+        );
+      } else if (key === "keywords") {
+        if (!showKeywords) return;
+        const sectionLabel = showEverything ? "Keywords" : "Words";
+        if (showVocabularyDefinitions && item.notes.vocabularyTerms && item.notes.vocabularyTerms.length > 0) {
+          pushCopySection(
+            lines,
+            sectionLabel,
+            item.notes.vocabularyTerms.map(
+              (term) =>
+                `${stripMarkdownBoldMarkers(term.word)}: ${stripMarkdownBoldMarkers(term.definition)}`
+            )
+          );
+        } else {
+          pushCopySection(
+            lines,
+            sectionLabel,
+            item.notes.keywords.map((keyword) => stripMarkdownBoldMarkers(keyword))
+          );
+        }
+      }
+
+      await Clipboard.setStringAsync(lines.join("\n").trim());
+      playSoundEffect("aiExtractionCompleted");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      onCopySucceeded();
+    },
+    [
+      item,
+      createdLabel,
+      showSummary,
+      showMainIdeas,
+      showDetailedNotes,
+      showQuotes,
+      showKeywords,
+      showEverything,
+      showVocabularyDefinitions,
+      onCopySucceeded,
+    ]
+  );
+
+  const openOverflowMenu = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const runDelete = () => onDeleteReport();
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ["Delete report", "Cancel"],
+          cancelButtonIndex: 1,
+          destructiveButtonIndex: 0,
+        },
+        (idx) => {
+          if (idx === 0) runDelete();
+        }
+      );
+    } else {
+      Alert.alert("Report", undefined, [
+        { text: "Delete report", style: "destructive", onPress: runDelete },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  }, [onDeleteReport]);
+
+  const openStudySettingsModal = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setStudySettingsModalVisible(true);
+  }, []);
+
+  const onStudyPrefsContinueToExtract = useCallback(
+    (prefs: StudyPreferencesSnapshot) => {
+      setStudySettingsModalVisible(false);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      const params: ScanStackParamList["ExtractionOptions"] = {
+        imageUri: item.imageUri,
+        ...(item.page?.trim() ? { page: item.page.trim() } : {}),
+        ...(item.chapter?.trim() ? { chapter: item.chapter.trim() } : {}),
+        rescanForScanId: item.id,
+        studyPreferences: prefs,
+        rescanReturnTab: "library",
+      };
+      /** Report details only lives on the Library stack; its parent is the root tab. */
+      const tabNav = navigation.getParent() as NavigationProp<RootTabParamList> | undefined;
+      tabNav?.navigate("ScanFlow", { screen: "ExtractionOptions", params });
+    },
+    [item.chapter, item.id, item.imageUri, item.page, navigation]
+  );
 
   const showSearchHighlight = Boolean(normalizedQuery) && highlightActive;
   const keywordNeedle = keywordTapHighlight?.trim() ?? "";
-  const copyOneSection = async (key: CopyOptionKey) => {
-    const lines = [...buildReportHeaderLines(item, createdLabel)];
-
-    if (key === "summary" && showSummary) {
-      pushCopySection(lines, "Summary", stripMarkdownBoldMarkers(item.notes.summary));
-    } else if (key === "bulletPoints" && showMainIdeas) {
-      pushCopySection(
-        lines,
-        "Bullet Points",
-        item.notes.mainIdeas.map((idea) => stripMarkdownBoldMarkers(idea))
-      );
-    } else if (key === "detailedNotes" && showDetailedNotes) {
-      pushCopySection(lines, "Detailed Notes", stripMarkdownBoldMarkers(item.notes.detailedNotes));
-    } else if (key === "quotes" && showQuotes) {
-      const quotes = item.notes.quotes ?? [];
-      pushCopySection(
-        lines,
-        "Quotes",
-        quotes.map((quote) => stripMarkdownBoldMarkers(quote))
-      );
-    } else {
-      return;
-    }
-
-    await Clipboard.setStringAsync(lines.join("\n").trim());
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    onCopySucceeded();
-  };
-
-  const copyKeywordsSection = async () => {
-    const lines = [...buildReportHeaderLines(item, createdLabel)];
-    const sectionLabel = showEverything ? "Keywords" : "Words";
-    if (showVocabularyDefinitions && item.notes.vocabularyTerms && item.notes.vocabularyTerms.length > 0) {
-      pushCopySection(
-        lines,
-        sectionLabel,
-        item.notes.vocabularyTerms.map(
-          (term) =>
-            `${stripMarkdownBoldMarkers(term.word)}: ${stripMarkdownBoldMarkers(term.definition)}`
-        )
-      );
-    } else if (item.notes.keywords.length > 0) {
-      pushCopySection(
-        lines,
-        sectionLabel,
-        item.notes.keywords.map((keyword) => stripMarkdownBoldMarkers(keyword))
-      );
-    } else {
-      pushCopySection(lines, sectionLabel, []);
-    }
-    await Clipboard.setStringAsync(lines.join("\n").trim());
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    onCopySucceeded();
-  };
-
-  const copyReinforcedIdeasSection = async () => {
-    if (!item.reinforcedIdeas?.length) return;
-    const lines = [...buildReportHeaderLines(item, createdLabel)];
-    pushCopySection(
-      lines,
-      "Reinforced Ideas",
-      item.reinforcedIdeas.map((match) => {
-        const idea = stripMarkdownBoldMarkers(match.idea);
-        return match.matchedPage ? `${idea} (also seen on page ${match.matchedPage})` : idea;
-      })
-    );
-    await Clipboard.setStringAsync(lines.join("\n").trim());
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    onCopySucceeded();
-  };
-
-  const renderSectionHeader = (title: string, onCopy: () => void | Promise<void>) => (
-    <View style={styles.sectionHeaderRow}>
-      <Text style={[styles.sectionTitle, styles.sectionTitleFlex, darkMode && styles.textPrimaryDark]}>
-        {title}
-      </Text>
-      <View style={styles.sectionCopySlot}>
-        {sectionCopyMode ? (
-          <Pressable
-            onPress={() => void onCopy()}
-            style={({ pressed }) => [styles.sectionCopyBtn, pressed && styles.sectionCopyBtnPressed]}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel={`Copy ${title}`}
-          >
-            <Ionicons
-              name="copy-outline"
-              size={18}
-              color={darkMode ? darkColors.textSecondary : lightColors.textMuted}
-            />
-          </Pressable>
-        ) : null}
-      </View>
-    </View>
-  );
 
   const renderBodyText = (text: string, baseStyle: any) => {
     if (showSearchHighlight) {
@@ -383,6 +537,20 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
       return renderKeywordHighlightText(text, baseStyle, keywordNeedle);
     }
     return <RichNoteText text={text} style={baseStyle} />;
+  };
+
+  const renderSummaryBody = (text: string) => {
+    const baseStyle = [styles.summaryBody, { color: sheet.bodyMuted }];
+    const boldStyle = darkMode
+      ? { fontWeight: "600" as const, color: "rgba(255,255,255,1)" }
+      : { fontWeight: "600" as const, color: lightColors.textPrimary };
+    if (showSearchHighlight) {
+      return renderHighlightedText(text, baseStyle);
+    }
+    if (keywordNeedle.length > 0) {
+      return renderKeywordHighlightText(text, baseStyle, keywordNeedle);
+    }
+    return <RichNoteText text={text} style={baseStyle} boldStyle={boldStyle} />;
   };
 
   /**
@@ -459,163 +627,342 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
     );
   };
 
+  const renderSectionCard = (
+    layoutKey: string | undefined,
+    iconBg: string,
+    iconColor: string,
+    ionName: React.ComponentProps<typeof Ionicons>["name"],
+    title: string,
+    children: ReactNode,
+    copySectionKey?: CopySectionKey
+  ) => (
+    <View
+      style={[
+        styles.rptSectionCard,
+        { backgroundColor: sheet.sectionCardBg, borderColor: sheet.sectionCardBorder },
+      ]}
+      onLayout={
+        layoutKey
+          ? (e) => {
+              sectionY.current[layoutKey] = e.nativeEvent.layout.y;
+            }
+          : undefined
+      }
+    >
+      <View style={styles.rptSectionHeader}>
+        <View style={[styles.rptSectionIconWrap, { backgroundColor: iconBg }]}>
+          <Ionicons name={ionName} size={18} color={iconColor} />
+        </View>
+        <View style={styles.rptSectionTitleWrap}>
+          <Text style={[styles.rptSectionTitle, { color: sheet.sectionTitle }]}>{title}</Text>
+        </View>
+        {sectionCopyMode && copySectionKey ? (
+          <Pressable
+            onPress={() => void runSectionCopy(copySectionKey)}
+            style={({ pressed }) => [styles.rptSectionCopyHit, pressed && { opacity: 0.7 }]}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={`Copy ${title}`}
+          >
+            <Ionicons name="copy-outline" size={18} color={sheet.actionSecondaryLabel} />
+          </Pressable>
+        ) : null}
+      </View>
+      <View style={[styles.rptSectionHeaderDivider, { backgroundColor: sheet.sectionHeaderRule }]} />
+      <View style={styles.rptSectionBody}>{children}</View>
+    </View>
+  );
+
   const renderReportUpperSections = () => (
     <>
-      <View style={[styles.heroCard, darkMode && styles.cardDark]}>
-        <Text style={[styles.heroTitle, darkMode && styles.textPrimaryDark]}>
-          {item.book ?? "Report Details"}
-        </Text>
-        <Text style={[styles.heroMeta, darkMode && styles.textMutedDark]}>{createdLabel}</Text>
-        {item.chapter?.trim() ? (
-          <Text style={[styles.heroChapter, darkMode && styles.textMutedDark]}>
-            {item.chapter.trim()}
-          </Text>
-        ) : null}
-        {item.page?.trim() ? (
-          <Text style={[styles.heroPage, darkMode && styles.textMutedDark]}>Page {item.page.trim()}</Text>
-        ) : null}
-        <View style={styles.heroMetaRow}>
-          <View style={[styles.badge, { borderColor: accentColor }]}>
-            <Text style={[styles.badgeText, { color: accentColor }]}>
-              {formatExtractionLabel(extractionModes)}
-            </Text>
+      <View style={styles.rptHeaderBlock}>
+        <View style={styles.rptHeaderContent}>
+          <Text style={[styles.rptChapterTitle, { color: sheet.chapter }]}>{chapterHeadline}</Text>
+          <View style={styles.rptMetaPillRow}>
+            {item.page?.trim() ? (
+              <View style={[styles.rptMetaPill, { backgroundColor: sheet.pillBg, borderColor: sheet.pillBorder }]}>
+                <Text style={[styles.rptMetaPillText, { color: sheet.pillText }]}>p. {item.page.trim()}</Text>
+              </View>
+            ) : null}
+            <View style={[styles.rptMetaPill, { backgroundColor: sheet.pillBg, borderColor: sheet.pillBorder }]}>
+              <Text style={[styles.rptMetaPillText, { color: sheet.pillText }]}>
+                {formatReportMetaTime(createdAt)}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.rptMetaPill,
+                { backgroundColor: sheet.extractPillBg, borderColor: sheet.extractPillBorder },
+              ]}
+            >
+              <Text style={[styles.rptMetaPillText, { color: sheet.extractPillText }]}>
+                {formatExtractionLabel(extractionModes)}
+              </Text>
+            </View>
+            <View style={[styles.rptMetaPill, { backgroundColor: sheet.pillBg, borderColor: sheet.pillBorder }]}>
+              <Text style={[styles.rptMetaPillText, { color: sheet.pillText }]}>~{readingMinutes} min read</Text>
+            </View>
           </View>
-          <Text style={[styles.heroMeta, darkMode && styles.textMutedDark]}>
-            ~{readingMinutes} min read
-          </Text>
         </View>
+        <View style={[styles.rptHeaderRule, { backgroundColor: sheet.headerRule }]} />
       </View>
 
-      <StudySettingsSummaryCard prefs={studyPrefsUsed} darkMode={darkMode} accentColor={accentColor} />
-
-      {showSummary ? (
-        <View
-          style={[styles.sectionCard, darkMode && styles.cardDark]}
-          onLayout={(e) => {
-            sectionY.current.summary = e.nativeEvent.layout.y;
-          }}
-        >
-          {renderSectionHeader("Summary", () => copyOneSection("summary"))}
-          {renderBodyText(item.notes.summary, [
-            styles.sectionText,
-            darkMode && styles.textSecondaryDark,
-          ])}
+      <Pressable
+        onPress={openStudySettingsModal}
+        style={({ pressed }) => [
+          styles.rptStudyRow,
+          {
+            backgroundColor: sheet.studyRowBg,
+            borderColor: sheet.studyRowBorder,
+            opacity: pressed ? 0.88 : 1,
+          },
+        ]}
+      >
+        <View style={styles.rptStudyRowLeft}>
+          <Ionicons name="options-outline" size={15} color={sheet.studyIcon} />
+          <Text style={[styles.rptStudyLabel, { color: sheet.studyLabel }]}>Study settings</Text>
         </View>
-      ) : null}
-
-      {showMainIdeas ? (
-        <View
-          style={[styles.sectionCard, darkMode && styles.cardDark]}
-          onLayout={(e) => {
-            sectionY.current.mainIdeas = e.nativeEvent.layout.y;
-          }}
-        >
-          {renderSectionHeader("Bullet Points", () => copyOneSection("bulletPoints"))}
-          <View style={styles.ideasList}>
-            {item.notes.mainIdeas.length > 0 ? (
-              item.notes.mainIdeas.map((idea, index) => (
-                <View key={`${idea}-${index}`} style={styles.ideaRow}>
-                  <View style={[styles.ideaIndex, { borderColor: accentColor }]}>
-                    <Text style={[styles.ideaIndexText, { color: accentColor }]}>{index + 1}</Text>
-                  </View>
-                  {renderBodyText(idea, [
-                    styles.sectionText,
-                    styles.ideaText,
-                    darkMode && styles.textSecondaryDark,
-                  ])}
-                </View>
-              ))
-            ) : (
-              <Text style={[styles.sectionText, darkMode && styles.textSecondaryDark]}>
-                No bullet points were extracted from this page.
+        <View style={styles.rptStudyTags}>
+          {studySettingTags.map((tag) => (
+            <View key={tag} style={[styles.rptStudyTag, { backgroundColor: sheet.studyTagBg }]}>
+              <Text style={[styles.rptStudyTagText, { color: sheet.studyTagText }]} numberOfLines={1}>
+                {tag}
               </Text>
-            )}
-          </View>
-        </View>
-      ) : null}
-
-      {showDetailedNotes ? (
-        <View
-          style={[styles.sectionCard, darkMode && styles.cardDark]}
-          onLayout={(e) => {
-            sectionY.current.detailedNotes = e.nativeEvent.layout.y;
-          }}
-        >
-          {renderSectionHeader("Detailed Notes", () => copyOneSection("detailedNotes"))}
-          {renderBodyText(item.notes.detailedNotes, [
-            styles.sectionText,
-            darkMode && styles.textSecondaryDark,
-          ])}
-        </View>
-      ) : null}
-
-      {item.reinforcedIdeas && item.reinforcedIdeas.length > 0 ? (
-        <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
-          {renderSectionHeader("Reinforced Ideas", copyReinforcedIdeasSection)}
-          <Text style={[styles.sectionText, darkMode && styles.textSecondaryDark]}>
-            These ideas also appeared in earlier pages, suggesting they matter to your reading focus.
-          </Text>
-          <View style={styles.ideasList}>
-            {item.reinforcedIdeas.map((match, index) => (
-              <View key={`${match.idea}-${index}`} style={styles.ideaRow}>
-                <View style={[styles.ideaIndex, { borderColor: accentColor }]}>
-                  <Ionicons name="repeat-outline" size={12} color={accentColor} />
-                </View>
-                <View style={styles.ideaText}>
-                  {renderBodyText(match.idea, [
-                    styles.sectionText,
-                    darkMode && styles.textSecondaryDark,
-                  ])}
-                  {match.matchedPage ? (
-                    <Text style={[styles.heroMeta, darkMode && styles.textMutedDark]}>
-                      Also seen on page {match.matchedPage}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-      ) : null}
-
-      {showQuotes ? (
-        <View
-          style={[styles.sectionCard, darkMode && styles.cardDark]}
-          onLayout={(e) => {
-            sectionY.current.quotes = e.nativeEvent.layout.y;
-          }}
-        >
-          {renderSectionHeader("Quotes", () => copyOneSection("quotes"))}
-          {item.notes.quotes && item.notes.quotes.length > 0 ? (
-            <View style={styles.quotesList}>
-              {item.notes.quotes.map((quote, index) => (
-                <View
-                  key={`${index}-${quote.slice(0, 24)}`}
-                  style={[styles.quoteBlock, { borderLeftColor: accentColor }]}
-                >
-                  {renderBodyText(quote, [
-                    styles.sectionText,
-                    styles.quoteText,
-                    darkMode && styles.textSecondaryDark,
-                  ])}
-                </View>
-              ))}
             </View>
-          ) : (
-            <Text style={[styles.sectionText, darkMode && styles.textSecondaryDark]}>
-              No quotes were found on this page.
-            </Text>
-          )}
+          ))}
         </View>
-      ) : null}
+        <Ionicons name="chevron-forward" size={14} color={sheet.studyChevron} />
+      </Pressable>
+
+      {showSummary
+        ? renderSectionCard(
+            "summary",
+            RPT.blueBg,
+            RPT.blue,
+            "document-text-outline",
+            "Summary",
+            renderSummaryBody(item.notes.summary),
+            "summary"
+          )
+        : null}
+
+      {showMainIdeas
+        ? renderSectionCard(
+            "mainIdeas",
+            RPT.purpleBg,
+            RPT.purple,
+            "list-outline",
+            "Bullet points",
+            <View style={styles.rptBullets}>
+              {item.notes.mainIdeas.length > 0 ? (
+                item.notes.mainIdeas.map((idea, index) => (
+                  <View key={`${idea}-${index}`} style={styles.rptBulletRow}>
+                    <View style={styles.rptBulletNum}>
+                      <Text style={styles.rptBulletNumText}>{index + 1}</Text>
+                    </View>
+                    <View style={styles.rptBulletTextWrap}>
+                      {renderBodyText(idea, [styles.rptBulletText, { color: sheet.bodyMuted }])}
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <Text style={[styles.rptBulletText, { color: sheet.bodyMuted }]}>
+                  No bullet points were extracted from this page.
+                </Text>
+              )}
+            </View>,
+            "bulletPoints"
+          )
+        : null}
+
+      {showDetailedNotes
+        ? renderSectionCard(
+            "detailedNotes",
+            RPT.slateBg,
+            RPT.slate,
+            "document-text-outline",
+            "Detailed notes",
+            renderBodyText(item.notes.detailedNotes, [styles.rptBodyParagraph, { color: sheet.bodyMuted }]),
+            "detailedNotes"
+          )
+        : null}
+
+      {item.reinforcedIdeas && item.reinforcedIdeas.length > 0
+        ? renderSectionCard(
+            undefined,
+            RPT.orangeBg,
+            RPT.orange,
+            "repeat-outline",
+            "Reinforced ideas",
+            <>
+              <Text style={[styles.rptBodyParagraph, { color: sheet.bodyMuted }]}>
+                These ideas also appeared in earlier pages, suggesting they matter to your reading focus.
+              </Text>
+              <View style={styles.rptBullets}>
+                {item.reinforcedIdeas.map((match, index) => (
+                  <View key={`${match.idea}-${index}`} style={styles.rptBulletRow}>
+                    <View style={[styles.rptBulletNum, styles.rptBulletNumMuted]}>
+                      <Ionicons name="repeat-outline" size={12} color={RPT.blue} />
+                    </View>
+                    <View style={[styles.rptReinforcedBody, styles.rptBulletTextWrap]}>
+                      {renderBodyText(match.idea, [styles.rptBulletText, { color: sheet.bodyMuted }])}
+                      {match.matchedPage ? (
+                        <Text style={[styles.rptReinforcedMeta, { color: sheet.pillText }]}>
+                          Also seen on page {match.matchedPage}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </>,
+            "reinforcedIdeas"
+          )
+        : null}
+
+      {showQuotes
+        ? renderSectionCard(
+            "quotes",
+            RPT.amberBg,
+            RPT.amber,
+            "chatbubble-ellipses-outline",
+            "Quotes",
+            item.notes.quotes && item.notes.quotes.length > 0 ? (
+              <View style={styles.rptQuotesList}>
+                {item.notes.quotes.map((quote, index) => (
+                  <View key={`${index}-${quote.slice(0, 24)}`} style={styles.rptQuoteBlock}>
+                    {renderBodyText(quote, [styles.rptQuoteText, { color: sheet.quoteMuted }])}
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={[styles.rptBodyParagraph, { color: sheet.bodyMuted }]}>
+                No quotes were found on this page.
+              </Text>
+            ),
+            "quotes"
+          )
+        : null}
+
+      {showKeywords
+        ? renderSectionCard(
+            "keywords",
+            RPT.greenBg,
+            RPT.green,
+            "pricetag-outline",
+            showEverything ? "Keywords" : "Words",
+            showVocabularyDefinitions && item.notes.vocabularyTerms && item.notes.vocabularyTerms.length > 0 ? (
+              <View style={styles.vocabularyList}>
+                {item.notes.vocabularyTerms.map((term, index) => (
+                  <View
+                    key={`${index}-${term.word}`}
+                    style={[styles.vocabularyCard, darkMode && styles.vocabularyCardDark]}
+                  >
+                    {renderBodyText(term.word, [styles.vocabularyWord, { color: RPT.blue }])}
+                    {renderBodyText(term.definition, [styles.rptBodyParagraph, { color: sheet.bodyMuted }])}
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.rptKeywordWrap}>
+                {item.notes.keywords.map((keyword) => {
+                  const raw = stripMarkdownBoldMarkers(keyword);
+                  const label = keywordSentenceCase(raw);
+                  const isSearchMatch =
+                    Boolean(normalizedQuery) && highlightActive && raw.toLowerCase().includes(normalizedQuery);
+                  const isKeywordSelected = keywordNeedle.length > 0 && raw === keywordTapHighlight;
+                  return (
+                    <Pressable
+                      key={raw || keyword}
+                      onPress={() => {
+                        Haptics.selectionAsync().catch(() => {});
+                        setKeywordTapHighlight((prev) => (prev === raw ? null : raw));
+                      }}
+                      style={({ pressed }) => [
+                        styles.rptKeywordChip,
+                        isSearchMatch && {
+                          backgroundColor: `rgba(${accentRgb.r},${accentRgb.g},${accentRgb.b},0.14)`,
+                        },
+                        isKeywordSelected && {
+                          backgroundColor: `rgba(${accentRgb.r},${accentRgb.g},${accentRgb.b},0.22)`,
+                          borderWidth: 1,
+                          borderColor: RPT.blue,
+                        },
+                        pressed && { opacity: 0.9 },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.rptKeywordChipText,
+                          isSearchMatch && { fontWeight: "700" },
+                          isKeywordSelected && { fontWeight: "700" },
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ),
+            "keywords"
+          )
+        : null}
     </>
   );
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
+    <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, { backgroundColor: sheet.screenBg }]}>
+      <View style={styles.rptTopNav}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={({ pressed }) => [
+            styles.rptNavIconBtn,
+            { backgroundColor: sheet.navCircle },
+            pressed && { opacity: 0.85 },
+          ]}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="chevron-back" size={17} color={sheet.navIconMuted} />
+        </Pressable>
+        <Text style={[styles.rptNavBreadcrumb, { color: sheet.breadcrumb }]} numberOfLines={1}>
+          {reportBookTitle}
+        </Text>
+        <Pressable
+          onPress={() => void onExportReportPdf()}
+          disabled={pdfToastMode !== null}
+          style={({ pressed }) => [
+            styles.rptNavIconBtn,
+            { backgroundColor: sheet.navCircle },
+            pressed && { opacity: 0.85 },
+            pdfToastMode !== null && { opacity: 0.45 },
+          ]}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="Export report"
+        >
+          <Ionicons name="share-outline" size={17} color={sheet.navIconMuted} />
+        </Pressable>
+        <Pressable
+          onPress={openOverflowMenu}
+          style={({ pressed }) => [
+            styles.rptNavIconBtn,
+            { backgroundColor: sheet.navCircle },
+            pressed && { opacity: 0.85 },
+          ]}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="More options"
+        >
+          <Ionicons name="ellipsis-horizontal" size={17} color={sheet.navIconMuted} />
+        </Pressable>
+      </View>
+
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 116 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.scrollInner}>
@@ -698,83 +1045,13 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
           <View style={styles.reportUpper}>{renderReportUpperSections()}</View>
         )}
 
-        {showKeywords ? (
-          <View
-            style={[styles.sectionCard, darkMode && styles.cardDark]}
-            onLayout={(e) => {
-              sectionY.current.keywords = e.nativeEvent.layout.y;
-            }}
-          >
-          {renderSectionHeader(showEverything ? "Keywords" : "Words", copyKeywordsSection)}
-          {showVocabularyDefinitions && item.notes.vocabularyTerms && item.notes.vocabularyTerms.length > 0 ? (
-            <View style={styles.vocabularyList}>
-              {item.notes.vocabularyTerms.map((term, index) => (
-                <View
-                  key={`${index}-${term.word}`}
-                  style={[styles.vocabularyCard, darkMode && styles.vocabularyCardDark]}
-                >
-                  {renderBodyText(term.word, [
-                    styles.vocabularyWord,
-                    { color: accentColor },
-                  ])}
-                  {renderBodyText(term.definition, [
-                    styles.sectionText,
-                    darkMode && styles.textSecondaryDark,
-                  ])}
-                </View>
-              ))}
-            </View>
-          ) : (
-            <View style={styles.keywordWrap}>
-            {item.notes.keywords.map((keyword) => {
-              const label = stripMarkdownBoldMarkers(keyword);
-              const isSearchMatch =
-                Boolean(normalizedQuery) &&
-                highlightActive &&
-                label.toLowerCase().includes(normalizedQuery);
-              const isKeywordSelected = keywordNeedle.length > 0 && label === keywordTapHighlight;
-              return (
-                <Pressable
-                  key={label || keyword}
-                  onPress={() => {
-                    Haptics.selectionAsync().catch(() => {});
-                    setKeywordTapHighlight((prev) => (prev === label ? null : label));
-                  }}
-                  style={({ pressed }) => [
-                    styles.keywordChip,
-                    { borderColor: accentColor },
-                    isSearchMatch && {
-                      backgroundColor: `rgba(${accentRgb.r},${accentRgb.g},${accentRgb.b},0.14)`,
-                    },
-                    isKeywordSelected && {
-                      backgroundColor: `rgba(${accentRgb.r},${accentRgb.g},${accentRgb.b},0.22)`,
-                      borderWidth: 2,
-                    },
-                    pressed && styles.keywordChipPressed,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.keywordText,
-                      { color: accentColor },
-                      isSearchMatch && { fontWeight: "800" },
-                      isKeywordSelected && { fontWeight: "800" },
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-            </View>
-          )}
-        </View>
-        ) : null}
-
-        <TouchableOpacity style={styles.deleteReportBtn} onPress={onDeleteReport} activeOpacity={0.75}>
-          <Ionicons name="trash-outline" size={18} color="#dc2626" />
-          <Text style={styles.deleteReportText}>Delete report</Text>
-        </TouchableOpacity>
+        <Pressable
+          onPress={onDeleteReport}
+          style={({ pressed }) => [styles.rptDeleteLink, pressed && { opacity: 0.75 }]}
+        >
+          <Ionicons name="trash-outline" size={15} color="rgba(239,68,68,0.6)" />
+          <Text style={styles.rptDeleteLinkText}>Delete report</Text>
+        </Pressable>
         </View>
       </ScrollView>
 
@@ -785,7 +1062,7 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
             styles.copiedToast,
             darkMode && styles.copiedToastDark,
             {
-              bottom: 96 + insets.bottom,
+              bottom: 72 + insets.bottom,
               height: COPIED_TOAST_H,
               width: copiedToastWidth,
               borderRadius: copiedToastRadius,
@@ -815,13 +1092,26 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
         </Animated.View>
       ) : null}
 
-      <View style={[styles.stickyActionBar, darkMode && styles.cardDark]}>
+      <View
+        style={[
+          styles.rptActionBar,
+          {
+            backgroundColor: sheet.actionBarBg,
+            borderTopColor: sheet.actionBarBorder,
+            paddingBottom: Math.max(insets.bottom, 10),
+          },
+        ]}
+      >
         <TouchableOpacity
           style={[
-            styles.actionBtn,
+            styles.rptActionSecondary,
+            {
+              backgroundColor: sheet.actionSecondaryBg,
+              borderColor: sheet.actionSecondaryBorder,
+            },
             sectionCopyMode && {
-              borderColor: accentColor,
-              backgroundColor: hexWithAlpha(accentColor, 0.12),
+              borderColor: RPT.blue,
+              backgroundColor: "rgba(59,130,246,0.12)",
             },
           ]}
           onPress={() => setSectionCopyMode((v) => !v)}
@@ -829,33 +1119,50 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
         >
           <Ionicons
             name={sectionCopyMode ? "checkmark-outline" : "copy-outline"}
-            size={18}
-            color={sectionCopyMode ? accentColor : darkMode ? darkColors.textPrimary : lightColors.textPrimary}
+            size={17}
+            color={sectionCopyMode ? RPT.blue : sheet.actionSecondaryLabel}
           />
           <Text
             style={[
-              styles.actionText,
-              darkMode && styles.textPrimaryDark,
-              sectionCopyMode && { color: accentColor },
+              styles.rptActionSecondaryText,
+              { color: sectionCopyMode ? RPT.blue : sheet.actionSecondaryLabel },
             ]}
           >
             {sectionCopyMode ? "Done" : "Copy"}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={styles.actionBtn}
+          style={[
+            styles.rptActionSecondary,
+            {
+              backgroundColor: sheet.actionSecondaryBg,
+              borderColor: sheet.actionSecondaryBorder,
+            },
+          ]}
           onPress={() => void onExportReportPdf()}
           activeOpacity={0.85}
           disabled={pdfToastMode !== null}
         >
-          <Ionicons name="share-outline" size={18} color={darkMode ? darkColors.textPrimary : lightColors.textPrimary} />
-          <Text style={[styles.actionText, darkMode && styles.textPrimaryDark]}>Export</Text>
+          <Ionicons name="share-outline" size={17} color={sheet.actionSecondaryLabel} />
+          <Text style={[styles.rptActionSecondaryText, { color: sheet.actionSecondaryLabel }]}>Export</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtnPrimary, { backgroundColor: accentColor }]}>
-          <Ionicons name="sparkles-outline" size={18} color="#fff" />
-          <Text style={styles.actionTextPrimary}>Ask AI</Text>
+        <TouchableOpacity
+          style={styles.rptActionPrimary}
+          onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {})}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="sparkles" size={17} color="#ffffff" />
+          <Text style={styles.rptActionPrimaryText}>Ask AI</Text>
         </TouchableOpacity>
       </View>
+
+      <ReportStudySettingsModal
+        visible={studySettingsModalVisible}
+        onClose={() => setStudySettingsModalVisible(false)}
+        initialPrefs={studyPrefsUsed}
+        darkMode={darkMode}
+        onContinueToExtract={onStudyPrefsContinueToExtract}
+      />
 
       <PdfExportToast
         mode={pdfToastMode}
@@ -870,19 +1177,275 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     position: "relative",
-    backgroundColor: lightColors.background,
-    paddingHorizontal: 18,
-    paddingTop: 10,
+    paddingTop: 0,
   },
-  screenDark: {
-    backgroundColor: darkColors.background,
+  rptTopNav: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 6,
   },
-  scrollContent: {
-    paddingBottom: 110 + 72,
+  rptNavIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  /** Gap between report cards (ScrollView gap only applies to direct children). */
+  rptNavBreadcrumb: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  scrollContent: {},
   scrollInner: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
     gap: 12,
+  },
+  rptHeaderBlock: {
+    marginHorizontal: -20,
+  },
+  rptHeaderContent: {
+    paddingHorizontal: 20,
+  },
+  rptChapterTitle: {
+    fontSize: 22,
+    fontWeight: "600",
+    lineHeight: 26,
+    marginBottom: 6,
+  },
+  rptMetaPillRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  rptMetaPill: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    borderWidth: 0.5,
+  },
+  rptMetaPillText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  rptHeaderRule: {
+    height: 0.5,
+    marginTop: 12,
+  },
+  rptStudyRow: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 0.5,
+    gap: 8,
+  },
+  rptStudyRowLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 0,
+  },
+  rptStudyLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  rptStudyTags: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 4,
+    minWidth: 0,
+  },
+  rptStudyTag: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+    maxWidth: "100%",
+  },
+  rptStudyTagText: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  rptSectionCard: {
+    borderRadius: 14,
+    borderWidth: 0.5,
+    overflow: "hidden",
+  },
+  rptSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  rptSectionIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rptSectionTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: "center",
+  },
+  rptSectionTitle: {
+    fontSize: 17,
+    fontFamily: FONT_CANELA_TEXT_BOLD,
+    fontWeight: "400",
+  },
+  rptSectionCopyHit: {
+    padding: 6,
+    marginLeft: 4,
+  },
+  rptSectionHeaderDivider: {
+    height: 0.5,
+  },
+  rptSectionBody: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  summaryBody: {
+    fontSize: 13,
+    lineHeight: 20.8,
+  },
+  rptBodyParagraph: {
+    fontSize: 13,
+    lineHeight: 20.8,
+  },
+  rptBullets: {
+    gap: 10,
+  },
+  rptBulletRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  rptBulletNum: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(59,130,246,0.15)",
+    borderWidth: 0.5,
+    borderColor: "rgba(59,130,246,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  rptBulletNumMuted: {
+    backgroundColor: "rgba(59,130,246,0.1)",
+  },
+  rptBulletNumText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: RPT.blue,
+  },
+  rptBulletTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  rptBulletText: {
+    fontSize: 13,
+    lineHeight: 19.5,
+  },
+  rptReinforcedBody: {
+    gap: 4,
+  },
+  rptReinforcedMeta: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  rptQuotesList: {
+    gap: 12,
+  },
+  rptQuoteBlock: {
+    borderLeftWidth: 2,
+    borderLeftColor: RPT.blue,
+    paddingLeft: 10,
+  },
+  rptQuoteText: {
+    fontSize: 13,
+    lineHeight: 20.8,
+    fontStyle: "italic",
+  },
+  rptKeywordWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  rptKeywordChip: {
+    backgroundColor: "rgba(59,130,246,0.08)",
+    borderWidth: 0.5,
+    borderColor: "rgba(59,130,246,0.2)",
+    borderRadius: 20,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  rptKeywordChipText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: RPT.blue,
+  },
+  rptDeleteLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 20,
+  },
+  rptDeleteLinkText: {
+    fontSize: 13,
+    color: "rgba(239,68,68,0.6)",
+    fontWeight: "500",
+  },
+  rptActionBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: 0.5,
+  },
+  rptActionSecondary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 0.5,
+  },
+  rptActionSecondaryText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  rptActionPrimary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: RPT.primaryBtn,
+  },
+  rptActionPrimaryText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#ffffff",
   },
   addPageCard: {
     backgroundColor: lightColors.card,
@@ -937,90 +1500,6 @@ const styles = StyleSheet.create({
     backgroundColor: darkColors.card,
     borderColor: darkColors.border,
   },
-  heroCard: {
-    backgroundColor: lightColors.card,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    borderRadius: 16,
-    padding: 14,
-    gap: 6,
-  },
-  heroTitle: {
-    color: lightColors.textPrimary,
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  heroMeta: {
-    color: lightColors.textMuted,
-    fontSize: 12,
-  },
-  heroPage: {
-    color: lightColors.textMuted,
-    fontSize: 13,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  heroChapter: {
-    color: lightColors.textMuted,
-    fontSize: 13,
-    fontFamily: FONT_CANELA_TEXT_BOLD,
-    fontWeight: "400",
-    marginTop: 2,
-  },
-  heroMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 2,
-  },
-  badge: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  sectionCard: {
-    backgroundColor: lightColors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    padding: 14,
-    gap: 10,
-  },
-  sectionHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    minHeight: 30,
-  },
-  sectionCopySlot: {
-    width: 30,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sectionTitle: {
-    color: lightColors.textPrimary,
-    fontSize: 17,
-    fontWeight: "800",
-  },
-  sectionTitleFlex: {
-    flex: 1,
-  },
-  sectionCopyBtn: {
-    padding: 6,
-    borderRadius: 8,
-  },
-  sectionCopyBtnPressed: {
-    opacity: 0.65,
-  },
-  sectionText: {
-    color: lightColors.textSecondary,
-    lineHeight: 21,
-  },
   textPrimaryDark: {
     color: darkColors.textPrimary,
   },
@@ -1030,46 +1509,6 @@ const styles = StyleSheet.create({
   textMutedDark: {
     color: darkColors.textMuted,
   },
-  ideasList: {
-    gap: 10,
-  },
-  ideaRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  ideaIndex: {
-    width: 24,
-    height: 24,
-    borderRadius: 999,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
-  },
-  ideaIndexText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  ideaText: {
-    flex: 1,
-  },
-  quotesList: {
-    gap: 12,
-  },
-  quoteBlock: {
-    borderLeftWidth: 3,
-    paddingLeft: 12,
-  },
-  quoteText: {
-    fontStyle: "italic",
-  },
-  keywordWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  /** Hero + notes + quotes column (inside dismiss Pressable or plain). */
   reportUpper: {
     gap: 12,
   },
@@ -1078,19 +1517,6 @@ const styles = StyleSheet.create({
   },
   keywordDismissFill: {
     flexGrow: 1,
-  },
-  keywordChip: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  keywordChipPressed: {
-    opacity: 0.85,
-  },
-  keywordText: {
-    fontSize: 12,
-    fontWeight: "700",
   },
   vocabularyList: {
     gap: 10,
@@ -1108,64 +1534,8 @@ const styles = StyleSheet.create({
     backgroundColor: darkColors.background,
   },
   vocabularyWord: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "800",
-  },
-  deleteReportBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    marginTop: 4,
-  },
-  deleteReportText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#dc2626",
-  },
-  stickyActionBar: {
-    position: "absolute",
-    left: 18,
-    right: 18,
-    bottom: 18,
-    flexDirection: "row",
-    gap: 8,
-    backgroundColor: lightColors.card,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    borderRadius: 22,
-    padding: 8,
-  },
-  actionBtn: {
-    flex: 1,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    flexDirection: "row",
-    gap: 6,
-  },
-  actionBtnPrimary: {
-    flex: 1.3,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    flexDirection: "row",
-    gap: 6,
-  },
-  actionText: {
-    color: lightColors.textPrimary,
-    fontWeight: "700",
-    fontSize: 12,
-  },
-  actionTextPrimary: {
-    color: "#fff",
-    fontWeight: "800",
-    fontSize: 12,
   },
   copiedToast: {
     position: "absolute",

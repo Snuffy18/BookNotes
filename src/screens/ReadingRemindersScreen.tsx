@@ -31,6 +31,8 @@ type ReminderSlot = {
   at: Date;
 };
 
+const SWITCH_ON = "#2563eb";
+
 function makeTime(hour: number, minute: number): Date {
   const d = new Date();
   d.setSeconds(0, 0);
@@ -58,6 +60,8 @@ export function ReadingRemindersScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerSlot, setPickerSlot] = useState<ReminderSlotKey | null>(null);
   const [pickerDraft, setPickerDraft] = useState<Date>(() => new Date());
+
+  const switchTrackOff = darkMode ? "#3f3f3f" : "#d1d5db";
 
   const setSlot = useCallback((key: ReminderSlotKey, patch: Partial<ReminderSlot>) => {
     setSlots((s) => ({ ...s, [key]: { ...s[key], ...patch } }));
@@ -107,84 +111,75 @@ export function ReadingRemindersScreen() {
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
-      <View style={styles.topNavRow}>
+      <View style={styles.topBar}>
         <TouchableOpacity
-          style={[styles.navCircle, darkMode && styles.navCircleDark]}
+          style={styles.topBarSide}
           onPress={() => navigation.goBack()}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.7}
         >
           <Ionicons
             name="chevron-back"
-            size={22}
+            size={26}
             color={darkMode ? darkColors.textPrimary : lightColors.textPrimary}
           />
         </TouchableOpacity>
-        <View style={styles.topNavSpacer} />
+        <Text style={[styles.topBarTitle, darkMode && styles.topBarTitleDark]} numberOfLines={1}>
+          Reading reminders
+        </Text>
+        <View style={styles.topBarSide} />
       </View>
-
-      <Text style={[styles.pageTitle, darkMode && styles.pageTitleDark]}>Reading reminders</Text>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <SettingsOptionHeroCard
           icon="notifications-outline"
           title="Reading reminders"
-          description="Choose when to get gentle nudges to read and capture notes. Enable each slot, pick a time, and use End of Day for one daily wrap-up reminder."
+          description="Set daily nudges to read and capture notes."
+          compactDescription
         />
-        <View style={[styles.card, darkMode && styles.cardDark]}>
+
+        <View style={[styles.unifiedCard, darkMode && styles.unifiedCardDark]}>
           <ReminderRow
             label="Morning"
             slot={slots.morning}
             darkMode={darkMode}
+            switchTrackOff={switchTrackOff}
             onToggle={(v) => setSlot("morning", { enabled: v })}
             onTimePress={() => openTimePicker("morning")}
           />
-          <View style={[styles.rowSeparator, darkMode && styles.rowSeparatorDark]} />
+          <View style={[styles.rowDividerThin, darkMode && styles.rowDividerThinDark]} />
           <ReminderRow
             label="Afternoon"
             slot={slots.afternoon}
             darkMode={darkMode}
+            switchTrackOff={switchTrackOff}
             onToggle={(v) => setSlot("afternoon", { enabled: v })}
             onTimePress={() => openTimePicker("afternoon")}
           />
-          <View style={[styles.rowSeparator, darkMode && styles.rowSeparatorDark]} />
+          <View style={[styles.rowDividerThin, darkMode && styles.rowDividerThinDark]} />
           <ReminderRow
             label="Night"
             slot={slots.night}
             darkMode={darkMode}
+            switchTrackOff={switchTrackOff}
             onToggle={(v) => setSlot("night", { enabled: v })}
             onTimePress={() => openTimePicker("night")}
           />
-        </View>
 
-        <View style={[styles.card, darkMode && styles.cardDark]}>
-          <View style={styles.endOfDayRow}>
-            <View style={styles.endOfDayTextCol}>
-              <Text style={[styles.rowLabel, styles.endOfDayTitle, darkMode && styles.rowLabelDark]}>
-                End of Day
-              </Text>
-              <Text style={[styles.endOfDaySub, darkMode && styles.endOfDaySubDark]}>
-                Get one daily reminder to review your reading and notes in one go.
-              </Text>
-            </View>
-            <View style={styles.endOfDayPillAndSwitch}>
-              <TouchableOpacity
-                style={[styles.timePill, styles.timePillEndOfDay, darkMode && styles.timePillDark]}
-                onPress={() => openTimePicker("endOfDay")}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.timePillText, darkMode && styles.timePillTextDark]}>
-                  {formatTimeLabel(slots.endOfDay.at)}
-                </Text>
-              </TouchableOpacity>
-              <Switch
-                value={slots.endOfDay.enabled}
-                onValueChange={(v) => setSlot("endOfDay", { enabled: v })}
-                trackColor={{ false: darkMode ? "#3f3f3f" : "#d1d5db", true: "#34c759" }}
-                thumbColor="#ffffff"
-                ios_backgroundColor={darkMode ? "#3f3f3f" : "#d1d5db"}
-              />
-            </View>
+          <View style={[styles.rowDividerProminent, darkMode && styles.rowDividerProminentDark]} />
+
+          <View style={styles.endOfDaySection}>
+            <Text style={[styles.dailyWrapUpLabel, darkMode && styles.dailyWrapUpLabelDark]}>
+              Daily wrap-up
+            </Text>
+            <ReminderRow
+              label="End of Day"
+              slot={slots.endOfDay}
+              darkMode={darkMode}
+              switchTrackOff={switchTrackOff}
+              onToggle={(v) => setSlot("endOfDay", { enabled: v })}
+              onTimePress={() => openTimePicker("endOfDay")}
+            />
           </View>
         </View>
       </ScrollView>
@@ -244,12 +239,14 @@ function ReminderRow({
   label,
   slot,
   darkMode,
+  switchTrackOff,
   onToggle,
   onTimePress,
 }: {
   label: string;
   slot: ReminderSlot;
   darkMode: boolean;
+  switchTrackOff: string;
   onToggle: (v: boolean) => void;
   onTimePress: () => void;
 }) {
@@ -275,9 +272,9 @@ function ReminderRow({
       <Switch
         value={slot.enabled}
         onValueChange={onToggle}
-        trackColor={{ false: darkMode ? "#3f3f3f" : "#d1d5db", true: "#34c759" }}
+        trackColor={{ false: switchTrackOff, true: SWITCH_ON }}
         thumbColor="#ffffff"
-        ios_backgroundColor={darkMode ? "#3f3f3f" : "#d1d5db"}
+        ios_backgroundColor={switchTrackOff}
       />
     </View>
   );
@@ -293,66 +290,55 @@ const styles = StyleSheet.create({
   screenDark: {
     backgroundColor: darkColors.background,
   },
-  topNavRow: {
+  topBar: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: 12,
+    minHeight: 44,
   },
-  navCircle: {
+  topBarSide: {
     width: 40,
-    height: 40,
-    borderRadius: 999,
-    alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(15,23,42,0.06)",
   },
-  navCircleDark: {
-    backgroundColor: "rgba(255,255,255,0.08)",
-  },
-  topNavSpacer: {
-    width: 40,
-    height: 40,
-  },
-  pageTitle: {
-    fontSize: 32,
-    fontWeight: "800",
-    letterSpacing: -0.5,
+  topBarTitle: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 14,
+    fontWeight: "500",
     color: lightColors.textPrimary,
-    marginBottom: 20,
   },
-  pageTitleDark: {
-    color: darkColors.textPrimary,
+  topBarTitleDark: {
+    color: "#ffffff",
   },
   scrollContent: {
     paddingBottom: 40,
     gap: 14,
   },
-  card: {
-    backgroundColor: lightColors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    paddingVertical: 4,
-    paddingHorizontal: 16,
+  unifiedCard: {
+    borderRadius: 14,
+    borderWidth: 0.5,
+    borderColor: "rgba(0,0,0,0.08)",
+    backgroundColor: "rgba(0,0,0,0.035)",
+    overflow: "hidden",
   },
-  cardDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
+  unifiedCardDark: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.08)",
   },
   reminderRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 14,
     gap: 10,
   },
   rowLabel: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "500",
     color: lightColors.textPrimary,
   },
   rowLabelDark: {
-    color: darkColors.textPrimary,
+    color: "#ffffff",
   },
   pillWrap: {
     flex: 1,
@@ -362,68 +348,58 @@ const styles = StyleSheet.create({
   timePill: {
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 999,
-    backgroundColor: lightColors.chipBg,
+    borderRadius: 20,
+    borderWidth: 0.5,
+    borderColor: "rgba(0,0,0,0.1)",
+    backgroundColor: "rgba(0,0,0,0.06)",
     minWidth: 100,
     alignItems: "center",
   },
   timePillDark: {
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.1)",
   },
   timePillText: {
-    fontSize: 15,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "500",
     color: lightColors.textPrimary,
   },
   timePillTextDark: {
-    color: darkColors.textPrimary,
+    color: "#ffffff",
   },
-  rowSeparator: {
-    height: StyleSheet.hairlineWidth,
-    marginHorizontal: 4,
-    backgroundColor: lightColors.borderStrong,
+  rowDividerThin: {
+    height: 0.5,
+    backgroundColor: "rgba(0,0,0,0.06)",
   },
-  rowSeparatorDark: {
-    backgroundColor: "rgba(255,255,255,0.12)",
+  rowDividerThinDark: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  rowDividerProminent: {
+    height: 1,
+    backgroundColor: "rgba(0,0,0,0.1)",
+  },
+  rowDividerProminentDark: {
+    backgroundColor: "rgba(255,255,255,0.1)",
   },
   reminderLabelCol: {
     flex: 1,
     minWidth: 0,
     marginRight: 4,
   },
-  endOfDayRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingVertical: 12,
-    gap: 10,
+  endOfDaySection: {
+    overflow: "hidden",
   },
-  endOfDayTextCol: {
-    flex: 1,
-    minWidth: 0,
-    gap: 6,
-    paddingRight: 4,
-  },
-  endOfDayPillAndSwitch: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexShrink: 0,
-    gap: 8,
-    paddingTop: 1,
-  },
-  endOfDayTitle: {
+  dailyWrapUpLabel: {
+    fontSize: 10,
     fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+    color: "rgba(0,0,0,0.3)",
+    paddingLeft: 14,
+    paddingTop: 8,
   },
-  endOfDaySub: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: lightColors.textMuted,
-    fontWeight: "400",
-  },
-  endOfDaySubDark: {
-    color: darkColors.textSecondary,
-  },
-  timePillEndOfDay: {
-    minWidth: 100,
+  dailyWrapUpLabelDark: {
+    color: "rgba(255,255,255,0.3)",
   },
   iosModalRoot: {
     flex: 1,

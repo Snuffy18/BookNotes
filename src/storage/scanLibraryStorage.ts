@@ -67,6 +67,10 @@ function sanitizeInsightsSummary(raw: unknown): BookInsightsSummary | undefined 
   const facts = factsRaw
     .map((f) => (typeof f === "string" ? f.trim() : ""))
     .filter((f) => f.length > 0);
+  const themesLegacy = typeof o.themes === "string" ? o.themes.trim() : "";
+  const themesSynthesisRaw =
+    typeof o.themesSynthesis === "string" ? o.themesSynthesis.trim() : themesLegacy;
+  const themesSynthesis = themesSynthesisRaw.length > 0 ? themesSynthesisRaw : undefined;
   const hasV2 = headline.length > 0 && facts.length > 0;
   const hasLegacy = body.length > 0;
   if (!hasV2 && !hasLegacy) return undefined;
@@ -76,6 +80,7 @@ function sanitizeInsightsSummary(raw: unknown): BookInsightsSummary | undefined 
     ...(headline ? { headline } : {}),
     ...(stats.length > 0 ? { stats } : {}),
     ...(facts.length > 0 ? { facts } : {}),
+    ...(themesSynthesis ? { themesSynthesis } : {}),
     ...(kicker ? { kicker } : {}),
   };
 }

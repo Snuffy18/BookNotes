@@ -1,4 +1,12 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ComponentRef } from "react";
+import {
+  Fragment,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,26 +26,41 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { PdfExportToast, type PdfExportToastMode } from "../components/PdfExportToast";
 import { useAppSettings } from "../context/AppSettingsContext";
+import { useExportPreferences } from "../context/ExportPreferencesContext";
 import { useScanContext } from "../context/ScanContext";
+import { ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING } from "../navigation/rootTabLayout";
 import type { LibraryStackParamList } from "../navigation/types";
-import { generateBookReportsInsights } from "../services/ai";
+import { generateBookReportsInsights, themesFallbackFromFacts } from "../services/ai";
 import type { BookInsightsSummary, ScanItem } from "../types/note";
+import { pdfContentOptionsFromPrefs } from "../types/exportPreferences";
 import { createAllBookReportsPdf, sanitizeFileBase } from "../utils/bookReportsPdf";
 import { playSoundEffect } from "../utils/soundEffects";
 import { stripMarkdownBoldMarkers } from "../utils/stripMarkdownBoldMarkers";
 import { darkColors, lightColors } from "../theme/colors";
 import { hexWithAlpha } from "../theme/colorUtils";
-import { FONT_CANELA_TEXT_BOLD, FONT_CANELA_TEXT_REGULAR } from "../theme/fonts";
+import { FONT_CANELA_TEXT_BOLD } from "../theme/fonts";
+import {
+  countChaptersForBook,
+  countDistinctNumericPages,
+  getCoveragePageRange,
+  pagesScannedPercent,
+} from "../utils/bookReadingProgress";
 
 type Navigation = NativeStackNavigationProp<LibraryStackParamList, "BookReports">;
 type Route = RouteProp<LibraryStackParamList, "BookReports">;
 
-type BookReportsFeedItem =
-  | { kind: "insights" }
-  | { kind: "report"; report: ScanItem; matches: string[] };
+type ListFilterId = "all" | "byChapter" | "byDate";
+
+type ReportListItem = { report: ScanItem; matches: string[] };
+
+type ReportSection = { sectionKey: string; sectionLabel: string; items: ReportListItem[] };
+
+type SectionTimelineRow = { kind: "insights" } | { kind: "report"; item: ReportListItem };
+
+const CHIP_PAGES_GREEN = "#4ade80";
+const CHIP_CHAPTERS_AMBER = "#fbbf24";
 
 /** Two columns per row (even distribution). */
 function chunkPairs<T>(items: T[]): T[][] {
@@ -48,12 +71,157 @@ function chunkPairs<T>(items: T[]): T[][] {
   return rows;
 }
 
+function formatRelativeScanTimeForHeader(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  if (diffMs < 60_000) return "just now";
+  const min = Math.floor(diffMs / 60_000);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hour${hr === 1 ? "" : "s"} ago`;
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startYesterday = startToday - 86400_000;
+  if (d.getTime() >= startYesterday && d.getTime() < startToday) return "yesterday";
+  const days = Math.floor(hr / 24);
+  if (days < 7) return `${days} days ago`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function formatReportCardRelativeDate(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  if (t === t0) return "Today";
+  if (t === t0 - 86400000) return "Yesterday";
+  return d.toLocaleDateString([], { day: "numeric", month: "short" });
+}
+
+function formatInsightsUpdatedLine(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const y = t0 - 86400000;
+  let dayWord: string;
+  if (t === t0) dayWord = "today";
+  else if (t === y) dayWord = "yesterday";
+  else dayWord = d.toLocaleDateString([], { month: "short", day: "numeric" });
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `Updated ${dayWord} at ${time}`;
+}
+
+function dateSectionKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dateSectionLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  if (t === t0) return "Today";
+  if (t === t0 - 86400000) return "Yesterday";
+  return d.toLocaleDateString([], { day: "numeric", month: "short" });
+}
+
+function chapterStorageKey(report: ScanItem): string {
+  return report.chapter?.trim() || "__uncat__";
+}
+
+function chapterDisplayLabel(key: string): string {
+  return key === "__uncat__" ? "Uncategorized" : key;
+}
+
+function buildGroupedSections(
+  items: ReportListItem[],
+  listFilter: ListFilterId,
+  mergeInsightsOnDate?: string | null
+): ReportSection[] {
+  if (listFilter === "byDate") {
+    const bucketMap = new Map<string, { label: string; items: ReportListItem[]; sortMs: number }>();
+    for (const it of items) {
+      const key = dateSectionKey(it.report.createdAt);
+      const ms = new Date(it.report.createdAt).getTime();
+      if (!bucketMap.has(key)) {
+        bucketMap.set(key, { label: dateSectionLabel(it.report.createdAt), items: [], sortMs: ms });
+      }
+      const b = bucketMap.get(key)!;
+      b.items.push(it);
+      b.sortMs = Math.max(b.sortMs, ms);
+    }
+    if (mergeInsightsOnDate) {
+      const ik = dateSectionKey(mergeInsightsOnDate);
+      const ims = new Date(mergeInsightsOnDate).getTime();
+      if (!bucketMap.has(ik)) {
+        bucketMap.set(ik, { label: dateSectionLabel(mergeInsightsOnDate), items: [], sortMs: ims });
+      } else {
+        const b = bucketMap.get(ik)!;
+        b.sortMs = Math.max(b.sortMs, ims);
+      }
+    }
+    for (const b of bucketMap.values()) {
+      b.items.sort((a, c) => new Date(c.report.createdAt).getTime() - new Date(a.report.createdAt).getTime());
+    }
+    return [...bucketMap.entries()]
+      .sort((x, y) => y[1].sortMs - x[1].sortMs)
+      .map(([sectionKey, b]) => ({ sectionKey, sectionLabel: b.label, items: b.items }));
+  }
+  const map = new Map<string, ReportListItem[]>();
+  for (const it of items) {
+    const k = chapterStorageKey(it.report);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(it);
+  }
+  for (const arr of map.values()) {
+    arr.sort((a, b) => new Date(b.report.createdAt).getTime() - new Date(a.report.createdAt).getTime());
+  }
+  let keys = [...map.keys()];
+  if (listFilter === "byChapter") {
+    keys.sort((a, b) => chapterDisplayLabel(a).localeCompare(chapterDisplayLabel(b)));
+  } else {
+    keys.sort((a, b) => {
+      const ta = Math.max(...(map.get(a) ?? []).map((x) => new Date(x.report.createdAt).getTime()), 0);
+      const tb = Math.max(...(map.get(b) ?? []).map((x) => new Date(x.report.createdAt).getTime()), 0);
+      return tb - ta;
+    });
+  }
+  return keys.map((sectionKey) => ({
+    sectionKey,
+    sectionLabel: chapterDisplayLabel(sectionKey),
+    items: map.get(sectionKey)!,
+  }));
+}
+
+function buildSectionTimeline(
+  sectionKey: string,
+  items: ReportListItem[],
+  listFilter: ListFilterId,
+  insightsUpdatedAt: string | undefined
+): SectionTimelineRow[] {
+  if (listFilter !== "byDate" || !insightsUpdatedAt || dateSectionKey(insightsUpdatedAt) !== sectionKey) {
+    return items.map((item) => ({ kind: "report" as const, item }));
+  }
+  const decorated: Array<{ row: SectionTimelineRow; at: number }> = [
+    ...items.map((item) => ({
+      row: { kind: "report" as const, item },
+      at: new Date(item.report.createdAt).getTime(),
+    })),
+    { row: { kind: "insights" as const }, at: new Date(insightsUpdatedAt).getTime() },
+  ];
+  decorated.sort((a, b) => b.at - a.at);
+  return decorated.map((d) => d.row);
+}
+
 export function BookReportsScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<Route>();
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { darkMode, accentColor } = useAppSettings();
+  const exportPrefs = useExportPreferences();
   const {
     books,
     scans,
@@ -64,12 +232,14 @@ export function BookReportsScreen() {
     clearBookInsightsSummary,
   } = useScanContext();
   const [searchQuery, setSearchQuery] = useState("");
+  const [listFilter, setListFilter] = useState<ListFilterId>("all");
   const [optionsVisible, setOptionsVisible] = useState(false);
   const [insightsModalVisible, setInsightsModalVisible] = useState(false);
   const [insightsGenerating, setInsightsGenerating] = useState(false);
   const [pdfToastMode, setPdfToastMode] = useState<PdfExportToastMode | null>(null);
   const reportSwipeRefs = useRef<Record<string, ComponentRef<typeof Swipeable> | null>>({});
   const insightsSwipeRef = useRef<ComponentRef<typeof Swipeable> | null>(null);
+  const bookReportsScrollRef = useRef<ComponentRef<typeof ScrollView> | null>(null);
 
   const bookId = route.params.bookId;
   const book = useMemo(() => books.find((item) => item.id === bookId), [books, bookId]);
@@ -95,6 +265,9 @@ export function BookReportsScreen() {
   const closeAllReportSwipes = () => {
     Object.values(reportSwipeRefs.current).forEach((ref) => ref?.close());
   };
+
+  const hapticLight = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  const hapticSelect = () => Haptics.selectionAsync().catch(() => {});
 
   const onConfirmDeleteInsights = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
@@ -139,9 +312,6 @@ export function BookReportsScreen() {
     ]);
   };
   const query = searchQuery.trim().toLowerCase();
-  const latestReportDate = reports[0]?.createdAt
-    ? formatLastActivity(new Date(reports[0].createdAt))
-    : "No scans yet";
 
   const filteredReports = useMemo(() => {
     if (!query) {
@@ -196,31 +366,34 @@ export function BookReportsScreen() {
       .filter((item) => item.matches.length > 0);
   }, [reports, query]);
 
-  /** Insights interleaved with reports by recency (insights use `updatedAt`). Search mode: reports only. */
-  const bookReportsFeed = useMemo((): BookReportsFeedItem[] => {
-    if (query) {
-      return filteredReports.map((fr) => ({
-        kind: "report" as const,
-        report: fr.report,
-        matches: fr.matches,
-      }));
+  const mergeInsightsDateKey =
+    listFilter === "byDate" && !query && book?.insightsSummary ? book.insightsSummary.updatedAt : null;
+
+  const groupedSections = useMemo(
+    () => buildGroupedSections(filteredReports, listFilter, mergeInsightsDateKey),
+    [filteredReports, listFilter, mergeInsightsDateKey]
+  );
+
+  const showListEmpty =
+    filteredReports.length === 0 && !(listFilter === "byDate" && !query && Boolean(book?.insightsSummary));
+
+  const coverageRange = useMemo(() => (book ? getCoveragePageRange(reports) : null), [book, reports]);
+  const coveragePct = useMemo(() => (book ? pagesScannedPercent(book, reports) : 0), [book, reports]);
+  const pagesReadCount = useMemo(() => countDistinctNumericPages(reports), [reports]);
+  const chaptersCount = useMemo(() => (book ? countChaptersForBook(book, reports) : 0), [book, reports]);
+
+  const headerMetaLine = useMemo(() => {
+    if (reports.length === 0) return "No reports yet";
+    const last = formatRelativeScanTimeForHeader(reports[0].createdAt);
+    return `${reports.length} ${reports.length === 1 ? "report" : "reports"} · last scanned ${last}`;
+  }, [reports]);
+
+  const coverageLabelLeft = useMemo(() => {
+    if (coverageRange) {
+      return `Coverage · pp. ${coverageRange.min}–${coverageRange.max}`;
     }
-    const rows: { item: BookReportsFeedItem; ms: number }[] = [];
-    if (book?.insightsSummary) {
-      rows.push({
-        item: { kind: "insights" },
-        ms: new Date(book.insightsSummary.updatedAt).getTime(),
-      });
-    }
-    for (const fr of filteredReports) {
-      rows.push({
-        item: { kind: "report", report: fr.report, matches: fr.matches },
-        ms: new Date(fr.report.createdAt).getTime(),
-      });
-    }
-    rows.sort((a, b) => b.ms - a.ms);
-    return rows.map((r) => r.item);
-  }, [book?.insightsSummary, filteredReports, query]);
+    return "Coverage · add page numbers on scans";
+  }, [coverageRange]);
 
   const reportPillNumber = useCallback(
     (reportId: string) => {
@@ -274,6 +447,9 @@ export function BookReportsScreen() {
       });
       playSoundEffect("summarizeAiSuccess");
       setInsightsModalVisible(true);
+      requestAnimationFrame(() => {
+        bookReportsScrollRef.current?.scrollTo({ y: 0, animated: true });
+      });
     } catch (e) {
       const message = e instanceof Error ? e.message : "Something went wrong. Try again.";
       Alert.alert("Summarize AI failed", message);
@@ -287,6 +463,12 @@ export function BookReportsScreen() {
     [book],
   );
 
+  const insightsThemesParagraph = useMemo(() => {
+    const ins = book?.insightsSummary;
+    if (!ins || !insightsIsStructured(ins)) return "";
+    return ins.themesSynthesis?.trim() || themesFallbackFromFacts(ins.facts ?? []);
+  }, [book?.insightsSummary]);
+
   const onExportAllReportsPdf = async () => {
     if (!book || reports.length === 0) {
       setOptionsVisible(false);
@@ -296,7 +478,7 @@ export function BookReportsScreen() {
     setOptionsVisible(false);
     setPdfToastMode("loading");
     try {
-      const uri = await createAllBookReportsPdf(book, reports);
+      const uri = await createAllBookReportsPdf(book, reports, pdfContentOptionsFromPrefs(exportPrefs));
       setPdfToastMode({ type: "ready", uri });
     } catch (e) {
       setPdfToastMode(null);
@@ -309,241 +491,405 @@ export function BookReportsScreen() {
     setPdfToastMode(null);
   };
 
+  const bd = useMemo(
+    () =>
+      darkMode
+        ? {
+            title: "#ffffff",
+            authorBlue: accentColor,
+            metaMuted: "rgba(255,255,255,0.35)",
+            circleBg: "rgba(255,255,255,0.08)",
+            circleBorder: "rgba(255,255,255,0.1)",
+            circleIcon: "rgba(255,255,255,0.6)",
+            chipBg: "rgba(255,255,255,0.05)",
+            chipBorder: "rgba(255,255,255,0.08)",
+            progressLabel: "rgba(255,255,255,0.3)",
+            progressTrack: "rgba(255,255,255,0.08)",
+            searchBg: "rgba(255,255,255,0.06)",
+            searchBorder: "rgba(255,255,255,0.1)",
+            searchIcon: "rgba(255,255,255,0.3)",
+            searchPh: "rgba(255,255,255,0.25)",
+            searchText: "#ffffff",
+            pillSelBg: "rgba(255,255,255,0.12)",
+            pillSelBorder: "rgba(255,255,255,0.2)",
+            pillUnBg: "rgba(255,255,255,0.05)",
+            pillUnBorder: "rgba(255,255,255,0.08)",
+            pillTxtSel: "#ffffff",
+            pillTxtUn: "rgba(255,255,255,0.35)",
+            sectionLabel: "rgba(255,255,255,0.3)",
+            cardBg: "rgba(255,255,255,0.05)",
+            cardBorder: "rgba(255,255,255,0.08)",
+            reportTitle: "#ffffff",
+            pagePillBg: "rgba(255,255,255,0.06)",
+            pagePillBorder: "rgba(255,255,255,0.1)",
+            pagePillText: "rgba(255,255,255,0.4)",
+            dateMuted: "rgba(255,255,255,0.25)",
+            snippet: "rgba(255,255,255,0.4)",
+            insightsBg: hexWithAlpha(accentColor, 0.08),
+            insightsBorder: hexWithAlpha(accentColor, 0.2),
+            insightsIconBg: hexWithAlpha(accentColor, 0.15),
+            insightsTitle: "#ffffff",
+            insightsMeta: "rgba(255,255,255,0.4)",
+            insightsSnippet: "rgba(255,255,255,0.55)",
+            insightsChevron: "rgba(255,255,255,0.2)",
+            emptyIcon: "rgba(255,255,255,0.35)",
+            emptyTitle: darkColors.textPrimary,
+            emptyText: darkColors.textSecondary,
+          }
+        : {
+            title: lightColors.textPrimary,
+            authorBlue: accentColor,
+            metaMuted: "rgba(0,0,0,0.35)",
+            circleBg: "rgba(0,0,0,0.06)",
+            circleBorder: "rgba(0,0,0,0.1)",
+            circleIcon: "rgba(0,0,0,0.6)",
+            chipBg: "rgba(0,0,0,0.04)",
+            chipBorder: "rgba(0,0,0,0.08)",
+            progressLabel: "rgba(0,0,0,0.3)",
+            progressTrack: "rgba(0,0,0,0.08)",
+            searchBg: "rgba(0,0,0,0.05)",
+            searchBorder: "rgba(0,0,0,0.1)",
+            searchIcon: "rgba(0,0,0,0.3)",
+            searchPh: "rgba(0,0,0,0.25)",
+            searchText: lightColors.textPrimary,
+            pillSelBg: "rgba(0,0,0,0.08)",
+            pillSelBorder: "rgba(0,0,0,0.2)",
+            pillUnBg: "rgba(0,0,0,0.04)",
+            pillUnBorder: "rgba(0,0,0,0.08)",
+            pillTxtSel: lightColors.textPrimary,
+            pillTxtUn: "rgba(0,0,0,0.35)",
+            sectionLabel: "rgba(0,0,0,0.3)",
+            cardBg: "rgba(0,0,0,0.03)",
+            cardBorder: "rgba(0,0,0,0.08)",
+            reportTitle: lightColors.textPrimary,
+            pagePillBg: "rgba(0,0,0,0.05)",
+            pagePillBorder: "rgba(0,0,0,0.1)",
+            pagePillText: "rgba(0,0,0,0.4)",
+            dateMuted: "rgba(0,0,0,0.25)",
+            snippet: "rgba(0,0,0,0.4)",
+            insightsBg: hexWithAlpha(accentColor, 0.08),
+            insightsBorder: hexWithAlpha(accentColor, 0.2),
+            insightsIconBg: hexWithAlpha(accentColor, 0.15),
+            insightsTitle: lightColors.textPrimary,
+            insightsMeta: "rgba(0,0,0,0.4)",
+            insightsSnippet: "rgba(0,0,0,0.55)",
+            insightsChevron: "rgba(0,0,0,0.2)",
+            emptyIcon: "rgba(0,0,0,0.35)",
+            emptyTitle: lightColors.textPrimary,
+            emptyText: lightColors.textSecondary,
+          },
+    [darkMode, accentColor]
+  );
+
+  const renderReportCard = (entry: ReportListItem) => (
+    <Swipeable
+      ref={(r) => {
+        reportSwipeRefs.current[entry.report.id] = r;
+      }}
+      friction={2}
+      overshootRight={false}
+      onSwipeableWillOpen={() => {
+        insightsSwipeRef.current?.close();
+        closeOtherReportSwipes(entry.report.id);
+      }}
+      renderRightActions={() => (
+        <TouchableOpacity
+          style={styles.reportSwipeDelete}
+          onPress={() => onConfirmDeleteReport(entry.report)}
+          activeOpacity={0.88}
+          accessibilityLabel="Delete report"
+        >
+          <Ionicons name="trash-outline" size={22} color="#ffffff" />
+          <Text style={styles.reportSwipeDeleteLabel}>Delete</Text>
+        </TouchableOpacity>
+      )}
+    >
+      <TouchableOpacity
+        style={[
+          styles.newReportCard,
+          { backgroundColor: bd.cardBg, borderColor: bd.cardBorder },
+        ]}
+        onPress={() =>
+          navigation.navigate("ReportDetails", {
+            item: entry.report,
+            highlightQuery: query || undefined,
+            reportNavOrigin: "library",
+          })
+        }
+        activeOpacity={0.85}
+      >
+        <View style={styles.newReportTopRow}>
+          <Text
+            style={[
+              styles.newReportTitle,
+              { color: bd.reportTitle },
+              entry.report.chapter?.trim() ? styles.reportTitleChapter : null,
+            ]}
+            numberOfLines={2}
+          >
+            {buildReportTitle(entry.report)}
+          </Text>
+          <View
+            style={[
+              styles.newReportBadge,
+              { backgroundColor: hexWithAlpha(accentColor, 0.1), borderColor: hexWithAlpha(accentColor, 0.2) },
+            ]}
+          >
+            <Text style={[styles.newReportBadgeText, { color: accentColor }]}>
+              #{reportPillNumber(entry.report.id)}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.newReportMetaRow}>
+          <View style={[styles.newPagePill, { backgroundColor: bd.pagePillBg, borderColor: bd.pagePillBorder }]}>
+            <Text style={[styles.newPagePillText, { color: bd.pagePillText }]}>
+              {entry.report.page?.trim() ? `Page ${entry.report.page.trim()}` : "Page not set"}
+            </Text>
+          </View>
+          <Text style={[styles.newReportDate, { color: bd.dateMuted }]}>
+            {formatReportCardRelativeDate(entry.report.createdAt)}
+          </Text>
+        </View>
+        <Text style={[styles.newReportSnippet, { color: bd.snippet }]} numberOfLines={2}>
+          {stripMarkdownBoldMarkers(entry.report.notes.summary)}
+        </Text>
+        {entry.matches.length > 0 ? (
+          <View style={styles.matchWrap}>
+            <Text style={[styles.reportMatchText, { color: accentColor }]}>Found in:</Text>
+            <View style={styles.matchBadgeRow}>
+              {entry.matches.map((match) => (
+                <View key={match} style={[styles.matchBadge, { borderColor: accentColor }]}>
+                  <Text style={[styles.matchBadgeText, { color: accentColor }]}>{match}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+      </TouchableOpacity>
+    </Swipeable>
+  );
+
+  const renderAiInsightsSwipeable = () => {
+    if (!book?.insightsSummary) return null;
+    const ins = book.insightsSummary;
+    return (
+      <Swipeable
+        ref={insightsSwipeRef}
+        friction={2}
+        overshootRight={false}
+        onSwipeableWillOpen={() => closeAllReportSwipes()}
+        renderRightActions={() => (
+          <TouchableOpacity
+            style={styles.reportSwipeDelete}
+            onPress={onConfirmDeleteInsights}
+            activeOpacity={0.88}
+            accessibilityLabel="Remove AI reading insights"
+          >
+            <Ionicons name="trash-outline" size={22} color="#ffffff" />
+            <Text style={styles.reportSwipeDeleteLabel}>Delete</Text>
+          </TouchableOpacity>
+        )}
+      >
+        <TouchableOpacity
+          activeOpacity={0.92}
+          onPress={() => setInsightsModalVisible(true)}
+          style={[
+            styles.aiInsightsCard,
+            { backgroundColor: bd.insightsBg, borderColor: bd.insightsBorder },
+          ]}
+        >
+          <View style={[styles.aiInsightsIconWrap, { backgroundColor: bd.insightsIconBg }]}>
+            <Ionicons name="sparkles" size={15} color={accentColor} />
+          </View>
+          <View style={styles.aiInsightsTextCol}>
+            <Text style={[styles.aiInsightsTitle, { color: bd.insightsTitle }]}>AI reading insights</Text>
+            <Text style={[styles.aiInsightsMeta, { color: bd.insightsMeta }]}>
+              {formatInsightsUpdatedLine(ins.updatedAt)}
+            </Text>
+            {insightsIsStructured(ins) ? (
+              <Text style={[styles.aiInsightsSnippet, { color: bd.insightsSnippet }]} numberOfLines={1}>
+                {ins.headline}
+              </Text>
+            ) : (
+              <Text style={[styles.aiInsightsSnippet, { color: bd.insightsSnippet }]} numberOfLines={1}>
+                {ins.body ?? ""}
+              </Text>
+            )}
+            <Text style={[styles.aiInsightsTap, { color: accentColor }]}>Tap for full insights</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={14} color={bd.insightsChevron} />
+        </TouchableOpacity>
+      </Swipeable>
+    );
+  };
+
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
-      <View style={styles.headerBlock}>
-        <View style={styles.headerTitleRow}>
-          <Text style={[styles.headerTitle, darkMode && styles.headerTitleDark]}>
-            {book ? book.title : "Book Reports"}
-          </Text>
-          <TouchableOpacity
-            style={[styles.headerMenuButton, darkMode && styles.headerMenuButtonDark]}
-            onPress={() => setOptionsVisible(true)}
-            activeOpacity={0.82}
-            hitSlop={8}
-          >
-            <Ionicons
-              name="ellipsis-horizontal"
-              size={18}
-              color={darkMode ? darkColors.textPrimary : lightColors.textPrimary}
-            />
-          </TouchableOpacity>
-        </View>
-        <Text style={[styles.headerAuthor, darkMode && styles.headerAuthorDark]}>
-          {book?.author ?? "Unknown author"}
-        </Text>
-        <Text style={[styles.headerSubtitle, darkMode && styles.headerSubtitleDark]}>
-          All reports and notes captured while reading this book.
-        </Text>
-        <View style={[styles.statsRow, darkMode && styles.statsRowDark]}>
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: accentColor }]}>{reports.length}</Text>
-            <Text style={[styles.statLabel, darkMode && styles.statLabelDark]}>Reports</Text>
+      <ScrollView
+        ref={bookReportsScrollRef}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[
+          styles.scrollContent,
+          styles.scrollContentMain,
+          showListEmpty && styles.scrollContentEmpty,
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.detailHeaderRow}>
+          <View style={styles.detailHeaderTextCol}>
+            <Text style={[styles.detailBookTitle, { color: bd.title }]} numberOfLines={3}>
+              {book ? book.title : "Book Reports"}
+            </Text>
+            <Text style={[styles.detailAuthor, { color: bd.authorBlue }]} numberOfLines={1}>
+              {book?.author ?? "Unknown author"}
+            </Text>
+            <Text style={[styles.detailMetaLine, { color: bd.metaMuted }]}>{headerMetaLine}</Text>
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, darkMode && styles.headerTitleDark]}>{latestReportDate}</Text>
-            <Text style={[styles.statLabel, darkMode && styles.statLabelDark]}>Last activity</Text>
+          <View style={styles.detailHeaderActions}>
+            <TouchableOpacity
+              style={[
+                styles.detailIconCircle,
+                { backgroundColor: bd.circleBg, borderColor: bd.circleBorder },
+                reports.length === 0 && styles.detailIconCircleDisabled,
+              ]}
+              onPress={() => {
+                hapticLight();
+                void onExportAllReportsPdf();
+              }}
+              disabled={reports.length === 0}
+              activeOpacity={0.82}
+              hitSlop={4}
+            >
+              <Ionicons name="share-outline" size={18} color={bd.circleIcon} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.detailIconCircle, { backgroundColor: bd.circleBg, borderColor: bd.circleBorder }]}
+              onPress={() => {
+                hapticLight();
+                setOptionsVisible(true);
+              }}
+              activeOpacity={0.82}
+              hitSlop={4}
+            >
+              <Ionicons name="ellipsis-horizontal" size={18} color={bd.circleIcon} />
+            </TouchableOpacity>
           </View>
         </View>
-        <View style={[styles.searchWrap, darkMode && styles.searchWrapDark]}>
-          <Ionicons name="search-outline" size={18} color={darkMode ? darkColors.textSecondary : lightColors.textMuted} />
+
+        <View style={styles.statChipsRow}>
+          <View style={[styles.statChip, { backgroundColor: bd.chipBg, borderColor: bd.chipBorder }]}>
+            <Text style={[styles.statChipValue, { color: accentColor }]}>{reports.length}</Text>
+            <Text style={[styles.statChipLabel, { color: bd.metaMuted }]}>Reports</Text>
+          </View>
+          <View style={[styles.statChip, { backgroundColor: bd.chipBg, borderColor: bd.chipBorder }]}>
+            <Text style={[styles.statChipValue, { color: CHIP_PAGES_GREEN }]}>{pagesReadCount}</Text>
+            <Text style={[styles.statChipLabel, { color: bd.metaMuted }]}>Pages read</Text>
+          </View>
+          <View style={[styles.statChip, { backgroundColor: bd.chipBg, borderColor: bd.chipBorder }]}>
+            <Text style={[styles.statChipValue, { color: CHIP_CHAPTERS_AMBER }]}>{chaptersCount}</Text>
+            <Text style={[styles.statChipLabel, { color: bd.metaMuted }]}>Chapters</Text>
+          </View>
+        </View>
+
+        <View style={styles.coverageBlock}>
+          <View style={styles.coverageHeaderRow}>
+            <Text style={[styles.coverageHeaderText, { color: bd.progressLabel }]} numberOfLines={1}>
+              {coverageLabelLeft}
+            </Text>
+            <Text style={[styles.coverageHeaderText, { color: bd.progressLabel }]}>{coveragePct}%</Text>
+          </View>
+            <View style={[styles.coverageTrack, { backgroundColor: bd.progressTrack }]}>
+            <View style={[styles.coverageFill, { width: `${coveragePct}%`, backgroundColor: accentColor }]} />
+          </View>
+        </View>
+
+        <View style={[styles.detailSearchBar, { backgroundColor: bd.searchBg, borderColor: bd.searchBorder }]}>
+          <Ionicons name="search-outline" size={16} color={bd.searchIcon} style={styles.detailSearchIcon} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search keyword in reports..."
-            placeholderTextColor="#94a3b8"
-            style={[styles.searchInput, darkMode && styles.searchInputDark]}
+            placeholderTextColor={bd.searchPh}
+            style={[styles.detailSearchInput, { color: bd.searchText }]}
+            autoCorrect={false}
+            autoCapitalize="none"
           />
         </View>
-      </View>
 
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          bookReportsFeed.length === 0 && styles.scrollContentEmpty,
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {bookReportsFeed.length === 0 ? (
+        <View style={styles.listFilterPillsRow}>
+          {(
+            [
+              { id: "all" as const, label: "All" },
+              { id: "byChapter" as const, label: "By chapter" },
+              { id: "byDate" as const, label: "By date" },
+            ] as const
+          ).map((pill) => {
+            const selected = listFilter === pill.id;
+            return (
+              <Pressable
+                key={pill.id}
+                onPress={() => {
+                  hapticSelect();
+                  setListFilter(pill.id);
+                }}
+                style={[
+                  styles.listFilterPill,
+                  {
+                    backgroundColor: selected ? bd.pillSelBg : bd.pillUnBg,
+                    borderColor: selected ? bd.pillSelBorder : bd.pillUnBorder,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.listFilterPillText,
+                    { color: selected ? bd.pillTxtSel : bd.pillTxtUn },
+                  ]}
+                >
+                  {pill.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {!query && book?.insightsSummary && listFilter !== "byDate" ? renderAiInsightsSwipeable() : null}
+
+        {showListEmpty ? (
           <View style={styles.emptyWrap}>
-            <Ionicons
-              name={query ? "search-outline" : "document-text-outline"}
-              size={44}
-              color="#94a3b8"
-            />
-            <Text style={styles.emptyTitle}>
+            <Ionicons name={query ? "search-outline" : "document-text-outline"} size={44} color={bd.emptyIcon} />
+            <Text style={[styles.emptyTitle, { color: bd.emptyTitle }]}>
               {query ? "No matching reports" : "No reports yet"}
             </Text>
-            <Text style={styles.emptyText}>
+            <Text style={[styles.emptyText, { color: bd.emptyText }]}>
               {query
                 ? "Try another keyword to find where it appears."
                 : "Scan a page from the Scan tab to create one."}
             </Text>
           </View>
         ) : (
-          bookReportsFeed.map((entry) =>
-            entry.kind === "insights" && book?.insightsSummary ? (
-              <Swipeable
-                key={`insights-${bookId}`}
-                ref={insightsSwipeRef}
-                friction={2}
-                overshootRight={false}
-                onSwipeableWillOpen={() => closeAllReportSwipes()}
-                renderRightActions={() => (
-                  <TouchableOpacity
-                    style={styles.reportSwipeDelete}
-                    onPress={onConfirmDeleteInsights}
-                    activeOpacity={0.88}
-                    accessibilityLabel="Remove AI reading insights"
-                  >
-                    <Ionicons name="trash-outline" size={22} color="#ffffff" />
-                    <Text style={styles.reportSwipeDeleteLabel}>Delete</Text>
-                  </TouchableOpacity>
+          groupedSections.map((section, sIdx) => (
+            <View
+              key={section.sectionKey}
+              style={[styles.reportSection, sIdx < groupedSections.length - 1 && styles.reportSectionSpaced]}
+            >
+              <Text style={[styles.reportSectionLabel, { color: bd.sectionLabel }]}>{section.sectionLabel}</Text>
+              <View style={styles.reportSectionCards}>
+                {buildSectionTimeline(
+                  section.sectionKey,
+                  section.items,
+                  listFilter,
+                  !query ? book?.insightsSummary?.updatedAt : undefined
+                ).map((row) =>
+                  row.kind === "insights" ? (
+                    <Fragment key={`insights-${section.sectionKey}`}>{renderAiInsightsSwipeable()}</Fragment>
+                  ) : (
+                    <Fragment key={row.item.report.id}>{renderReportCard(row.item)}</Fragment>
+                  )
                 )}
-              >
-                <TouchableOpacity
-                  activeOpacity={0.92}
-                  onPress={() => setInsightsModalVisible(true)}
-                  style={styles.insightsCardTouchable}
-                >
-                  <LinearGradient
-                    colors={[hexWithAlpha(accentColor, 0.35), hexWithAlpha(accentColor, 0.08)]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.insightsCardGradientBorder}
-                  >
-                    <View style={[styles.insightsCardInner, darkMode && styles.insightsCardInnerDark]}>
-                      <View style={styles.insightsCardHeaderRow}>
-                        <View style={[styles.insightsIconBubble, { backgroundColor: hexWithAlpha(accentColor, 0.22) }]}>
-                          <Ionicons name="sparkles" size={20} color={accentColor} />
-                        </View>
-                        <View style={styles.insightsCardHeaderText}>
-                          <Text style={[styles.insightsCardTitle, darkMode && styles.headerTitleDark]}>
-                            AI reading insights
-                          </Text>
-                          <Text style={[styles.insightsCardMeta, darkMode && styles.reportDateDark]}>
-                            Updated{" "}
-                            {new Date(book.insightsSummary.updatedAt).toLocaleString([], {
-                              dateStyle: "medium",
-                              timeStyle: "short",
-                            })}
-                          </Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color={accentColor} />
-                      </View>
-                      {insightsIsStructured(book.insightsSummary) ? (
-                        <Text
-                          style={[styles.insightsCardHeadline, darkMode && styles.reportSnippetDark]}
-                          numberOfLines={2}
-                        >
-                          {book.insightsSummary.headline}
-                        </Text>
-                      ) : (
-                        <Text
-                          style={[styles.insightsCardPreview, darkMode && styles.reportSnippetDark]}
-                          numberOfLines={2}
-                        >
-                          {book.insightsSummary.body}
-                        </Text>
-                      )}
-                      <Text style={[styles.insightsCardHint, { color: accentColor }]}>
-                        Tap for full insights
-                      </Text>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </Swipeable>
-            ) : entry.kind === "report" ? (
-              <Swipeable
-                key={entry.report.id}
-                ref={(r) => {
-                  reportSwipeRefs.current[entry.report.id] = r;
-                }}
-                friction={2}
-                overshootRight={false}
-                onSwipeableWillOpen={() => {
-                  insightsSwipeRef.current?.close();
-                  closeOtherReportSwipes(entry.report.id);
-                }}
-                renderRightActions={() => (
-                  <TouchableOpacity
-                    style={styles.reportSwipeDelete}
-                    onPress={() => onConfirmDeleteReport(entry.report)}
-                    activeOpacity={0.88}
-                    accessibilityLabel="Delete report"
-                  >
-                    <Ionicons name="trash-outline" size={22} color="#ffffff" />
-                    <Text style={styles.reportSwipeDeleteLabel}>Delete</Text>
-                  </TouchableOpacity>
-                )}
-              >
-                <TouchableOpacity
-                  style={[styles.reportCard, darkMode && styles.reportCardDark]}
-                  onPress={() =>
-                    navigation.navigate("ReportDetails", {
-                      item: entry.report,
-                      highlightQuery: query || undefined,
-                    })
-                  }
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.reportHeaderRow}>
-                    <Text
-                      style={[
-                        styles.reportTitle,
-                        darkMode && styles.reportTitleDark,
-                        entry.report.chapter?.trim() ? styles.reportTitleChapter : null,
-                      ]}
-                      numberOfLines={2}
-                    >
-                      {buildReportTitle(entry.report)}
-                    </Text>
-                    <View style={[styles.reportIndexPill, styles.reportIndexPillFixed, { borderColor: accentColor }]}>
-                      <Text style={[styles.reportIndexText, { color: accentColor }]}>
-                        #{reportPillNumber(entry.report.id)}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={[styles.reportDate, darkMode && styles.reportDateDark]}>
-                    {new Date(entry.report.createdAt).toLocaleDateString()}
-                  </Text>
-                  <View style={styles.reportMetaRow}>
-                    <View style={[styles.pagePill, { borderColor: accentColor }]}>
-                      <Ionicons name="document-text-outline" size={13} color={accentColor} />
-                      <Text style={[styles.pagePillText, { color: accentColor }]}>
-                        {entry.report.page?.trim() ? `Page ${entry.report.page.trim()}` : "Page not detected"}
-                      </Text>
-                    </View>
-                    {(entry.report.reinforcedIdeas?.length ?? 0) > 0 ? (
-                      <View style={[styles.pagePill, { borderColor: accentColor }]}>
-                        <Ionicons name="repeat-outline" size={13} color={accentColor} />
-                        <Text style={[styles.pagePillText, { color: accentColor }]}>
-                          {entry.report.reinforcedIdeas?.length} reinforced idea
-                          {(entry.report.reinforcedIdeas?.length ?? 0) === 1 ? "" : "s"}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  <Text style={[styles.reportSnippet, darkMode && styles.reportSnippetDark]} numberOfLines={2}>
-                    {stripMarkdownBoldMarkers(entry.report.notes.summary)}
-                  </Text>
-                  {entry.matches.length > 0 ? (
-                    <View style={styles.matchWrap}>
-                      <Text style={[styles.reportMatchText, { color: accentColor }]}>Found in:</Text>
-                      <View style={styles.matchBadgeRow}>
-                        {entry.matches.map((match) => (
-                          <View key={match} style={[styles.matchBadge, { borderColor: accentColor }]}>
-                            <Text style={[styles.matchBadgeText, { color: accentColor }]}>{match}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  ) : null}
-                </TouchableOpacity>
-              </Swipeable>
-            ) : null
-          )
+              </View>
+            </View>
+          ))
         )}
       </ScrollView>
 
@@ -617,7 +963,7 @@ export function BookReportsScreen() {
           >
             <ScrollView
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator
+              showsVerticalScrollIndicator={false}
               bounces
               nestedScrollEnabled
               contentContainerStyle={[
@@ -639,15 +985,17 @@ export function BookReportsScreen() {
               </View>
               {book?.insightsSummary ? (
                 <Text style={[styles.insightsReaderMeta, darkMode && styles.reportDateDark]}>
-                  {new Date(book.insightsSummary.updatedAt).toLocaleString([], {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })}
+                  {formatInsightsUpdatedLine(book.insightsSummary.updatedAt)}
                 </Text>
               ) : null}
               {book?.insightsSummary && insightsIsStructured(book.insightsSummary) ? (
                 <>
-                  <Text style={[styles.insightsReaderHeadline, darkMode && styles.reportSnippetDark]}>
+                  <Text
+                    style={[
+                      styles.insightsReaderHeadline,
+                      darkMode ? styles.insightsReaderHeadlineDark : styles.insightsReaderHeadlineLight,
+                    ]}
+                  >
                     {book.insightsSummary.headline}
                   </Text>
                   <View style={styles.insightsReaderStatsGrid}>
@@ -658,8 +1006,7 @@ export function BookReportsScreen() {
                             key={`${s.label}-${s.value}`}
                             style={[
                               styles.insightsReaderStatCell,
-                              darkMode && styles.insightsReaderStatCellDark,
-                              { borderColor: hexWithAlpha(accentColor, 0.4) },
+                              darkMode ? styles.insightsReaderStatCellDark : styles.insightsReaderStatCellLight,
                             ]}
                           >
                             <Text style={[styles.insightsReaderStatValue, { color: accentColor }]}>
@@ -673,22 +1020,57 @@ export function BookReportsScreen() {
                       </View>
                     ))}
                   </View>
-                  <Text style={[styles.insightsSectionLabel, darkMode && styles.reportDateDark]}>
+                  {insightsThemesParagraph ? (
+                    <>
+                      <Text
+                        style={[
+                          styles.insightsModalSectionLabel,
+                          !darkMode && styles.insightsModalSectionLabelLight,
+                          styles.insightsModalSectionLabelThemes,
+                        ]}
+                      >
+                        Themes
+                      </Text>
+                      <View
+                        style={[
+                          styles.insightsThemesCard,
+                          darkMode ? styles.insightsThemesCardDark : styles.insightsThemesCardLight,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.insightsThemesBody,
+                            darkMode ? styles.insightsThemesBodyDark : styles.insightsThemesBodyLight,
+                          ]}
+                        >
+                          {insightsThemesParagraph}
+                        </Text>
+                      </View>
+                    </>
+                  ) : null}
+                  <Text
+                    style={[
+                      styles.insightsModalSectionLabel,
+                      !darkMode && styles.insightsModalSectionLabelLight,
+                      insightsThemesParagraph
+                        ? styles.insightsModalSectionLabelAfterThemes
+                        : styles.insightsModalSectionLabelAfterStats,
+                    ]}
+                  >
                     Highlights
                   </Text>
                   {(book.insightsSummary.facts ?? []).map((fact, idx) => (
                     <View key={`${idx}-${fact.slice(0, 12)}`} style={styles.insightsFactRow}>
-                      <View style={[styles.insightsFactBullet, { backgroundColor: accentColor }]} />
+                      <View
+                        style={[
+                          styles.insightsFactBullet,
+                          darkMode ? styles.insightsFactBulletDark : styles.insightsFactBulletLight,
+                        ]}
+                      />
                       <Text style={[styles.insightsFactText, darkMode && styles.reportSnippetDark]}>{fact}</Text>
                     </View>
                   ))}
-                  <View
-                    style={[
-                      styles.insightsKickerWrap,
-                      darkMode && styles.insightsKickerWrapDark,
-                      { borderLeftColor: accentColor },
-                    ]}
-                  >
+                  <View style={[styles.insightsKickerWrap, darkMode && styles.insightsKickerWrapDark]}>
                     <Text style={[styles.insightsKickerText, darkMode && styles.reportSnippetDark]}>
                       {book.insightsSummary.kicker}
                     </Text>
@@ -744,221 +1126,261 @@ function getSummaryTopic(summary: string) {
   return `${firstSentence.slice(0, 53).trimEnd()}...`;
 }
 
-function formatLastActivity(date: Date) {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfYesterday = new Date(startOfToday);
-  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-  const startOfTarget = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-  const timeLabel = date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  if (startOfTarget.getTime() === startOfToday.getTime()) {
-    return timeLabel;
-  }
-
-  if (startOfTarget.getTime() === startOfYesterday.getTime()) {
-    return `Yesterday, ${timeLabel}`;
-  }
-
-  return date.toLocaleDateString([], {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
     position: "relative",
     backgroundColor: lightColors.background,
     paddingHorizontal: 18,
-    paddingTop: 10,
+    paddingTop: 4,
   },
   screenDark: {
     backgroundColor: darkColors.background,
   },
-  headerBlock: {
-    marginBottom: 16,
-  },
-  headerTitleRow: {
+  detailHeaderRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 2,
+    alignItems: "flex-start",
+    gap: 12,
   },
-  headerMenuButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: lightColors.card,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-  },
-  headerMenuButtonDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
-  },
-  headerTitle: {
-    color: lightColors.textPrimary,
-    fontSize: 22,
-    fontWeight: "700",
-    fontFamily: FONT_CANELA_TEXT_REGULAR,
-  },
-  headerTitleDark: {
-    color: darkColors.textPrimary,
-  },
-  headerAuthor: {
-    color: lightColors.textSecondary,
-    fontSize: 14,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  headerAuthorDark: {
-    color: darkColors.textSecondary,
-  },
-  headerSubtitle: {
-    marginTop: 4,
-    color: lightColors.textMuted,
-    fontSize: 13,
-  },
-  headerSubtitleDark: {
-    color: darkColors.textSecondary,
-  },
-  statsRow: {
-    marginTop: 12,
-    backgroundColor: lightColors.card,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  statsRowDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
-  },
-  statItem: {
+  detailHeaderTextCol: {
     flex: 1,
+    minWidth: 0,
+    gap: 0,
   },
-  statValue: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: lightColors.textPrimary,
+  detailBookTitle: {
+    fontSize: 24,
+    lineHeight: 31,
+    fontFamily: FONT_CANELA_TEXT_BOLD,
+    fontWeight: "400",
   },
-  statLabel: {
+  detailAuthor: {
+    fontSize: 13,
+    fontWeight: "500",
+    marginTop: 4,
+  },
+  detailMetaLine: {
     fontSize: 11,
-    color: lightColors.textMuted,
-    marginTop: 2,
+    marginTop: 6,
   },
-  statLabelDark: {
-    color: darkColors.textSecondary,
-  },
-  statDivider: {
-    width: 1,
-    height: 26,
-    backgroundColor: lightColors.border,
-    marginHorizontal: 10,
-  },
-  searchWrap: {
-    marginTop: 10,
-    backgroundColor: lightColors.card,
-    borderWidth: 1,
-    borderColor: lightColors.borderStrong,
-    borderRadius: 999,
-    paddingHorizontal: 12,
+  detailHeaderActions: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    marginTop: 2,
   },
-  searchWrapDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.borderStrong,
+  detailIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 0.5,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  searchInput: {
+  detailIconCircleDisabled: {
+    opacity: 0.4,
+  },
+  statChipsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  statChip: {
     flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    color: lightColors.textPrimary,
+    minWidth: 0,
+    borderRadius: 10,
+    borderWidth: 0.5,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: "center",
   },
-  searchInputDark: {
-    color: darkColors.textPrimary,
+  statChipValue: {
+    fontSize: 20,
+    fontWeight: "600",
+  },
+  statChipLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginTop: 4,
+  },
+  coverageBlock: {
+    gap: 0,
+  },
+  coverageHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  coverageHeaderText: {
+    fontSize: 11,
+    fontWeight: "500",
+    flex: 1,
+    marginRight: 8,
+  },
+  coverageTrack: {
+    height: 3,
+    borderRadius: 2,
+    overflow: "hidden",
+    width: "100%",
+  },
+  coverageFill: {
+    height: 3,
+    borderRadius: 2,
+    minWidth: 0,
+  },
+  detailSearchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 0.5,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  detailSearchIcon: {
+    marginRight: 8,
+  },
+  detailSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    padding: 0,
+    margin: 0,
+  },
+  listFilterPillsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  listFilterPill: {
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 22,
+    borderWidth: 0.5,
+  },
+  listFilterPillText: {
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  aiInsightsCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 14,
+    borderWidth: 0.5,
+    padding: 13,
+  },
+  aiInsightsIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  aiInsightsTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  aiInsightsTitle: {
+    fontSize: 14,
+    fontFamily: FONT_CANELA_TEXT_BOLD,
+    fontWeight: "400",
+  },
+  aiInsightsMeta: {
+    fontSize: 11,
+  },
+  aiInsightsSnippet: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  aiInsightsTap: {
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  reportSection: {},
+  reportSectionSpaced: {
+    marginBottom: 14,
+  },
+  reportSectionLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+    marginBottom: 8,
+  },
+  reportSectionCards: {
+    gap: 8,
+  },
+  newReportCard: {
+    borderRadius: 12,
+    borderWidth: 0.5,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  newReportTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  newReportTitle: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "500",
+    lineHeight: 18.2,
+    minWidth: 0,
+    paddingRight: 6,
+  },
+  newReportBadge: {
+    borderRadius: 10,
+    borderWidth: 0.5,
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+    flexShrink: 0,
+  },
+  newReportBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  newReportMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  newPagePill: {
+    borderRadius: 6,
+    borderWidth: 0.5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  newPagePillText: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  newReportDate: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  newReportSnippet: {
+    fontSize: 11,
+    lineHeight: 15.4,
   },
   scrollContent: {
-    paddingBottom: 110,
-    gap: 12,
+    paddingBottom: ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING,
+  },
+  scrollContentMain: {
+    gap: 14,
+    flexGrow: 1,
   },
   scrollContentEmpty: {
     flexGrow: 1,
     justifyContent: "center",
   },
-  insightsCardTouchable: {
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  insightsCardGradientBorder: {
-    borderRadius: 16,
-    padding: 2,
-  },
-  insightsCardInner: {
-    borderRadius: 14,
-    backgroundColor: lightColors.card,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    gap: 8,
-  },
-  insightsCardInnerDark: {
-    backgroundColor: darkColors.card,
-  },
-  insightsCardHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  insightsIconBubble: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  insightsCardHeaderText: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  insightsCardTitle: {
-    fontSize: 17,
-    fontFamily: FONT_CANELA_TEXT_BOLD,
-    fontWeight: "400",
-    color: lightColors.textPrimary,
-  },
-  insightsCardMeta: {
-    fontSize: 12,
-    color: lightColors.textMuted,
-  },
-  insightsCardPreview: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: lightColors.textSecondary,
-  },
-  insightsCardHeadline: {
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: "600",
-    color: lightColors.textPrimary,
-  },
-  insightsCardHint: {
-    fontSize: 12,
-    fontWeight: "700",
+  headerTitleDark: {
+    color: darkColors.textPrimary,
   },
   insightsModalRoot: {
     flex: 1,
@@ -1007,11 +1429,16 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   insightsReaderHeadline: {
-    fontSize: 17,
-    lineHeight: 24,
-    fontWeight: "700",
-    color: lightColors.textPrimary,
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: "400",
     marginBottom: 14,
+  },
+  insightsReaderHeadlineLight: {
+    color: "rgba(15,23,42,0.7)",
+  },
+  insightsReaderHeadlineDark: {
+    color: "rgba(255,255,255,0.7)",
   },
   insightsReaderStatsGrid: {
     gap: 10,
@@ -1027,13 +1454,17 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: 0.5,
     paddingVertical: 12,
     paddingHorizontal: 12,
-    backgroundColor: lightColors.background,
   },
   insightsReaderStatCellDark: {
-    backgroundColor: darkColors.background,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  insightsReaderStatCellLight: {
+    backgroundColor: "rgba(0,0,0,0.035)",
+    borderColor: "rgba(0,0,0,0.08)",
   },
   insightsReaderStatValue: {
     fontSize: 22,
@@ -1045,13 +1476,52 @@ const styles = StyleSheet.create({
     color: lightColors.textMuted,
     marginTop: 4,
   },
-  insightsSectionLabel: {
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.6,
+  insightsModalSectionLabel: {
+    fontSize: 11,
+    fontWeight: "600",
     textTransform: "uppercase",
-    color: lightColors.textMuted,
-    marginBottom: 10,
+    letterSpacing: 11 * 0.07,
+    color: "rgba(255,255,255,0.3)",
+    marginBottom: 8,
+    marginTop: 0,
+  },
+  insightsModalSectionLabelLight: {
+    color: "rgba(0,0,0,0.3)",
+  },
+  insightsModalSectionLabelThemes: {
+    marginTop: 4,
+  },
+  insightsModalSectionLabelAfterStats: {
+    marginTop: 6,
+  },
+  insightsModalSectionLabelAfterThemes: {
+    marginTop: 0,
+  },
+  insightsThemesCard: {
+    borderRadius: 14,
+    borderWidth: 0.5,
+    padding: 14,
+    marginBottom: 16,
+  },
+  insightsThemesCardDark: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  insightsThemesCardLight: {
+    backgroundColor: "rgba(0,0,0,0.035)",
+    borderColor: "rgba(0,0,0,0.08)",
+  },
+  insightsThemesBody: {
+    fontSize: 13,
+    lineHeight: 20.8,
+    fontStyle: "italic",
+    fontWeight: "400",
+  },
+  insightsThemesBodyDark: {
+    color: "rgba(255,255,255,0.65)",
+  },
+  insightsThemesBodyLight: {
+    color: "rgba(15,23,42,0.65)",
   },
   insightsFactRow: {
     flexDirection: "row",
@@ -1065,6 +1535,12 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginTop: 8,
   },
+  insightsFactBulletDark: {
+    backgroundColor: "rgba(255,255,255,0.35)",
+  },
+  insightsFactBulletLight: {
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
   insightsFactText: {
     flex: 1,
     fontSize: 15,
@@ -1076,6 +1552,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderLeftWidth: 3,
+    borderLeftColor: "#f59e0b",
     backgroundColor: "rgba(15,23,42,0.05)",
     borderRadius: 10,
   },
@@ -1179,6 +1656,8 @@ const styles = StyleSheet.create({
   reportTitleChapter: {
     fontFamily: FONT_CANELA_TEXT_BOLD,
     fontWeight: "400",
+    fontSize: 15,
+    lineHeight: 20,
   },
   reportIndexPill: {
     borderWidth: 1,

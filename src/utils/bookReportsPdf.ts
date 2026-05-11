@@ -2,6 +2,8 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import type { BookItem } from "../types/note";
 import type { ExtractionMode, ScanItem } from "../types/note";
+import type { PdfExportContentOptions } from "../types/exportPreferences";
+import { DEFAULT_PDF_EXPORT_CONTENT } from "../types/exportPreferences";
 import { getPdfCanelaFontFaceCss } from "./pdfCanelaFont";
 import { stripMarkdownBoldMarkers } from "./stripMarkdownBoldMarkers";
 
@@ -40,10 +42,14 @@ function sortedReportsForPdf(reports: ScanItem[]): ScanItem[] {
 }
 
 /** Report meta line: date, page, chapter (Canela bold via @font-face weight 700), extraction modes. */
-function buildReportMetaLineHtml(item: ScanItem, createdDisplay: string): string {
+function buildReportMetaLineHtml(
+  item: ScanItem,
+  createdDisplay: string,
+  includePageNumbers: boolean
+): string {
   const extractionModes = getExtractionModes(item.extractionMode, item.extractionModes);
   const parts: string[] = [`<span>${escapeHtml(createdDisplay)}</span>`];
-  if (item.page?.trim()) {
+  if (includePageNumbers && item.page?.trim()) {
     parts.push(`<span>Page ${escapeHtml(item.page.trim())}</span>`);
   }
   if (item.chapter?.trim()) {
@@ -88,19 +94,23 @@ function buildPdfHtmlWrapper(opts: {
     }
     .book-author { font-size: 13pt; color: #444; margin: 0 0 8px; }
     .book-meta { font-size: 10pt; color: #666; margin: 0 0 28px; }
-    .report { margin-top: 8px; }
+    .report {
+      margin-top: 8px;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
     .report-break { page-break-before: always; }
     .report h2,
     .report h3 {
       font-family: ${PDF_CANELA_STACK};
     }
-    h2 { font-size: 15pt; margin: 0 0 10px; border-bottom: 1px solid #ccc; padding-bottom: 6px; }
-    h3 { font-size: 12pt; margin: 18px 0 8px; }
+    h2 { font-size: 15pt; margin: 0 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+    h3 { font-size: 12pt; margin: 12px 0 5px; }
     .report .meta {
       font-family: ${PDF_CANELA_STACK};
       font-size: 9.5pt;
       color: #555;
-      margin: 0 0 14px;
+      margin: 0 0 10px;
     }
     .report .meta .meta-chapter {
       font-weight: 700;
@@ -109,17 +119,23 @@ function buildPdfHtmlWrapper(opts: {
     .report li,
     .report .quote,
     .report .muted,
-    .report .keywords-inline {
+    .report .keywords-wrap {
       font-family: ${PDF_CANELA_STACK};
     }
     .report .keywords-block h3 {
-      margin: 12px 0 3px;
+      margin: 8px 0 2px;
+      break-after: avoid;
     }
-    .report .keywords-inline {
-      font-size: 9.5pt;
-      line-height: 1.28;
-      margin: 0 0 6px;
+    .report .keywords-wrap {
+      font-size: 8pt;
+      line-height: 1.18;
+      margin: 0 0 4px;
       color: #222;
+      column-count: 3;
+      column-gap: 10px;
+      column-fill: balance;
+      orphans: 2;
+      widows: 2;
     }
     .report ul.vocab-list {
       margin: 2px 0 6px;
@@ -130,9 +146,9 @@ function buildPdfHtmlWrapper(opts: {
       font-size: 9.5pt;
       line-height: 1.28;
     }
-    .body { margin: 0 0 10px; }
-    ul { margin: 6px 0 12px; padding-left: 20px; }
-    li { margin-bottom: 6px; }
+    .body { margin: 0 0 7px; }
+    ul { margin: 4px 0 8px; padding-left: 18px; }
+    li { margin-bottom: 4px; }
     .quote {
       margin: 8px 0 12px;
       padding-left: 12px;
@@ -152,13 +168,16 @@ function buildPdfHtmlWrapper(opts: {
 </html>`;
 }
 
-function buildReportSectionsHtml(item: ScanItem): string {
+function buildReportSectionsHtml(
+  item: ScanItem,
+  content: PdfExportContentOptions = DEFAULT_PDF_EXPORT_CONTENT
+): string {
   const extractionModes = getExtractionModes(item.extractionMode, item.extractionModes);
   const showEverything = extractionModes.includes("everything");
-  const showSummary = showEverything;
+  const showSummary = showEverything && content.includeSummary;
   const showMainIdeas = showEverything || extractionModes.includes("bulletPoints");
   const showDetailedNotes = showEverything;
-  const showQuotes = showEverything || extractionModes.includes("quotes");
+  const showQuotes = (showEverything || extractionModes.includes("quotes")) && content.includeQuotes;
   const showKeywords = showEverything || extractionModes.includes("words");
   const showVocabularyDefinitions = !showEverything && extractionModes.includes("words");
 
@@ -219,9 +238,14 @@ function buildReportSectionsHtml(item: ScanItem): string {
       }
       parts.push("</ul>");
     } else if (item.notes.keywords.length > 0) {
-      parts.push(
-        `<p class="keywords-inline">${item.notes.keywords.map((k) => plainToHtml(k)).join(", ")}</p>`,
-      );
+      const maxKeywordsInPdf = 96;
+      const kws = item.notes.keywords;
+      const shown = kws.slice(0, maxKeywordsInPdf);
+      const extra = kws.length - shown.length;
+      const body = shown.map((k) => plainToHtml(k)).join(", ");
+      const suffix =
+        extra > 0 ? ` <span class="muted">(+${extra} more)</span>` : "";
+      parts.push(`<div class="keywords-wrap">${body}${suffix}</div>`);
     } else {
       parts.push(`<p class="muted">No ${sectionLabel.toLowerCase()} extracted.</p>`);
     }
@@ -242,7 +266,11 @@ function buildReportSectionsHtml(item: ScanItem): string {
   return parts.join("\n");
 }
 
-export async function buildBookReportsPdfHtml(book: BookItem, reports: ScanItem[]): Promise<string> {
+export async function buildBookReportsPdfHtml(
+  book: BookItem,
+  reports: ScanItem[],
+  content: PdfExportContentOptions = DEFAULT_PDF_EXPORT_CONTENT
+): Promise<string> {
   const fontFaceCss = await getPdfCanelaFontFaceCss();
   const ordered = sortedReportsForPdf(reports);
   const generated = new Date().toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -254,8 +282,8 @@ export async function buildBookReportsPdfHtml(book: BookItem, reports: ScanItem[
     return `
       <section class="report${pageBreak}">
         <h2>Report ${index + 1}</h2>
-        <p class="meta">${buildReportMetaLineHtml(item, created)}</p>
-        ${buildReportSectionsHtml(item)}
+        <p class="meta">${buildReportMetaLineHtml(item, created, content.includePageNumbers)}</p>
+        ${buildReportSectionsHtml(item, content)}
       </section>
     `;
   });
@@ -272,6 +300,7 @@ export async function buildBookReportsPdfHtml(book: BookItem, reports: ScanItem[
 export async function buildSingleReportPdfHtml(
   item: ScanItem,
   book?: Pick<BookItem, "title" | "author"> | null,
+  content: PdfExportContentOptions = DEFAULT_PDF_EXPORT_CONTENT
 ): Promise<string> {
   const fontFaceCss = await getPdfCanelaFontFaceCss();
   const bookTitle = book?.title ?? item.book?.trim() ?? "Reading notes";
@@ -281,8 +310,8 @@ export async function buildSingleReportPdfHtml(
   const section = `
       <section class="report">
         <h2>Report</h2>
-        <p class="meta">${buildReportMetaLineHtml(item, created)}</p>
-        ${buildReportSectionsHtml(item)}
+        <p class="meta">${buildReportMetaLineHtml(item, created, content.includePageNumbers)}</p>
+        ${buildReportSectionsHtml(item, content)}
       </section>
     `;
 
@@ -301,8 +330,12 @@ export function sanitizeFileBase(title: string): string {
   return safe || "Book-reports";
 }
 
-export async function createAllBookReportsPdf(book: BookItem, reports: ScanItem[]): Promise<string> {
-  const html = await buildBookReportsPdfHtml(book, reports);
+export async function createAllBookReportsPdf(
+  book: BookItem,
+  reports: ScanItem[],
+  content: PdfExportContentOptions = DEFAULT_PDF_EXPORT_CONTENT
+): Promise<string> {
+  const html = await buildBookReportsPdfHtml(book, reports, content);
   const { uri } = await Print.printToFileAsync({ html });
   return uri;
 }
@@ -310,8 +343,9 @@ export async function createAllBookReportsPdf(book: BookItem, reports: ScanItem[
 export async function createSingleReportPdf(
   item: ScanItem,
   book?: Pick<BookItem, "title" | "author"> | null,
+  content: PdfExportContentOptions = DEFAULT_PDF_EXPORT_CONTENT
 ): Promise<string> {
-  const html = await buildSingleReportPdfHtml(item, book);
+  const html = await buildSingleReportPdfHtml(item, book, content);
   const { uri } = await Print.printToFileAsync({ html });
   return uri;
 }
@@ -331,8 +365,12 @@ export async function sharePdfUri(uri: string, dialogTitle: string): Promise<voi
 /**
  * Renders all book reports to one PDF and opens the system share sheet (save to Files, AirDrop, etc.).
  */
-export async function shareAllBookReportsPdf(book: BookItem, reports: ScanItem[]): Promise<void> {
-  const uri = await createAllBookReportsPdf(book, reports);
+export async function shareAllBookReportsPdf(
+  book: BookItem,
+  reports: ScanItem[],
+  content: PdfExportContentOptions = DEFAULT_PDF_EXPORT_CONTENT
+): Promise<void> {
+  const uri = await createAllBookReportsPdf(book, reports, content);
   await sharePdfUri(uri, `Export ${sanitizeFileBase(book.title)}`);
 }
 
@@ -348,8 +386,9 @@ export function singleReportShareLabel(item: ScanItem, book?: Pick<BookItem, "ti
 export async function shareSingleReportPdf(
   item: ScanItem,
   book?: Pick<BookItem, "title" | "author"> | null,
+  content: PdfExportContentOptions = DEFAULT_PDF_EXPORT_CONTENT
 ): Promise<void> {
-  const uri = await createSingleReportPdf(item, book);
+  const uri = await createSingleReportPdf(item, book, content);
   await sharePdfUri(uri, `Export ${sanitizeFileBase(singleReportShareLabel(item, book))}`);
 }
 

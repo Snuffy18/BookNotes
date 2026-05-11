@@ -18,17 +18,22 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Graph2DIcon } from "../components/Graph2DIcon";
 import { HighlighterIcon } from "../components/HighlighterIcon";
 import { RulerIcon } from "../components/RulerIcon";
-import { SettingsOptionHeroCard } from "../components/SettingsOptionHeroCard";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { useStudyPreferences } from "../context/StudyPreferencesContext";
 import type { ProfileStackParamList } from "../navigation/types";
-import { formatHighlightDropdown, formatLengthDropdown, labelTone } from "../study/studyPreferenceLabels";
+import { formatHighlightDropdown, labelLength, labelTone } from "../study/studyPreferenceLabels";
 import { DEFAULT_STUDY_PREFERENCES, type StudyLength, type StudyTone } from "../types/studyPreferences";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "StudyPreferences">;
 
 type Choice<T extends string> = { id: T; title: string; subtitle: string };
+
+const BLUE = "#60a5fa";
+const SECTION_LABEL_TO_CARD = 6;
+const ROW_ICON_GAP = 12;
+const ROW_ICON_W = 18;
+const DIVIDER_INSET = 14 + ROW_ICON_W + ROW_ICON_GAP;
 
 const TONE_CHOICES: Choice<StudyTone>[] = [
   { id: "simple", title: "Simple", subtitle: "Like explaining to a beginner" },
@@ -50,9 +55,17 @@ const LENGTH_CHOICES: Choice<StudyLength>[] = [
   },
 ];
 
+function SectionLabel({ darkMode }: { darkMode: boolean }) {
+  return (
+    <Text style={[styles.sectionLabel, !darkMode && styles.sectionLabelLight]}>
+      Preferences
+    </Text>
+  );
+}
+
 export function StudyPreferencesScreen() {
   const navigation = useNavigation<Nav>();
-  const { darkMode, accentColor } = useAppSettings();
+  const { darkMode } = useAppSettings();
   const insets = useSafeAreaInsets();
   const {
     tone,
@@ -86,6 +99,10 @@ export function StudyPreferencesScreen() {
     Haptics.selectionAsync().catch(() => {});
   };
 
+  const groupCard = [styles.groupCard, darkMode ? styles.groupCardDark : styles.groupCardLight];
+  const divider = [styles.rowDivider, darkMode ? styles.rowDividerDark : styles.rowDividerLight];
+  const chevronMuted = darkMode ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.35)";
+
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
       <View style={styles.topBar}>
@@ -101,142 +118,139 @@ export function StudyPreferencesScreen() {
           <Ionicons
             name="chevron-back"
             size={26}
-            color={darkMode ? darkColors.textPrimary : lightColors.textPrimary}
+            color={darkMode ? "#ffffff" : lightColors.textPrimary}
           />
         </TouchableOpacity>
         <Text style={[styles.topBarTitle, darkMode && styles.topBarTitleDark]} numberOfLines={1}>
-          Study Preferences
+          Study preferences
         </Text>
         <View style={styles.topBarSide} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <SettingsOptionHeroCard
-          icon="school-outline"
-          title="Study Preferences"
-          description="Choose tone, length, highlights, and language so notes match how you study."
-        />
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={[styles.heroCard, darkMode && styles.heroCardDark]}>
+          <View style={styles.heroIconWrap}>
+            <Ionicons name="school" size={22} color={BLUE} />
+          </View>
+          <Text style={[styles.heroTitle, darkMode && styles.heroTitleDark]}>Study preferences</Text>
+          <Text
+            style={[styles.heroDescription, darkMode && styles.heroDescriptionDark]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            Adjust tone, length and language to match how you study.
+          </Text>
+        </View>
 
-        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
-          <View style={styles.settingInlineRow}>
-            <Graph2DIcon size={20} color={accentColor} opacity={darkMode ? 0.95 : 1} />
-            <Text
-              style={[styles.settingRowLabel, darkMode && styles.textDark]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              Tone / complexity
-            </Text>
+        <View>
+          <SectionLabel darkMode={darkMode} />
+          <View style={[...groupCard, { marginTop: SECTION_LABEL_TO_CARD }]}>
             <TouchableOpacity
-              style={[styles.dropdown, styles.dropdownInline, darkMode && styles.dropdownDark]}
+              style={styles.prefRow}
               onPress={() => {
                 hapticLight();
                 setOpenMenu("tone");
               }}
-              activeOpacity={0.8}
+              activeOpacity={0.82}
             >
-              <Text
-                style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {labelTone(tone)}
-              </Text>
-              <Ionicons name="chevron-down" size={18} color={accentColor} style={styles.dropdownChevron} />
+              <View style={styles.rowIconSlot}>
+                <Graph2DIcon size={ROW_ICON_W} color={BLUE} opacity={1} />
+              </View>
+              <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Tone / complexity</Text>
+              <View style={styles.dropdownTrail}>
+                <Text style={[styles.dropdownValue, darkMode && styles.dropdownValueDark]} numberOfLines={1}>
+                  {labelTone(tone)}
+                </Text>
+                <Ionicons name="chevron-down" size={15} color={chevronMuted} />
+              </View>
             </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
-          <View style={styles.settingInlineRow}>
-            <RulerIcon size={22} color={accentColor} opacity={darkMode ? 0.95 : 1} />
-            <Text
-              style={[styles.settingRowLabel, darkMode && styles.textDark]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              Length
-            </Text>
+            <View style={[...divider, { marginLeft: DIVIDER_INSET }]} />
             <TouchableOpacity
-              style={[styles.dropdown, styles.dropdownInline, darkMode && styles.dropdownDark]}
+              style={styles.prefRow}
               onPress={() => {
                 hapticLight();
                 setOpenMenu("length");
               }}
-              activeOpacity={0.8}
+              activeOpacity={0.82}
             >
-              <Text
-                style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {formatLengthDropdown(length)}
-              </Text>
-              <Ionicons name="chevron-down" size={18} color={accentColor} style={styles.dropdownChevron} />
+              <View style={styles.rowIconSlot}>
+                <RulerIcon size={ROW_ICON_W} color={BLUE} opacity={1} />
+              </View>
+              <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Length</Text>
+              <View style={styles.dropdownTrail}>
+                <Text style={[styles.dropdownValue, darkMode && styles.dropdownValueDark]} numberOfLines={1}>
+                  {labelLength(length)}
+                </Text>
+                <Ionicons name="chevron-down" size={15} color={chevronMuted} />
+              </View>
             </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
-          <SettingRow label="Output language" value="English" darkMode={darkMode} />
-        </View>
-
-        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
-          <View style={styles.settingInlineRow}>
-            <HighlighterIcon size={20} color={accentColor} opacity={darkMode ? 0.95 : 1} />
-            <Text
-              style={[styles.settingRowLabel, darkMode && styles.textDark]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              Highlight key elements
-            </Text>
+            <View style={[...divider, { marginLeft: DIVIDER_INSET }]} />
             <TouchableOpacity
-              style={[styles.dropdown, styles.dropdownInline, darkMode && styles.dropdownDark]}
+              style={styles.prefRow}
               onPress={() => {
                 hapticLight();
                 setOpenMenu("highlight");
               }}
-              activeOpacity={0.8}
+              activeOpacity={0.82}
             >
-              <Text
-                style={[styles.dropdownValue, styles.dropdownValueInline, darkMode && styles.textDark]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {highlightDropdownLabel}
-              </Text>
-              <Ionicons name="chevron-down" size={18} color={accentColor} style={styles.dropdownChevron} />
+              <View style={styles.rowIconSlot}>
+                <HighlighterIcon size={ROW_ICON_W} color={BLUE} opacity={1} />
+              </View>
+              <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Key elements</Text>
+              <View style={styles.dropdownTrail}>
+                <Text style={[styles.dropdownValue, darkMode && styles.dropdownValueDark]} numberOfLines={1}>
+                  {highlightDropdownLabel}
+                </Text>
+                <Ionicons name="chevron-down" size={15} color={chevronMuted} />
+              </View>
+            </TouchableOpacity>
+            <View style={[...divider, { marginLeft: DIVIDER_INSET }]} />
+            <TouchableOpacity
+              style={styles.prefRow}
+              onPress={() => {
+                hapticLight();
+                navigation.navigate("OutputLanguage");
+              }}
+              activeOpacity={0.82}
+            >
+              <View style={styles.rowIconSlot}>
+                <Ionicons name="globe-outline" size={ROW_ICON_W} color={BLUE} />
+              </View>
+              <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Output language</Text>
+              <View style={styles.langTrail}>
+                <Text style={[styles.langValueMuted, darkMode && styles.langValueMutedDark]} numberOfLines={1}>
+                  English
+                </Text>
+                <Ionicons name="chevron-forward" size={15} color={chevronMuted} />
+              </View>
             </TouchableOpacity>
           </View>
         </View>
 
-        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
-          <TouchableOpacity
-            style={styles.restoreRow}
-            onPress={() => {
-              hapticLight();
-              Alert.alert(
-                "Restore to default?",
-                "Tone, length, and highlight options will be reset to their original values.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Restore",
-                    onPress: () => {
-                      hapticSelect();
-                      replaceStudyPreferences({ ...DEFAULT_STUDY_PREFERENCES });
-                    },
+        <TouchableOpacity
+          style={styles.resetButton}
+          onPress={() => {
+            hapticLight();
+            Alert.alert(
+              "Restore to defaults?",
+              "Tone, length, and highlight options will be reset to their original values.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Restore",
+                  style: "destructive",
+                  onPress: () => {
+                    hapticSelect();
+                    replaceStudyPreferences({ ...DEFAULT_STUDY_PREFERENCES });
                   },
-                ]
-              );
-            }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="refresh-outline" size={22} color={accentColor} />
-            <Text style={[styles.restoreLabel, darkMode && styles.textDark]}>Restore to Default</Text>
-          </TouchableOpacity>
-        </View>
+                },
+              ]
+            );
+          }}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.resetLabel}>Restore to defaults</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       <Modal
@@ -262,19 +276,19 @@ export function StudyPreferencesScreen() {
             </View>
             <View style={styles.menuSheetTitleRow}>
               {openMenu === "tone" ? (
-                <Graph2DIcon size={20} color={accentColor} opacity={darkMode ? 0.95 : 1} />
+                <Graph2DIcon size={20} color={BLUE} opacity={1} />
               ) : openMenu === "length" ? (
-                <RulerIcon size={22} color={accentColor} opacity={darkMode ? 0.95 : 1} />
+                <RulerIcon size={20} color={BLUE} opacity={1} />
               ) : openMenu === "highlight" ? (
-                <HighlighterIcon size={20} color={accentColor} opacity={darkMode ? 0.95 : 1} />
+                <HighlighterIcon size={20} color={BLUE} opacity={1} />
               ) : null}
-              <Text style={[styles.menuSheetTitle, darkMode && styles.textDark]}>
+              <Text style={[styles.menuSheetTitle, darkMode && styles.menuSheetTitleDark]}>
                 {openMenu === "tone"
                   ? "Tone / complexity"
                   : openMenu === "length"
                     ? "Length"
                     : openMenu === "highlight"
-                      ? "Highlight key elements"
+                      ? "Key elements"
                       : ""}
               </Text>
             </View>
@@ -286,7 +300,7 @@ export function StudyPreferencesScreen() {
                 showsVerticalScrollIndicator={false}
               >
                 <View style={[styles.switchRow, styles.menuHighlightSwitchRow]}>
-                  <Text style={[styles.switchLabel, darkMode && styles.textDark]}>Highlight key elements</Text>
+                  <Text style={[styles.switchLabel, darkMode && styles.switchLabelDark]}>Highlight key elements</Text>
                   <Switch
                     value={highlightKeyElements}
                     onValueChange={(v) => {
@@ -300,7 +314,7 @@ export function StudyPreferencesScreen() {
                 </View>
                 <View style={[styles.settingsSeparator, darkMode && styles.settingsSeparatorDark]} />
                 <View style={[styles.switchRow, !highlightKeyElements && styles.switchRowDisabled, styles.menuHighlightSwitchRow]}>
-                  <Text style={[styles.switchLabel, darkMode && styles.textDark]}>Highlight key terms</Text>
+                  <Text style={[styles.switchLabel, darkMode && styles.switchLabelDark]}>Highlight key terms</Text>
                   <Switch
                     value={highlightKeyTerms}
                     onValueChange={(v) => {
@@ -315,7 +329,7 @@ export function StudyPreferencesScreen() {
                 </View>
                 <View style={[styles.settingsSeparator, darkMode && styles.settingsSeparatorDark]} />
                 <View style={[styles.switchRow, !highlightKeyElements && styles.switchRowDisabled, styles.menuHighlightSwitchRow]}>
-                  <Text style={[styles.switchLabel, darkMode && styles.textDark]}>Highlight definitions</Text>
+                  <Text style={[styles.switchLabel, darkMode && styles.switchLabelDark]}>Highlight definitions</Text>
                   <Switch
                     value={highlightDefinitions}
                     onValueChange={(v) => {
@@ -330,7 +344,7 @@ export function StudyPreferencesScreen() {
                 </View>
                 <View style={[styles.settingsSeparator, darkMode && styles.settingsSeparatorDark]} />
                 <View style={[styles.switchRow, !highlightKeyElements && styles.switchRowDisabled, styles.menuHighlightSwitchRow]}>
-                  <Text style={[styles.switchLabel, darkMode && styles.textDark]}>Highlight important numbers/dates</Text>
+                  <Text style={[styles.switchLabel, darkMode && styles.switchLabelDark]}>Highlight important numbers/dates</Text>
                   <Switch
                     value={highlightNumbersDates}
                     onValueChange={(v) => {
@@ -361,11 +375,11 @@ export function StudyPreferencesScreen() {
                         }}
                       >
                         <View style={styles.menuOptionText}>
-                          <Text style={[styles.menuOptionTitle, darkMode && styles.textDark]}>{opt.title}</Text>
+                          <Text style={[styles.menuOptionTitle, darkMode && styles.menuOptionTitleDark]}>{opt.title}</Text>
                           <Text style={[styles.menuOptionSub, darkMode && styles.menuOptionSubDark]}>{opt.subtitle}</Text>
                         </View>
                         {tone === opt.id ? (
-                          <Ionicons name="checkmark" size={22} color={accentColor} />
+                          <Ionicons name="checkmark" size={22} color={BLUE} />
                         ) : (
                           <View style={styles.menuCheckPlaceholder} />
                         )}
@@ -387,13 +401,13 @@ export function StudyPreferencesScreen() {
                         }}
                       >
                         <View style={styles.menuOptionText}>
-                          <Text style={[styles.menuOptionTitle, darkMode && styles.textDark]}>{opt.title}</Text>
+                          <Text style={[styles.menuOptionTitle, darkMode && styles.menuOptionTitleDark]}>{opt.title}</Text>
                           {opt.subtitle ? (
                             <Text style={[styles.menuOptionSub, darkMode && styles.menuOptionSubDark]}>{opt.subtitle}</Text>
                           ) : null}
                         </View>
                         {length === opt.id ? (
-                          <Ionicons name="checkmark" size={22} color={accentColor} />
+                          <Ionicons name="checkmark" size={22} color={BLUE} />
                         ) : (
                           <View style={styles.menuCheckPlaceholder} />
                         )}
@@ -406,17 +420,6 @@ export function StudyPreferencesScreen() {
         </View>
       </Modal>
     </SafeAreaView>
-  );
-}
-
-function SettingRow({ label, value, darkMode }: { label: string; value: string; darkMode: boolean }) {
-  return (
-    <View style={styles.optionRow}>
-      <Text style={[styles.label, darkMode && styles.textDark]}>{label}</Text>
-      <Text style={[styles.value, darkMode && styles.valueDark]} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
   );
 }
 
@@ -443,121 +446,156 @@ const styles = StyleSheet.create({
   topBarTitle: {
     flex: 1,
     textAlign: "center",
-    fontSize: 17,
-    fontWeight: "700",
+    fontSize: 14,
+    fontWeight: "500",
     color: lightColors.textPrimary,
   },
   topBarTitleDark: {
-    color: darkColors.textPrimary,
+    color: "#ffffff",
   },
   scrollContent: {
-    paddingBottom: 32,
-    gap: 14,
+    paddingBottom: 40,
   },
-  settingsCard: {
-    backgroundColor: lightColors.card,
+  heroCard: {
+    alignItems: "center",
+    paddingTop: 14,
+    paddingBottom: 16,
+    paddingHorizontal: 14,
+    marginBottom: 20,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    padding: 16,
+    borderWidth: 0.5,
+    borderColor: "rgba(0,0,0,0.08)",
+    backgroundColor: "rgba(0,0,0,0.035)",
   },
-  settingsCardDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
+  heroCardDark: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.08)",
   },
-  settingsSeparator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: lightColors.borderStrong,
-    marginVertical: 14,
-  },
-  settingsSeparatorDark: {
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
-  settingInlineRow: {
-    flexDirection: "row",
+  heroIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "rgba(59,130,246,0.25)",
     alignItems: "center",
-    gap: 10,
+    justifyContent: "center",
   },
-  settingRowLabel: {
-    flex: 1,
-    minWidth: 0,
-    fontSize: 15,
-    fontWeight: "700",
-    color: lightColors.textPrimary,
-  },
-  restoreRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 2,
-  },
-  restoreLabel: {
-    flex: 1,
-    fontSize: 15,
+  heroTitle: {
+    marginTop: 8,
+    fontSize: 17,
     fontWeight: "600",
     color: lightColors.textPrimary,
+    textAlign: "center",
   },
-  dropdown: {
+  heroTitleDark: {
+    color: "#ffffff",
+  },
+  heroDescription: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: "400",
+    color: "rgba(0,0,0,0.4)",
+    textAlign: "center",
+    alignSelf: "stretch",
+  },
+  heroDescriptionDark: {
+    color: "rgba(255,255,255,0.4)",
+  },
+  sectionLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+    color: "rgba(255,255,255,0.3)",
+    paddingLeft: 4,
+  },
+  sectionLabelLight: {
+    color: "rgba(0,0,0,0.3)",
+  },
+  groupCard: {
+    borderRadius: 14,
+    borderWidth: 0.5,
+    overflow: "hidden",
+  },
+  groupCardDark: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  groupCardLight: {
+    backgroundColor: "rgba(0,0,0,0.035)",
+    borderColor: "rgba(0,0,0,0.08)",
+  },
+  prefRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
+    paddingVertical: 18,
     paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: lightColors.chipBg,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    gap: 8,
+    gap: ROW_ICON_GAP,
   },
-  dropdownInline: {
-    flexGrow: 0,
-    flexShrink: 0,
+  rowIconSlot: {
+    width: ROW_ICON_W,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowLabel: {
+    flex: 1,
     minWidth: 0,
-    maxWidth: "46%",
-    paddingVertical: 7,
-    paddingHorizontal: 8,
-    justifyContent: "flex-start",
+    fontSize: 15,
+    fontWeight: "500",
+    color: lightColors.textPrimary,
   },
-  dropdownDark: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderColor: darkColors.border,
+  rowLabelDark: {
+    color: "#ffffff",
+  },
+  dropdownTrail: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 0,
+    maxWidth: "42%",
   },
   dropdownValue: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 15,
+    fontWeight: "500",
     color: lightColors.textPrimary,
   },
-  dropdownValueInline: {
-    flex: 1,
-    minWidth: 0,
-    fontSize: 14,
+  dropdownValueDark: {
+    color: "#ffffff",
   },
-  dropdownChevron: {
-    opacity: 0.85,
-  },
-  optionRow: {
+  langTrail: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
+    gap: 6,
+    flexShrink: 0,
+    maxWidth: "42%",
   },
-  label: {
-    color: lightColors.textPrimary,
+  langValueMuted: {
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: "500",
+    color: "rgba(0,0,0,0.4)",
   },
-  value: {
-    flexShrink: 1,
-    textAlign: "right",
-    color: lightColors.textSecondary,
-    fontSize: 14,
+  langValueMutedDark: {
+    color: "rgba(255,255,255,0.4)",
   },
-  valueDark: {
-    color: darkColors.textPrimary,
+  rowDivider: {
+    height: 0.5,
   },
-  textDark: {
-    color: darkColors.textPrimary,
+  rowDividerDark: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  rowDividerLight: {
+    backgroundColor: "rgba(0,0,0,0.06)",
+  },
+  resetButton: {
+    marginTop: 16,
+    alignSelf: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  resetLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#f87171",
+    textAlign: "center",
   },
   switchRow: {
     flexDirection: "row",
@@ -575,6 +613,17 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: lightColors.textPrimary,
     paddingRight: 8,
+  },
+  switchLabelDark: {
+    color: darkColors.textPrimary,
+  },
+  settingsSeparator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: lightColors.borderStrong,
+    marginVertical: 14,
+  },
+  settingsSeparatorDark: {
+    backgroundColor: "rgba(255,255,255,0.12)",
   },
   menuModalRoot: {
     flex: 1,
@@ -621,6 +670,9 @@ const styles = StyleSheet.create({
     color: lightColors.textPrimary,
     textAlign: "center",
   },
+  menuSheetTitleDark: {
+    color: darkColors.textPrimary,
+  },
   menuOptions: {
     gap: 0,
     paddingBottom: 8,
@@ -649,6 +701,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: lightColors.textPrimary,
+  },
+  menuOptionTitleDark: {
+    color: darkColors.textPrimary,
   },
   menuOptionSub: {
     fontSize: 13,

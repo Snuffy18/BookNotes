@@ -7,16 +7,16 @@ import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   FlatList,
   GestureResponderEvent,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
   Modal,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   PanResponder,
   Platform,
   Pressable,
@@ -31,10 +31,13 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAppSettings } from "../context/AppSettingsContext";
-import type { ScanStackParamList } from "../navigation/types";
+import { openReportInLibraryTab } from "../navigation/openReportInLibraryTab";
+import { ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING } from "../navigation/rootTabLayout";
+import type { RootTabParamList, ScanStackParamList } from "../navigation/types";
 import type { BookItem, ChapterRange, ReadingSession, ScanItem } from "../types/note";
 import { HeaderText } from "../components/HeaderText";
 import { ReadingTimerBottomSheet } from "../components/ReadingTimerBottomSheet";
@@ -78,55 +81,73 @@ function resolveIosLensRoles(names: string[]): {
 
 const CHAPTER_MAP_BG = "#111";
 
-const PAGE_SCAN_SHEET_CORNER_LEN = 22;
-const PAGE_SCAN_SHEET_CORNER_INSET = 10;
-const PAGE_SCAN_SHEET_STROKE = 2;
+const PAGE_SCAN_CORNER = { L: 22, inset: 14, stroke: 2, r: 3 } as const;
 
-/** White L-shaped corner brackets for the page-scan sheet preview (2px stroke). */
-function PageScanSheetFrameCorners() {
-  const c = {
-    position: "absolute" as const,
-    width: PAGE_SCAN_SHEET_CORNER_LEN,
-    height: PAGE_SCAN_SHEET_CORNER_LEN,
-    borderColor: "#ffffff",
-  };
+/** L-shaped corner brackets; color animates white → green when `cornerAnim` goes 0 → 1. */
+function PageScanSheetFrameCorners({ cornerAnim }: { cornerAnim: Animated.Value }) {
+  const borderColor = cornerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["rgba(255,255,255,0.8)", "#4ade80"],
+  });
+  const { L, inset, stroke, r } = PAGE_SCAN_CORNER;
+  const base = { position: "absolute" as const, width: L, height: L };
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <View
-        style={{
-          ...c,
-          left: PAGE_SCAN_SHEET_CORNER_INSET,
-          top: PAGE_SCAN_SHEET_CORNER_INSET,
-          borderLeftWidth: PAGE_SCAN_SHEET_STROKE,
-          borderTopWidth: PAGE_SCAN_SHEET_STROKE,
-        }}
+      <Animated.View
+        style={[
+          base,
+          {
+            left: inset,
+            top: inset,
+            borderLeftWidth: stroke,
+            borderTopWidth: stroke,
+            borderTopLeftRadius: r,
+            borderLeftColor: borderColor,
+            borderTopColor: borderColor,
+          },
+        ]}
       />
-      <View
-        style={{
-          ...c,
-          right: PAGE_SCAN_SHEET_CORNER_INSET,
-          top: PAGE_SCAN_SHEET_CORNER_INSET,
-          borderRightWidth: PAGE_SCAN_SHEET_STROKE,
-          borderTopWidth: PAGE_SCAN_SHEET_STROKE,
-        }}
+      <Animated.View
+        style={[
+          base,
+          {
+            right: inset,
+            top: inset,
+            borderRightWidth: stroke,
+            borderTopWidth: stroke,
+            borderTopRightRadius: r,
+            borderRightColor: borderColor,
+            borderTopColor: borderColor,
+          },
+        ]}
       />
-      <View
-        style={{
-          ...c,
-          left: PAGE_SCAN_SHEET_CORNER_INSET,
-          bottom: PAGE_SCAN_SHEET_CORNER_INSET,
-          borderLeftWidth: PAGE_SCAN_SHEET_STROKE,
-          borderBottomWidth: PAGE_SCAN_SHEET_STROKE,
-        }}
+      <Animated.View
+        style={[
+          base,
+          {
+            left: inset,
+            bottom: inset,
+            borderLeftWidth: stroke,
+            borderBottomWidth: stroke,
+            borderBottomLeftRadius: r,
+            borderLeftColor: borderColor,
+            borderBottomColor: borderColor,
+          },
+        ]}
       />
-      <View
-        style={{
-          ...c,
-          right: PAGE_SCAN_SHEET_CORNER_INSET,
-          bottom: PAGE_SCAN_SHEET_CORNER_INSET,
-          borderRightWidth: PAGE_SCAN_SHEET_STROKE,
-          borderBottomWidth: PAGE_SCAN_SHEET_STROKE,
-        }}
+      <Animated.View
+        style={[
+          base,
+          {
+            right: inset,
+            bottom: inset,
+            borderRightWidth: stroke,
+            borderBottomWidth: stroke,
+            borderBottomRightRadius: r,
+            borderRightColor: borderColor,
+            borderBottomColor: borderColor,
+          },
+        ]}
       />
     </View>
   );
@@ -257,7 +278,7 @@ function formatLastExtractPageLine(scan: ScanItem): string {
   return `p. ${cleaned}`;
 }
 
-type LibraryPromoKind = "idea" | "quote" | "summary";
+type LibraryPromoKind = "idea" | "quote";
 
 type LibraryPromoSlide = {
   kind: LibraryPromoKind;
@@ -287,10 +308,6 @@ function buildLibraryPromoSlides(scansFiltered: ScanItem[]): LibraryPromoSlide[]
         out.push({ kind: "quote", text, scan, chapterLabel, pageLabel });
       }
     }
-    const summary = stripMarkdownBoldMarkers(scan.notes.summary).trim();
-    if (summary) {
-      out.push({ kind: "summary", text: summary, scan, chapterLabel, pageLabel });
-    }
   }
   return out;
 }
@@ -301,8 +318,6 @@ function libraryPromoKindLabel(kind: LibraryPromoKind): string {
       return "Idea";
     case "quote":
       return "Quote";
-    case "summary":
-      return "Summary";
   }
 }
 
@@ -530,6 +545,9 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const [pageScanSheetPurpose, setPageScanSheetPurpose] = useState<"page" | "bookCover">("page");
   const [pageScanSheetCameraReady, setPageScanSheetCameraReady] = useState(false);
   const pageScanSheetY = useRef(new Animated.Value(480)).current;
+  /** Simulated page-detect UI for the page-scan sheet (placeholder until real CV). */
+  const [pageScanPageDetected, setPageScanPageDetected] = useState(false);
+  const pageScanCornerAnim = useRef(new Animated.Value(0)).current;
   const [lensMode, setLensMode] = useState<"0.5x" | "1x">("1x");
   /** Resolved `localizedName` values for iOS lens switching (see `resolveIosLensRoles`). */
   const [iosLensRoles, setIosLensRoles] = useState<{
@@ -565,8 +583,6 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const [libraryPromoSwipeHintVisible, setLibraryPromoSwipeHintVisible] = useState(false);
   const [libraryWidgetHighlightTeaser, setLibraryWidgetHighlightTeaser] = useState<string | null>(null);
   const libraryPromoListRef = useRef<FlatList<LibraryPromoSlide> | null>(null);
-  /** Last snapped carousel index; `null` until first settle after modal open (avoids sound on open). */
-  const libraryPromoSnapIndexRef = useRef<number | null>(null);
   const libraryModalSheetTranslateY = useRef(new Animated.Value(0)).current;
   const addGestureStartYRef = useRef(0);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -782,7 +798,13 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const onRecentScanCardPress = useCallback(
     (scan: ScanItem) => {
       Haptics.selectionAsync().catch(() => {});
-      navigation.navigate("ReportDetails", { item: scan });
+      const tabNav = navigation.getParent() as NavigationProp<RootTabParamList> | undefined;
+      if (!openReportInLibraryTab(tabNav, scan)) {
+        Alert.alert(
+          "Can’t open full report",
+          "This scan isn’t linked to a book yet. Save it to a book from the library, then open it there.",
+        );
+      }
     },
     [navigation]
   );
@@ -790,7 +812,13 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const onOpenLastExtractFullReport = useCallback(() => {
     if (!lastExtractedScan) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    navigation.navigate("ReportDetails", { item: lastExtractedScan });
+    const tabNav = navigation.getParent() as NavigationProp<RootTabParamList> | undefined;
+    if (!openReportInLibraryTab(tabNav, lastExtractedScan)) {
+      Alert.alert(
+        "Can’t open full report",
+        "This scan isn’t linked to a book yet. Save it to a book from the library, then open it there.",
+      );
+    }
   }, [navigation, lastExtractedScan]);
 
   const bookIdsWithScans = useMemo(() => {
@@ -822,27 +850,6 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     () => buildLibraryPromoSlides(libraryPromoFilteredScans),
     [libraryPromoFilteredScans]
   );
-
-  const onLibraryPromoMomentumScrollEnd = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (libraryPromoSlides.length <= 1) return;
-      const x = e.nativeEvent.contentOffset.x;
-      const idx = Math.round(x / libraryPromoItemStride);
-      const clamped = Math.max(0, Math.min(idx, libraryPromoSlides.length - 1));
-      const prev = libraryPromoSnapIndexRef.current;
-      if (prev !== null && prev !== clamped) {
-        playSoundEffect("swipeBetweenFromYourLibraryCards");
-      }
-      libraryPromoSnapIndexRef.current = clamped;
-    },
-    [libraryPromoItemStride, libraryPromoSlides.length]
-  );
-
-  useEffect(() => {
-    if (libraryPromoModalVisible) {
-      libraryPromoSnapIndexRef.current = null;
-    }
-  }, [libraryPromoModalVisible]);
 
   useFocusEffect(
     useCallback(() => {
@@ -916,7 +923,13 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     (slide: LibraryPromoSlide) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setLibraryPromoModalVisible(false);
-      navigation.navigate("ReportDetails", { item: slide.scan });
+      const tabNav = navigation.getParent() as NavigationProp<RootTabParamList> | undefined;
+      if (!openReportInLibraryTab(tabNav, slide.scan)) {
+        Alert.alert(
+          "Can’t open full report",
+          "This scan isn’t linked to a book yet. Save it to a book from the library, then open it there.",
+        );
+      }
     },
     [navigation]
   );
@@ -1107,6 +1120,8 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   }, [frameTips.length]);
 
   const dismissPageScanSheet = useCallback(() => {
+    setPageScanPageDetected(false);
+    pageScanCornerAnim.setValue(0);
     const wasBookCover = pageScanSheetPurpose === "bookCover";
     Animated.timing(pageScanSheetY, {
       toValue: 480,
@@ -1121,7 +1136,44 @@ export function ScanCameraScreen({ navigation, route }: Props) {
         }
       }
     });
-  }, [pageScanSheetPurpose, pageScanSheetY]);
+  }, [pageScanCornerAnim, pageScanSheetPurpose, pageScanSheetY]);
+
+  useEffect(() => {
+    if (!pageScanSheetVisible || pageScanSheetPurpose !== "page") {
+      setPageScanPageDetected(false);
+      pageScanCornerAnim.setValue(0);
+    }
+  }, [pageScanCornerAnim, pageScanSheetPurpose, pageScanSheetVisible]);
+
+  useEffect(() => {
+    if (!pageScanSheetVisible || pageScanSheetPurpose !== "page" || !pageScanSheetCameraReady) {
+      return;
+    }
+    setPageScanPageDetected(false);
+    pageScanCornerAnim.setValue(0);
+    const id = setTimeout(() => {
+      setPageScanPageDetected(true);
+      Animated.timing(pageScanCornerAnim, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    }, 2000);
+    return () => clearTimeout(id);
+  }, [pageScanCornerAnim, pageScanSheetCameraReady, pageScanSheetPurpose, pageScanSheetVisible]);
+
+  const openAddBookCoverFromPicker = useCallback(() => {
+    Keyboard.dismiss();
+    setIsBookModalOpen(false);
+    setSearchQuery("");
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setCoverExtractError(null);
+    setIsCameraOpen(false);
+    setAddingAnotherBookCover(true);
+    setPageScanSheetPurpose("bookCover");
+    setPageScanSheetVisible(true);
+  }, []);
 
   useEffect(() => {
     if (!pageScanSheetVisible) {
@@ -2401,27 +2453,29 @@ export function ScanCameraScreen({ navigation, route }: Props) {
               styles.pageScanSheetPanel,
               pageScanSheetPurpose === "bookCover" && styles.pageScanSheetPanelFixed,
               {
-                paddingBottom: 16 + insets.bottom,
+                paddingBottom: 28 + insets.bottom,
                 ...(pageScanSheetPurpose === "bookCover" ? { height: windowHeight * 0.8 } : null),
                 transform: [{ translateY: pageScanSheetY }],
               },
             ]}
           >
             <View style={styles.pageScanSheetGrabber} />
-            <Text style={styles.pageScanSheetTitle}>
-              {pageScanSheetPurpose === "bookCover" ? "Add another book" : "Scan a page"}
-            </Text>
-            <Text style={styles.pageScanSheetSubtitle}>
-              {pageScanSheetPurpose === "bookCover"
-                ? "Point your camera at the front cover. You can crop before we read the title."
-                : "Point your camera at the page you want to scan"}
-            </Text>
+            <View style={styles.pageScanSheetHeader}>
+              <Text style={styles.pageScanSheetTitle}>
+                {pageScanSheetPurpose === "bookCover" ? "Add another book" : "Scan a page"}
+              </Text>
+              <Text style={styles.pageScanSheetSubtitle}>
+                {pageScanSheetPurpose === "bookCover"
+                  ? "Point your camera at the front cover. You can crop before we read the title."
+                  : "Hold steady — page will be detected automatically"}
+              </Text>
+            </View>
             <View
               style={[
                 styles.pageScanPreviewWrap,
                 pageScanSheetPurpose === "bookCover"
                   ? styles.pageScanPreviewWrapFill
-                  : styles.pageScanPreviewWrapSized,
+                  : styles.pageScanPreviewWrapPage,
               ]}
             >
               <CameraView
@@ -2441,41 +2495,62 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 }}
                 onAvailableLensesChanged={({ lenses }) => applyAvailableLenses(lenses)}
               >
-                <PageScanSheetFrameCorners />
+                <PageScanSheetFrameCorners cornerAnim={pageScanCornerAnim} />
                 {!pageScanSheetCameraReady ? (
                   <View style={styles.pageScanPreviewPlaceholder} pointerEvents="none">
                     <Ionicons name="camera-outline" size={32} color="rgba(255,255,255,0.4)" />
                     <Text style={styles.pageScanPreviewPlaceholderText}>Camera preview</Text>
                   </View>
                 ) : null}
+                {pageScanSheetPurpose === "page" ? (
+                  <View style={styles.pageScanPreviewBadgeSlot} pointerEvents="box-none">
+                    {!pageScanPageDetected ? (
+                      <View style={styles.pageScanBadgeSearching}>
+                        <Text style={styles.pageScanBadgeSearchingText}>Searching for page...</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.pageScanBadgeDetected}>
+                        <Ionicons name="checkmark-circle" size={14} color="#4ade80" />
+                        <Text style={styles.pageScanBadgeDetectedText}>Page detected</Text>
+                      </View>
+                    )}
+                  </View>
+                ) : null}
               </CameraView>
             </View>
-            <TouchableOpacity
-              style={[styles.pageScanTakePhotoBtn, { backgroundColor: accentColor }]}
+            <Pressable
+              style={({ pressed }) => [styles.pageScanTakePhotoBtn, pressed && styles.pageScanTakePhotoBtnPressed]}
               onPress={() => void onCapturePageFromSheet()}
-              activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Take photo"
             >
-              <Ionicons name="camera" size={20} color="#ffffff" />
+              <Ionicons name="camera" size={18} color="#111" />
               <Text style={styles.pageScanTakePhotoBtnText}>Take photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.pageScanGalleryBtn}
+            </Pressable>
+            <Pressable
+              style={styles.pageScanGalleryLinkWrap}
               onPress={() => void onPickFromGallery()}
               disabled={isGalleryOpening || coverExtracting}
-              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Choose from gallery"
             >
-              <Ionicons name="images-outline" size={17} color="rgba(255,255,255,0.75)" />
-              <Text style={styles.pageScanGalleryBtnText}>
-                {isGalleryOpening ? "Opening gallery…" : "Choose from gallery"}
+              <Text
+                style={[
+                  styles.pageScanGalleryLinkText,
+                  (isGalleryOpening || coverExtracting) && styles.pageScanGalleryLinkTextDisabled,
+                ]}
+              >
+                {isGalleryOpening ? "Opening gallery…" : "or choose from gallery"}
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.pageScanCancelBtn}
+            </Pressable>
+            <Pressable
+              style={styles.pageScanCancelTextWrap}
               onPress={dismissPageScanSheet}
-              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
             >
-              <Text style={styles.pageScanCancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
+              <Text style={styles.pageScanCancelText}>Cancel</Text>
+            </Pressable>
           </Animated.View>
         </View>
       </Modal>
@@ -2581,64 +2656,110 @@ export function ScanCameraScreen({ navigation, route }: Props) {
             <Animated.View
               style={[
                 styles.bookPickerSheet,
-                darkMode && styles.bookPickerSheetDark,
                 {
-                  paddingBottom: Math.max(insets.bottom, 14),
+                  paddingBottom: 28 + insets.bottom,
                   marginBottom: bookPickerKeyboardPad,
                 },
                 { transform: [{ translateY: bookPickerSheetTranslate }] },
               ]}
             >
-              <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, darkMode && styles.modalTitleDark]}>Select Book</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setIsBookModalOpen(false);
-                    setSearchQuery("");
-                  }}
-                >
-                  <Ionicons name="close" size={20} color={darkMode ? "#e2e8f0" : "#0f172a"} />
-                </TouchableOpacity>
+              <View style={styles.bookPickerDragHandle} />
+              <Text style={styles.bookPickerSheetTitle}>Select book</Text>
+              <View style={styles.bookPickerSearchOuter}>
+                <View style={styles.bookPickerSearchInner}>
+                  <Ionicons name="search-outline" size={15} color="rgba(255,255,255,0.3)" />
+                  <TextInput
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Search by title or author"
+                    placeholderTextColor="rgba(255,255,255,0.25)"
+                    style={styles.bookPickerSearchInput}
+                    selectionColor={accentColor}
+                    underlineColorAndroid="transparent"
+                  />
+                </View>
               </View>
-
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Search by title or author"
-                placeholderTextColor="#94a3b8"
-                style={[styles.searchInput, darkMode && styles.searchInputDark]}
-              />
 
               <FlatList
                 data={filteredBooks}
                 keyExtractor={(item) => item.id}
                 keyboardShouldPersistTaps="handled"
-                style={[styles.bookPickerList, { maxHeight: windowHeight * 0.62 }]}
-                renderItem={({ item }) => {
+                style={[styles.bookPickerList, { maxHeight: windowHeight * 0.58 }]}
+                contentContainerStyle={styles.bookPickerListContent}
+                renderItem={({ item, index }) => {
                   const isActive = item.id === activeBookId;
+                  const hasCover = Boolean(item.coverUri?.trim());
+                  const isLast = index === filteredBooks.length - 1;
                   return (
                     <TouchableOpacity
-                      style={[styles.bookRow, darkMode && styles.bookRowDark]}
+                      style={[
+                        styles.bookPickerRow,
+                        isActive ? styles.bookPickerRowSelected : styles.bookPickerRowPlain,
+                        !isActive && !isLast ? styles.bookPickerRowDivider : null,
+                      ]}
                       onPress={() => {
                         Keyboard.dismiss();
+                        Haptics.selectionAsync().catch(() => {});
                         setActiveBookId(item.id);
                         setIsBookModalOpen(false);
                         setSearchQuery("");
                       }}
+                      activeOpacity={0.88}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isActive }}
                     >
-                      <View style={styles.bookRowTextWrap}>
-                        <Text style={[styles.bookRowTitle, darkMode && styles.bookRowTitleDark]}>{item.title}</Text>
-                        <Text style={[styles.bookRowAuthor, darkMode && styles.bookRowAuthorDark]}>{item.author}</Text>
+                      {hasCover ? (
+                        <Image
+                          source={{ uri: item.coverUri }}
+                          style={styles.bookPickerCoverImage}
+                          accessibilityIgnoresInvertColors
+                        />
+                      ) : (
+                        <View style={styles.bookPickerCoverPlaceholder}>
+                          <Ionicons name="book-outline" size={16} color="rgba(255,255,255,0.15)" />
+                        </View>
+                      )}
+                      <View style={styles.bookPickerRowTextCol}>
+                        <Text style={styles.bookPickerRowTitle} numberOfLines={2}>
+                          {item.title}
+                        </Text>
+                        <Text style={styles.bookPickerRowAuthor} numberOfLines={1}>
+                          {item.author}
+                        </Text>
                       </View>
-                      {isActive ? <Ionicons name="checkmark-circle" size={18} color={darkMode ? "#e2e8f0" : "#0f172a"} /> : null}
+                      {isActive ? (
+                        <View style={[styles.bookPickerCheckCircle, { backgroundColor: accentColor }]}>
+                          <Ionicons name="checkmark" size={14} color="#ffffff" />
+                        </View>
+                      ) : (
+                        <View style={styles.bookPickerCheckSpacer} pointerEvents="none" />
+                      )}
                     </TouchableOpacity>
                   );
                 }}
                 ListEmptyComponent={
-                  <Text style={[styles.emptySearchText, darkMode && styles.emptySearchTextDark]}>
-                    {bookPickerEmptyMessage}
-                  </Text>
+                  <Text style={styles.bookPickerEmptyText}>{bookPickerEmptyMessage}</Text>
+                }
+                ListFooterComponent={
+                  <View>
+                    <View style={styles.bookPickerFooterDivider} />
+                    <TouchableOpacity
+                      style={styles.bookPickerAddRow}
+                      onPress={openAddBookCoverFromPicker}
+                      activeOpacity={0.88}
+                      accessibilityRole="button"
+                      accessibilityLabel="Add new book"
+                    >
+                      <View style={styles.bookPickerAddIconWrap}>
+                        <Ionicons name="add" size={16} color={accentColor} />
+                      </View>
+                      <View style={styles.bookPickerAddTextCol}>
+                        <Text style={styles.bookPickerAddTitle}>Add new book</Text>
+                        <Text style={styles.bookPickerAddSubtitle}>Scan a cover to add</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.2)" />
+                    </TouchableOpacity>
+                  </View>
                 }
               />
             </Animated.View>
@@ -2818,7 +2939,6 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                   index,
                 })}
                 onScrollBeginDrag={dismissLibraryPromoSwipeHint}
-                onMomentumScrollEnd={onLibraryPromoMomentumScrollEnd}
                 style={[styles.fromLibraryModalPager, { height: libraryPromoCarouselHeight }]}
                 contentContainerStyle={styles.fromLibraryModalPagerContent}
                 renderItem={({ item, index }) => {
@@ -2907,7 +3027,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 50,
-    paddingBottom: 100,
+    paddingBottom: ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING,
   },
   /** Scroll content fills at least the viewport height when content is short. */
   scrollContentFlex: {
@@ -4027,8 +4147,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#1a1a1a",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(255,255,255,0.1)",
     paddingHorizontal: 20,
-    paddingTop: 8,
+    paddingTop: 0,
   },
   pageScanSheetPanelFixed: {
     flexDirection: "column",
@@ -4040,7 +4162,11 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: "rgba(255,255,255,0.15)",
-    marginBottom: 10,
+    marginTop: 14,
+    marginBottom: 16,
+  },
+  pageScanSheetHeader: {
+    paddingBottom: 14,
   },
   pageScanSheetTitle: {
     fontSize: 16,
@@ -4051,27 +4177,61 @@ const styles = StyleSheet.create({
   pageScanSheetSubtitle: {
     fontSize: 12,
     fontWeight: "400",
-    color: "rgba(255,255,255,0.45)",
-    marginBottom: 10,
+    color: "rgba(255,255,255,0.4)",
   },
   pageScanPreviewWrap: {
     borderRadius: 14,
     overflow: "hidden",
-    backgroundColor: "#0a0a0a",
+    backgroundColor: "#0d0d0d",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.12)",
-    marginBottom: 10,
+    borderColor: "rgba(255,255,255,0.06)",
+    alignSelf: "stretch",
   },
-  pageScanPreviewWrapSized: {
-    width: "82%",
-    aspectRatio: 0.7,
-    alignSelf: "center",
+  pageScanPreviewWrapPage: {
+    height: 220,
+    width: "100%",
   },
   pageScanPreviewWrapFill: {
     flex: 1,
     minHeight: 0,
     alignSelf: "stretch",
     width: "100%",
+  },
+  pageScanPreviewBadgeSlot: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 12,
+    alignItems: "center",
+  },
+  pageScanBadgeSearching: {
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.15)",
+    borderRadius: 20,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  pageScanBadgeSearchingText: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "rgba(255,255,255,0.5)",
+  },
+  pageScanBadgeDetected: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(74,222,128,0.08)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(74,222,128,0.3)",
+    borderRadius: 20,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  pageScanBadgeDetectedText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#4ade80",
   },
   pageScanPreviewCamera: {
     flex: 1,
@@ -4095,42 +4255,43 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    borderRadius: 12,
-    paddingVertical: 14,
-    marginBottom: 8,
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginTop: 16,
+    width: "100%",
+  },
+  pageScanTakePhotoBtnPressed: {
+    opacity: 0.92,
   },
   pageScanTakePhotoBtnText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#ffffff",
-  },
-  pageScanGalleryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    marginBottom: 6,
-  },
-  pageScanGalleryBtnText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: "600",
-    color: "rgba(255,255,255,0.75)",
+    color: "#111111",
   },
-  pageScanCancelBtn: {
+  pageScanGalleryLinkWrap: {
+    marginTop: 10,
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 10,
-    paddingVertical: 10,
+    paddingVertical: 6,
   },
-  pageScanCancelBtnText: {
+  pageScanGalleryLinkText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "rgba(255,255,255,0.35)",
+  },
+  pageScanGalleryLinkTextDisabled: {
+    opacity: 0.4,
+  },
+  pageScanCancelTextWrap: {
+    marginTop: 10,
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  pageScanCancelText: {
     fontSize: 13,
-    fontWeight: "600",
-    color: "rgba(255,255,255,0.4)",
+    fontWeight: "500",
+    color: "rgba(255,255,255,0.25)",
   },
   contentsModalScreen: {
     flex: 1,
@@ -4222,83 +4383,162 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   bookPickerSheet: {
-    backgroundColor: lightColors.card,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: 12,
-    paddingHorizontal: 18,
-    gap: 10,
+    backgroundColor: "#1a1a1a",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 10,
     maxHeight: "90%",
     width: "100%",
   },
-  bookPickerSheetDark: {
-    backgroundColor: darkColors.card,
+  bookPickerDragHandle: {
+    alignSelf: "center",
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    marginBottom: 16,
+  },
+  bookPickerSheetTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#ffffff",
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  bookPickerSearchOuter: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+  },
+  bookPickerSearchInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.1)",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  bookPickerSearchInput: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    color: "#ffffff",
+    padding: 0,
+    margin: 0,
   },
   bookPickerList: {
     flexGrow: 1,
   },
-  modalHeader: {
+  bookPickerListContent: {
+    paddingBottom: 4,
+  },
+  bookPickerRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 8,
   },
-  modalTitle: {
-    color: lightColors.textPrimary,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  modalTitleDark: {
-    color: darkColors.textPrimary,
-  },
-  searchInput: {
-    borderWidth: 1,
-    borderColor: lightColors.borderStrong,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    color: lightColors.textPrimary,
-  },
-  searchInputDark: {
-    borderColor: darkColors.borderStrong,
-    color: darkColors.textPrimary,
-    backgroundColor: darkColors.background,
-  },
-  bookRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-  },
-  bookRowDark: {
-    borderBottomColor: darkColors.border,
-  },
-  bookRowTextWrap: {
-    flex: 1,
-    marginRight: 8,
-  },
-  bookRowTitle: {
-    color: "#0f172a",
-    fontWeight: "600",
-  },
-  bookRowTitleDark: {
-    color: darkColors.textPrimary,
-  },
-  bookRowAuthor: {
-    color: "#64748b",
-    fontSize: 12,
-  },
-  bookRowAuthorDark: {
-    color: darkColors.textSecondary,
-  },
-  emptySearchText: {
-    color: "#64748b",
-    textAlign: "center",
+  bookPickerRowPlain: {
     paddingVertical: 14,
+    paddingHorizontal: 20,
   },
-  emptySearchTextDark: {
-    color: darkColors.textSecondary,
+  bookPickerRowDivider: {
+    borderBottomWidth: 0.5,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+  },
+  bookPickerRowSelected: {
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginHorizontal: 6,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.1)",
+    borderRadius: 10,
+  },
+  bookPickerCoverPlaceholder: {
+    width: 36,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bookPickerCoverImage: {
+    width: 36,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,0.07)",
+  },
+  bookPickerRowTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  bookPickerRowTitle: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#ffffff",
+  },
+  bookPickerRowAuthor: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.4)",
+  },
+  bookPickerCheckCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bookPickerCheckSpacer: {
+    width: 26,
+    height: 26,
+  },
+  bookPickerEmptyText: {
+    color: "rgba(255,255,255,0.45)",
+    textAlign: "center",
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  bookPickerFooterDivider: {
+    height: 0.5,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    marginTop: 4,
+    marginBottom: 8,
+    marginHorizontal: 20,
+  },
+  bookPickerAddRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  bookPickerAddIconWrap: {
+    width: 36,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bookPickerAddTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  bookPickerAddTitle: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#ffffff",
+  },
+  bookPickerAddSubtitle: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.4)",
   },
   cameraView: {
     flex: 1,

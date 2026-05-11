@@ -96,6 +96,8 @@ export type BookInsightsSummary = {
   stats?: BookInsightsStat[];
   /** v2: one interesting fact per line (no long paragraphs). */
   facts?: string[];
+  /** v2: 2–3 sentences of flowing thematic synthesis (no bullets); optional on older saves. */
+  themesSynthesis?: string;
   /** v2: single short closing line. */
   kicker?: string;
 };

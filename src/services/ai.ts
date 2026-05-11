@@ -714,6 +714,15 @@ function buildInsightHints(_book: BookItem, chronological: ScanItem[]): InsightH
   };
 }
 
+export function themesFallbackFromFacts(facts: string[]): string {
+  const bits = facts
+    .slice(0, 3)
+    .map((f) => f.replace(/[.!?]+$/u, "").trim())
+    .filter(Boolean);
+  if (bits.length === 0) return "";
+  return `Across all reports, several threads recur in the notes: ${bits.join(" ")}.`;
+}
+
 function fourthStatFromHints(h: InsightHints): { label: string; value: string } {
   if (h.reinforcedTotal > 0) {
     return {
@@ -773,10 +782,21 @@ function normalizeBookInsightsPayload(parsed: unknown, hints: InsightHints): Boo
     }
   }
 
+  const themesFromThemesKey = typeof o.themes === "string" ? o.themes.trim() : "";
+  const themesFromAlt = typeof o.themesSynthesis === "string" ? o.themesSynthesis.trim() : "";
+  let themesSynthesis = (themesFromThemesKey || themesFromAlt).replace(/\s+/g, " ");
+  if (themesSynthesis.length > 420) {
+    themesSynthesis = `${themesSynthesis.slice(0, 417)}…`;
+  }
+  if (!themesSynthesis) {
+    themesSynthesis = themesFallbackFromFacts(facts);
+  }
+
   return {
     headline,
     stats: stats.slice(0, 5),
     facts: facts.slice(0, 5),
+    themesSynthesis,
     kicker: kicker.length > 100 ? `${kicker.slice(0, 97)}…` : kicker,
   };
 }
@@ -836,10 +856,11 @@ export async function generateBookReportsInsights(
     `Verified counts (use in JSON; do not change these numbers): reports=${hints.reportCount}, pagesWithPrintedLabels=${hints.pagesWithLabels}, approxPageSpan="${hints.pageSpan}", distinctChapters=${hints.distinctChapters}, reinforcedIdeaMentions=${hints.reinforcedTotal}, uniqueKeywords=${hints.uniqueKeywords}\n\n` +
     `Reports oldest→newest:\n${reportLines.join("\n\n")}\n\n` +
     `Return ONLY valid JSON (no markdown fences) with this shape:\n` +
-    `{"headline":"...","facts":["...","...","...","...","..."],"kicker":"..."}\n` +
+    `{"headline":"...","themes":"...","facts":["...","...","...","...","..."],"kicker":"..."}\n` +
     `Voice: impersonal and direct — like dashboard copy. Never use "you", "your", "the reader", or who logged what. State coverage, themes, and patterns as plain facts.\n` +
     `Rules:\n` +
     `- headline: ONE sentence, max 22 words: reading coverage through this book (page span, snapshot count, rough stretch through the text). No meta about the person.\n` +
+    `- themes: 2–3 complete sentences of flowing prose only (no bullets, lists, or labels). Synthesize cross-report thematic patterns from the notes. Impersonal; max ~380 characters.\n` +
     `- facts: EXACTLY 5 strings. Each one punchy declarative insight (max ~95 characters) from the notes — themes, contrasts, recurring ideas, links between sections. No "Fact 1:" prefixes, no long paragraphs, no second-person.\n` +
     `- kicker: ONE short closing line, max 14 words, still impersonal (e.g. what the notes suggest next or what remains thin in the data).\n` +
     `- Scannable in under one minute. No extra keys.`;

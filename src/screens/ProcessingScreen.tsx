@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { CommonActions } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useAppSettings } from "../context/AppSettingsContext";
+import { useExportPreferences } from "../context/ExportPreferencesContext";
 import type { ScanStackParamList } from "../navigation/types";
 import { extractEntitiesFromPageText, generateNotesFromImage } from "../services/ai";
 import { useStreak } from "../context/StreakContext";
@@ -14,6 +15,8 @@ import { useScanContext } from "../context/ScanContext";
 import { useStudyPreferences } from "../context/StudyPreferencesContext";
 import { darkColors } from "../theme/colors";
 import type { ChapterRange, ScanItem } from "../types/note";
+import { pdfContentOptionsFromPrefs } from "../types/exportPreferences";
+import { shareSingleReportPdf } from "../utils/bookReportsPdf";
 import type { ExistingEntitySeed } from "../study/buildEntityExtractionPrompt";
 import { detectReinforcedIdeas } from "../utils/detectReinforcedIdeas";
 import { playSoundEffect } from "../utils/soundEffects";
@@ -65,7 +68,7 @@ const STEPS: Array<{
 
 const PULSE_HALF_MS = 300;
 const STEP_CROSSFADE_MS = 300;
-const STEP_INTERVAL_MS = 2000;
+const STEP_INTERVAL_MS = 3500;
 const EASE_IN_OUT = Easing.inOut(Easing.ease);
 
 /** Amber glow + dot share one 0.6s loop; scale 0.6↔1.4, dot opacity 0.15↔1, glow opacity 0.08↔0.25 */
@@ -288,7 +291,8 @@ function ProcessingStepRow({
 export function ProcessingScreen({ navigation, route }: Props) {
   const { accentColor } = useAppSettings();
   const studyPrefs = useStudyPreferences();
-  const { addScan, activeBook, scans } = useScanContext();
+  const exportPrefs = useExportPreferences();
+  const { addScan, updateScan, activeBook, scans, books } = useScanContext();
   const { recordSuccessfulScan } = useStreak();
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -302,14 +306,16 @@ export function ProcessingScreen({ navigation, route }: Props) {
     const run = async () => {
       try {
         setError(null);
-        const studyPreferencesSnapshot = {
-          tone: studyPrefs.tone,
-          length: studyPrefs.length,
-          highlightKeyElements: studyPrefs.highlightKeyElements,
-          highlightKeyTerms: studyPrefs.highlightKeyTerms,
-          highlightDefinitions: studyPrefs.highlightDefinitions,
-          highlightNumbersDates: studyPrefs.highlightNumbersDates,
-        };
+        const rescanId = route.params.rescanForScanId;
+        const studyPreferencesSnapshot =
+          route.params.studyPreferences ?? {
+            tone: studyPrefs.tone,
+            length: studyPrefs.length,
+            highlightKeyElements: studyPrefs.highlightKeyElements,
+            highlightKeyTerms: studyPrefs.highlightKeyTerms,
+            highlightDefinitions: studyPrefs.highlightDefinitions,
+            highlightNumbersDates: studyPrefs.highlightNumbersDates,
+          };
         const extractionModes = route.params.extractionModes ?? [
           route.params.extractionMode ?? "everything",
         ];
@@ -320,14 +326,24 @@ export function ProcessingScreen({ navigation, route }: Props) {
         );
         if (!mounted) return;
         const pageLabel = route.params.page?.trim() || notes.pageNumber?.trim() || "";
+        const existingScan = rescanId ? scans.find((s) => s.id === rescanId) : undefined;
+        const bookForScan = existingScan?.bookId
+          ? books.find((b) => b.id === existingScan.bookId) ?? activeBook
+          : activeBook;
         const mappedChapter = findChapterForPage(
           parseNumericPage(pageLabel),
-          activeBook?.chapterRanges
+          bookForScan?.chapterRanges
         );
         const chapterLabel =
-          route.params.chapter?.trim() || mappedChapter || notes.sectionHeadings?.[0]?.trim() || "";
-        const previousBookScans = activeBook?.id
-          ? scans.filter((scan) => scan.bookId === activeBook.id)
+          route.params.chapter?.trim() ||
+          mappedChapter ||
+          notes.sectionHeadings?.[0]?.trim() ||
+          existingScan?.chapter?.trim() ||
+          "";
+        const previousBookScans = bookForScan?.id
+          ? scans.filter(
+              (scan) => scan.bookId === bookForScan.id && scan.id !== rescanId
+            )
           : [];
         const reinforcedIdeas = detectReinforcedIdeas(
           notes.mainIdeas,
@@ -346,7 +362,7 @@ export function ProcessingScreen({ navigation, route }: Props) {
           .join("\n");
 
         const existingEntityMap = new Map<string, ExistingEntitySeed>();
-        if (activeBook?.id) {
+        if (bookForScan?.id) {
           previousBookScans.forEach((scan) => {
             (scan.entityGraph?.entities ?? []).forEach((entity) => {
               const current = existingEntityMap.get(entity.id);
@@ -396,10 +412,10 @@ export function ProcessingScreen({ navigation, route }: Props) {
           try {
             entityGraph = await extractEntitiesFromPageText({
               bookMetadata: {
-                title: activeBook?.title ?? "",
-                author: activeBook?.author ?? "",
-                context: activeBook?.chapterRanges?.length
-                  ? `Known chapter ranges: ${activeBook.chapterRanges
+                title: bookForScan?.title ?? "",
+                author: bookForScan?.author ?? "",
+                context: bookForScan?.chapterRanges?.length
+                  ? `Known chapter ranges: ${bookForScan.chapterRanges
                       .map((r) => `${r.title} (${r.startPage}${r.endPage ? `-${r.endPage}` : "+"})`)
                       .join(", ")}`
                   : undefined,
@@ -413,25 +429,54 @@ export function ProcessingScreen({ navigation, route }: Props) {
           }
         }
 
-        const item = {
-          id: `${Date.now()}`,
-          createdAt: new Date().toISOString(),
-          imageUri: route.params.imageUri,
-          bookId: activeBook?.id,
-          book: activeBook?.title,
-          ...(pageLabel ? { page: pageLabel } : {}),
-          ...(chapterLabel ? { chapter: chapterLabel } : {}),
-          extractionMode: extractionModes[0] ?? "everything",
-          extractionModes,
-          notes,
-          ...(reinforcedIdeas.length > 0 ? { reinforcedIdeas } : {}),
-          ...(entityGraph ? { entityGraph } : {}),
-          studyPreferences: studyPreferencesSnapshot,
-        };
-
-        addScan(item);
-        recordSuccessfulScan();
-        pendingNavRef.current = item;
+        if (rescanId) {
+          if (!existingScan) {
+            throw new Error("That report is no longer available. Open it again from your library.");
+          }
+          const nextPage = pageLabel || existingScan.page;
+          const nextChapter = chapterLabel.trim() ? chapterLabel : existingScan.chapter;
+          updateScan(rescanId, {
+            ...(nextPage?.trim() ? { page: nextPage.trim() } : {}),
+            ...(nextChapter?.trim() ? { chapter: nextChapter.trim() } : {}),
+            extractionMode: extractionModes[0] ?? "everything",
+            extractionModes,
+            notes,
+            reinforcedIdeas: reinforcedIdeas.length > 0 ? reinforcedIdeas : undefined,
+            ...(entityGraph ? { entityGraph } : {}),
+            studyPreferences: studyPreferencesSnapshot,
+          });
+          pendingNavRef.current = {
+            ...existingScan,
+            ...(nextPage?.trim() ? { page: nextPage.trim() } : {}),
+            ...(nextChapter?.trim() ? { chapter: nextChapter.trim() } : {}),
+            extractionMode: extractionModes[0] ?? "everything",
+            extractionModes,
+            notes,
+            ...(reinforcedIdeas.length > 0 ? { reinforcedIdeas } : { reinforcedIdeas: undefined }),
+            ...(entityGraph ? { entityGraph } : {}),
+            studyPreferences: studyPreferencesSnapshot,
+          };
+        }
+        if (!rescanId) {
+          const item = {
+            id: `${Date.now()}`,
+            createdAt: new Date().toISOString(),
+            imageUri: route.params.imageUri,
+            bookId: activeBook?.id,
+            book: activeBook?.title,
+            ...(pageLabel ? { page: pageLabel } : {}),
+            ...(chapterLabel ? { chapter: chapterLabel } : {}),
+            extractionMode: extractionModes[0] ?? "everything",
+            extractionModes,
+            notes,
+            ...(reinforcedIdeas.length > 0 ? { reinforcedIdeas } : {}),
+            ...(entityGraph ? { entityGraph } : {}),
+            studyPreferences: studyPreferencesSnapshot,
+          };
+          addScan(item);
+          recordSuccessfulScan();
+          pendingNavRef.current = item;
+        }
         setApiSuccess(true);
       } catch (e) {
         if (!mounted) return;
@@ -446,6 +491,7 @@ export function ProcessingScreen({ navigation, route }: Props) {
     };
   }, [
     addScan,
+    updateScan,
     navigation,
     recordSuccessfulScan,
     route.params.imageUri,
@@ -453,7 +499,10 @@ export function ProcessingScreen({ navigation, route }: Props) {
     route.params.chapter,
     route.params.extractionMode,
     route.params.extractionModes,
+    route.params.rescanForScanId,
+    route.params.studyPreferences,
     activeBook,
+    books,
     scans,
     studyPrefs.tone,
     studyPrefs.length,
@@ -483,13 +532,42 @@ export function ProcessingScreen({ navigation, route }: Props) {
     if (!item) return;
     didNavigateRef.current = true;
     playSoundEffect("aiExtractionCompleted");
+
+    const rescanId = route.params.rescanForScanId;
+    const returnTab = route.params.rescanReturnTab;
+
+    if (rescanId && returnTab) {
+      if (returnTab === "library") {
+        navigation.getParent()?.getParent()?.navigate("Library");
+      } else {
+        navigation.pop(1);
+      }
+      return;
+    }
+
+    if (exportPrefs.autoExportAfterScan && exportPrefs.defaultFormat === "pdf") {
+      void shareSingleReportPdf(
+        item,
+        activeBook ?? null,
+        pdfContentOptionsFromPrefs(exportPrefs)
+      ).catch(() => {});
+    }
     navigation.dispatch(
       CommonActions.reset({
         index: 1,
         routes: [{ name: "ScanCamera" }, { name: "Results", params: { item } }],
       })
     );
-  }, [apiSuccess, activeIndex, error, navigation]);
+  }, [
+    apiSuccess,
+    activeIndex,
+    error,
+    navigation,
+    activeBook,
+    exportPrefs,
+    route.params.rescanForScanId,
+    route.params.rescanReturnTab,
+  ]);
 
   const stepIndexShown = activeIndex + 1;
 
@@ -532,15 +610,19 @@ export function ProcessingScreen({ navigation, route }: Props) {
             <Text style={styles.errorText}>{error}</Text>
             <TouchableOpacity
               style={[styles.retryButton, { backgroundColor: accentColor }]}
-              onPress={() =>
+              onPress={() => {
+                const p = route.params;
                 navigation.replace("Processing", {
-                  imageUri: route.params.imageUri,
-                  ...(route.params.page ? { page: route.params.page } : {}),
-                  ...(route.params.chapter ? { chapter: route.params.chapter } : {}),
-                  ...(route.params.extractionMode ? { extractionMode: route.params.extractionMode } : {}),
-                  ...(route.params.extractionModes ? { extractionModes: route.params.extractionModes } : {}),
-                })
-              }
+                  imageUri: p.imageUri,
+                  ...(p.page ? { page: p.page } : {}),
+                  ...(p.chapter ? { chapter: p.chapter } : {}),
+                  ...(p.extractionMode ? { extractionMode: p.extractionMode } : {}),
+                  ...(p.extractionModes ? { extractionModes: p.extractionModes } : {}),
+                  ...(p.rescanForScanId ? { rescanForScanId: p.rescanForScanId } : {}),
+                  ...(p.studyPreferences ? { studyPreferences: p.studyPreferences } : {}),
+                  ...(p.rescanReturnTab ? { rescanReturnTab: p.rescanReturnTab } : {}),
+                });
+              }}
             >
               <Text style={styles.retryText}>Retry</Text>
             </TouchableOpacity>

@@ -70,11 +70,16 @@ export function ExtractionOptionsScreen({ navigation, route }: Props) {
       : selectedModes.length > 0
         ? selectedModes
         : ["everything"];
+    const p = route.params;
     navigation.replace("Processing", {
-      imageUri: route.params.imageUri,
-      ...(route.params.page ? { page: route.params.page } : {}),
+      imageUri: p.imageUri,
+      ...(p.page ? { page: p.page } : {}),
+      ...(p.chapter ? { chapter: p.chapter } : {}),
       extractionMode: extractionModes[0] ?? "everything",
       extractionModes,
+      ...(p.rescanForScanId ? { rescanForScanId: p.rescanForScanId } : {}),
+      ...(p.studyPreferences ? { studyPreferences: p.studyPreferences } : {}),
+      ...(p.rescanReturnTab ? { rescanReturnTab: p.rescanReturnTab } : {}),
     });
   };
 

@@ -176,7 +176,8 @@ export function ThemesScreen() {
         <SettingsOptionHeroCard
           icon="color-palette-outline"
           title="Choose your theme"
-          description="Each look changes accents and highlights across the app. Pick the palette that fits how you read and take notes."
+          description="Pick an accent palette for the whole app."
+          compactDescription
         />
 
         <View style={styles.themeList}>
@@ -314,8 +315,11 @@ function ThemeWorldCard({
 
   const radio = (
     <View style={styles.radioWrap}>
-      <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>
-        {selected ? <View style={[styles.radioInner, { backgroundColor: accentGradients[accentKey][0] }]} /> : null}
+      <View style={styles.radioCircleStack}>
+        {!selected ? <View style={styles.radioUnselectedBackdrop} /> : null}
+        <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>
+          {selected ? <View style={[styles.radioInner, { backgroundColor: accentGradients[accentKey][0] }]} /> : null}
+        </View>
       </View>
     </View>
   );
@@ -323,7 +327,7 @@ function ThemeWorldCard({
   const labelBar = (
     <View style={styles.themeLabelBar}>
       <Text style={styles.themeLabelText} numberOfLines={1}>
-        THEME: {label.toUpperCase()}
+        {label}
       </Text>
     </View>
   );
@@ -478,13 +482,26 @@ const styles = StyleSheet.create({
   radioWrap: {
     padding: 14,
   },
+  radioCircleStack: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioUnselectedBackdrop: {
+    position: "absolute",
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
   radioOuter: {
     width: 28,
     height: 28,
     borderRadius: 999,
     borderWidth: 2.5,
     borderColor: "rgba(255,255,255,0.95)",
-    backgroundColor: "rgba(255,255,255,0.25)",
+    backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -506,9 +523,8 @@ const styles = StyleSheet.create({
   },
   themeLabelText: {
     color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "800",
-    letterSpacing: 1.2,
+    fontSize: 14,
+    fontWeight: "600",
   },
   themeToastRoot: {
     flex: 1,

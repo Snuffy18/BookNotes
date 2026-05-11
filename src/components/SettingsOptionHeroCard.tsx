@@ -11,9 +11,11 @@ type Props = {
   icon: IonName;
   title: string;
   description: string;
+  /** Single-line 12px description at ~40% opacity (e.g. Themes). */
+  compactDescription?: boolean;
 };
 
-export function SettingsOptionHeroCard({ icon, title, description }: Props) {
+export function SettingsOptionHeroCard({ icon, title, description, compactDescription }: Props) {
   const { darkMode, accentGradient } = useAppSettings();
 
   return (
@@ -27,7 +29,15 @@ export function SettingsOptionHeroCard({ icon, title, description }: Props) {
         <Ionicons name={icon} size={28} color="#ffffff" />
       </LinearGradient>
       <Text style={[styles.title, darkMode && styles.titleDark]}>{title}</Text>
-      <Text style={[styles.description, darkMode && styles.descriptionDark]}>{description}</Text>
+      <Text
+        style={[
+          compactDescription ? styles.descriptionCompact : styles.description,
+          compactDescription && (darkMode ? styles.descriptionCompactDark : styles.descriptionCompactLight),
+        ]}
+        numberOfLines={compactDescription ? 1 : undefined}
+      >
+        {description}
+      </Text>
     </View>
   );
 }
@@ -81,5 +91,18 @@ const styles = StyleSheet.create({
   },
   descriptionDark: {
     color: darkColors.textSecondary,
+  },
+  descriptionCompact: {
+    marginTop: 10,
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: "center",
+    maxWidth: 320,
+  },
+  descriptionCompactLight: {
+    color: "rgba(0,0,0,0.4)",
+  },
+  descriptionCompactDark: {
+    color: "rgba(255,255,255,0.4)",
   },
 });
