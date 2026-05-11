@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -28,7 +28,8 @@ function formatSyncedTime(d: Date): string {
 
 export function ProfileScreen() {
   const navigation = useNavigation<ProfileHomeNav>();
-  const { darkMode, accentColor, accentGradient } = useAppSettings();
+  const { darkMode, accentColor, accentGradient, soundEffectsEnabled, setSoundEffectsEnabled } =
+    useAppSettings();
   const [offerModalVisible, setOfferModalVisible] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
@@ -208,6 +209,21 @@ export function ProfileScreen() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={accentColor} style={styles.accentChevron} />
           </TouchableOpacity>
+        </View>
+
+        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
+          <View style={styles.soundRow}>
+            <View style={styles.soundRowLeft}>
+              <Ionicons name="volume-high-outline" size={22} color={accentColor} />
+              <View style={styles.soundRowText}>
+                <Text style={[styles.exportHeaderLabel, darkMode && styles.textDark]}>Sound effects</Text>
+                <Text style={[styles.soundDescription, darkMode && styles.soundDescriptionDark]}>
+                  Chimes when you capture scans, finish AI steps, and complete actions.
+                </Text>
+              </View>
+            </View>
+            <Switch value={soundEffectsEnabled} onValueChange={setSoundEffectsEnabled} />
+          </View>
         </View>
 
         <Text style={[styles.sectionHeading, darkMode && styles.sectionHeadingDark]}>Support & Legal</Text>
@@ -399,6 +415,33 @@ const styles = StyleSheet.create({
   },
   accentChevron: {
     opacity: 0.55,
+  },
+  soundRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  soundRowLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minWidth: 0,
+  },
+  soundRowText: {
+    flex: 1,
+    gap: 4,
+    minWidth: 0,
+  },
+  soundDescription: {
+    fontSize: 12,
+    fontWeight: "400",
+    color: lightColors.textMuted,
+    lineHeight: 16,
+  },
+  soundDescriptionDark: {
+    color: darkColors.textSecondary,
   },
   sectionHeading: {
     fontSize: 13,

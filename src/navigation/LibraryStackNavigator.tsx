@@ -10,7 +10,11 @@ export function LibraryStackNavigator() {
   return (
     <LibraryStack.Navigator screenOptions={{ headerShown: false }}>
       <LibraryStack.Screen name="LibraryHome" component={LibraryScreen} />
-      <LibraryStack.Screen name="BookReports" component={BookReportsScreen} />
+      <LibraryStack.Screen
+        name="BookReports"
+        component={BookReportsScreen}
+        getId={({ params }) => String(params.bookId)}
+      />
       <LibraryStack.Screen name="ReportDetails" component={ReportDetailsScreen} />
     </LibraryStack.Navigator>
   );

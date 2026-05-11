@@ -1,49 +1,140 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import LottieView from "lottie-react-native";
-import { Animated, Easing, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import type { ComponentProps } from "react";
+import { Animated, Easing, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { CommonActions } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { AccentShimmerText } from "../components/AccentShimmerText";
-import { HeaderText } from "../components/HeaderText";
 import { useAppSettings } from "../context/AppSettingsContext";
 import type { ScanStackParamList } from "../navigation/types";
-import { generateNotesFromImage } from "../services/ai";
+import { extractEntitiesFromPageText, generateNotesFromImage } from "../services/ai";
 import { useStreak } from "../context/StreakContext";
 import { useScanContext } from "../context/ScanContext";
 import { useStudyPreferences } from "../context/StudyPreferencesContext";
-import { darkColors, lightColors } from "../theme/colors";
+import { darkColors } from "../theme/colors";
+import type { ChapterRange, ScanItem } from "../types/note";
+import type { ExistingEntitySeed } from "../study/buildEntityExtractionPrompt";
+import { detectReinforcedIdeas } from "../utils/detectReinforcedIdeas";
+import { playSoundEffect } from "../utils/soundEffects";
 
 type Props = NativeStackScreenProps<ScanStackParamList, "Processing">;
+type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
-const PROCESSING_STEPS = [
-  "OCR extracting text",
-  "Understanding content",
-  "Building summary + key ideas",
-] as const;
+type StepVisualState = "pending" | "active" | "done";
 
-const STEP_MONO = Platform.select({
-  ios: "Menlo",
-  android: "monospace",
-  default: "monospace",
-});
+const SCREEN_BG = "#111";
 
-function ActivePulseDot({ color }: { color: string }) {
-  const pulse = useRef(new Animated.Value(1)).current;
+const STEPS: Array<{
+  label: string;
+  activeSublabel: string;
+  doneSublabel: string;
+  pendingIcon: IoniconName;
+}> = [
+  {
+    label: "Scanning image",
+    activeSublabel: "Preparing your page…",
+    doneSublabel: "Page detected clearly",
+    pendingIcon: "image-outline",
+  },
+  {
+    label: "Reading text",
+    activeSublabel: "Extracting text from the scan…",
+    doneSublabel: "342 words extracted",
+    pendingIcon: "text-outline",
+  },
+  {
+    label: "Building key ideas",
+    activeSublabel: "Finding what matters most…",
+    doneSublabel: "Key ideas structured",
+    pendingIcon: "bulb-outline",
+  },
+  {
+    label: "Extracting quotes",
+    activeSublabel: "Pulling standout lines…",
+    doneSublabel: "Quotes captured",
+    pendingIcon: "chatbubble-ellipses-outline",
+  },
+  {
+    label: "Writing summary",
+    activeSublabel: "Composing your notes…",
+    doneSublabel: "Summary ready",
+    pendingIcon: "document-text-outline",
+  },
+];
+
+const PULSE_HALF_MS = 300;
+const STEP_CROSSFADE_MS = 300;
+const STEP_INTERVAL_MS = 2000;
+const EASE_IN_OUT = Easing.inOut(Easing.ease);
+
+/** Amber glow + dot share one 0.6s loop; scale 0.6↔1.4, dot opacity 0.15↔1, glow opacity 0.08↔0.25 */
+function ActiveStepPulseIcon() {
+  const progress = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 0.28,
-          duration: 650,
+        Animated.timing(progress, {
+          toValue: 1,
+          duration: PULSE_HALF_MS,
+          easing: EASE_IN_OUT,
+          useNativeDriver: true,
+        }),
+        Animated.timing(progress, {
+          toValue: 0,
+          duration: PULSE_HALF_MS,
+          easing: EASE_IN_OUT,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [progress]);
+
+  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.4] });
+  const dotOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.15, 1] });
+  const glowOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.08, 0.25] });
+
+  return (
+    <View style={styles.pulseIconCell}>
+      <Animated.View
+        style={[
+          styles.stepIconActiveGlow,
+          {
+            backgroundColor: "#fbbf24",
+            opacity: glowOpacity,
+          },
+        ]}
+      />
+      <Animated.View
+        style={[
+          styles.stepPulseDot,
+          {
+            backgroundColor: "#fbbf24",
+            opacity: dotOpacity,
+            transform: [{ scale }],
+          },
+        ]}
+      />
+    </View>
+  );
+}
+
+function ProgressBarFillPulse() {
+  const op = useRef(new Animated.Value(0.85)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(op, {
+          toValue: 0.7,
+          duration: 1000,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
-        Animated.timing(pulse, {
+        Animated.timing(op, {
           toValue: 1,
-          duration: 650,
+          duration: 1000,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
@@ -51,159 +142,165 @@ function ActivePulseDot({ color }: { color: string }) {
     );
     loop.start();
     return () => loop.stop();
-  }, [pulse]);
+  }, [op]);
   return (
-    <Animated.View
-      style={[
-        styles.pulseDot,
-        { backgroundColor: color, opacity: pulse },
-      ]}
-    />
+    <Animated.View style={[styles.progressFillInner, { opacity: op }]} />
   );
-}
-
-const STEP_SHIMMER_MS = 1500;
-const STEP_FADE_IN_MS = 340;
-
-type RowPhase = "pending" | "shimmer" | "solid";
-type LoaderLinePhase = "hidden" | "shimmer" | "solid";
-
-function delay(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 function hapticStepCompleted() {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 }
 
-export function ProcessingScreen({ navigation, route }: Props) {
-  const { darkMode, accentColor, accentGradient } = useAppSettings();
-  const studyPrefs = useStudyPreferences();
-  const { addScan, activeBook } = useScanContext();
-  const { recordSuccessfulScan } = useStreak();
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [progressTrackWidth, setProgressTrackWidth] = useState(0);
-  /** 0–1 fill synced with each step / loader shimmer sweep. */
-  const progressFill = useRef(new Animated.Value(0)).current;
-  /** One-shot 0→1 per step / loader line while text uses accent shimmer. */
-  const textShimmerDriver = useRef(new Animated.Value(0)).current;
-  const stepFade = useRef(
-    PROCESSING_STEPS.map(() => ({
-      opacity: new Animated.Value(0),
-      translateY: new Animated.Value(10),
-    }))
-  ).current;
-  const loaderFade = useRef({
-    opacity: new Animated.Value(0),
-    translateY: new Animated.Value(8),
-  }).current;
+function parseNumericPage(page?: string) {
+  if (!page) return null;
+  const match = page.match(/\d+/);
+  if (!match) return null;
+  const value = Number(match[0]);
+  return Number.isFinite(value) ? value : null;
+}
 
-  const [rowPhases, setRowPhases] = useState<RowPhase[]>(["shimmer", "pending", "pending"]);
-  const [loaderLinePhase, setLoaderLinePhase] = useState<LoaderLinePhase>("hidden");
-
-  const layoutPendingRef = useRef(false);
-  const layoutResolveRef = useRef<(() => void) | null>(null);
-
-  const handleAccentLayoutReady = useCallback(() => {
-    if (layoutResolveRef.current) {
-      const r = layoutResolveRef.current;
-      layoutResolveRef.current = null;
-      r();
-    } else {
-      layoutPendingRef.current = true;
-    }
-  }, []);
-
-  const waitForLayoutReady = useCallback(() => {
-    return new Promise<void>((resolve) => {
-      if (layoutPendingRef.current) {
-        layoutPendingRef.current = false;
-        queueMicrotask(resolve);
-        return;
-      }
-      layoutResolveRef.current = resolve;
-    });
-  }, []);
-
-  const runTextShimmerSweep = useCallback(() => {
-    textShimmerDriver.setValue(0);
-    return new Promise<void>((resolve) => {
-      Animated.timing(textShimmerDriver, {
-        toValue: 1,
-        duration: STEP_SHIMMER_MS,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) resolve();
-      });
-    });
-  }, [textShimmerDriver]);
-
-  /** Advances bar fill in lockstep with `runTextShimmerSweep` (same duration). */
-  const animateProgressTo = useCallback(
-    (to: number) => {
-      return new Promise<void>((resolve) => {
-        Animated.timing(progressFill, {
-          toValue: to,
-          duration: STEP_SHIMMER_MS,
-          easing: Easing.linear,
-          useNativeDriver: false,
-        }).start(({ finished }) => {
-          if (finished) resolve();
-        });
-      });
-    },
-    [progressFill]
+function findChapterForPage(page: number | null, ranges?: ChapterRange[]) {
+  if (page === null || !ranges || ranges.length === 0) return null;
+  const sorted = [...ranges].sort((a, b) => a.startPage - b.startPage);
+  return (
+    sorted.find((range, index) => {
+      const inferredEnd = sorted[index + 1]?.startPage
+        ? sorted[index + 1].startPage - 1
+        : undefined;
+      const endPage = range.endPage ?? inferredEnd;
+      return page >= range.startPage && (endPage === undefined || page <= endPage);
+    })?.title ?? null
   );
+}
 
-  const animateStepFadeIn = useCallback(
-    (index: number) => {
-      stepFade[index].opacity.setValue(0);
-      stepFade[index].translateY.setValue(10);
-      Animated.parallel([
-        Animated.timing(stepFade[index].opacity, {
-          toValue: 1,
-          duration: STEP_FADE_IN_MS,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(stepFade[index].translateY, {
-          toValue: 0,
-          duration: STEP_FADE_IN_MS,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
-    },
-    [stepFade]
-  );
+function stepStateForIndex(activeIndex: number, index: number): StepVisualState {
+  if (index < activeIndex) return "done";
+  if (index === activeIndex) return "active";
+  return "pending";
+}
 
-  const animateLoaderFadeIn = useCallback(() => {
-    loaderFade.opacity.setValue(0);
-    loaderFade.translateY.setValue(8);
+function ProcessingStepRow({
+  state,
+  step,
+  isLast,
+}: {
+  state: StepVisualState;
+  step: (typeof STEPS)[number];
+  isLast: boolean;
+}) {
+  const pendingOpac = useRef(new Animated.Value(state === "pending" ? 1 : 0)).current;
+  const activeOpac = useRef(new Animated.Value(state === "active" ? 1 : 0)).current;
+  const doneOpac = useRef(new Animated.Value(state === "done" ? 1 : 0)).current;
+  const badgeProgressOpac = useRef(new Animated.Value(state === "active" ? 1 : 0)).current;
+  const badgeDoneOpac = useRef(new Animated.Value(state === "done" ? 1 : 0)).current;
+
+  useEffect(() => {
+    const p = state === "pending" ? 1 : 0;
+    const a = state === "active" ? 1 : 0;
+    const d = state === "done" ? 1 : 0;
+    const bp = state === "active" ? 1 : 0;
+    const bd = state === "done" ? 1 : 0;
     Animated.parallel([
-      Animated.timing(loaderFade.opacity, {
-        toValue: 1,
-        duration: STEP_FADE_IN_MS,
-        easing: Easing.out(Easing.cubic),
+      Animated.timing(pendingOpac, {
+        toValue: p,
+        duration: STEP_CROSSFADE_MS,
+        easing: EASE_IN_OUT,
         useNativeDriver: true,
       }),
-      Animated.timing(loaderFade.translateY, {
-        toValue: 0,
-        duration: STEP_FADE_IN_MS,
-        easing: Easing.out(Easing.cubic),
+      Animated.timing(activeOpac, {
+        toValue: a,
+        duration: STEP_CROSSFADE_MS,
+        easing: EASE_IN_OUT,
+        useNativeDriver: true,
+      }),
+      Animated.timing(doneOpac, {
+        toValue: d,
+        duration: STEP_CROSSFADE_MS,
+        easing: EASE_IN_OUT,
+        useNativeDriver: true,
+      }),
+      Animated.timing(badgeProgressOpac, {
+        toValue: bp,
+        duration: STEP_CROSSFADE_MS,
+        easing: EASE_IN_OUT,
+        useNativeDriver: true,
+      }),
+      Animated.timing(badgeDoneOpac, {
+        toValue: bd,
+        duration: STEP_CROSSFADE_MS,
+        easing: EASE_IN_OUT,
         useNativeDriver: true,
       }),
     ]).start();
-  }, [loaderFade]);
+  }, [state, pendingOpac, activeOpac, doneOpac, badgeProgressOpac, badgeDoneOpac]);
+
+  let sublabel: string | null = null;
+  if (state === "done") sublabel = step.doneSublabel;
+  else if (state === "active") sublabel = step.activeSublabel;
+
+  return (
+    <View style={!isLast ? styles.stepRowWithDivider : undefined}>
+      <View style={styles.stepRowInner}>
+        <View style={styles.stepIconCol}>
+          <View style={styles.stepIconStack}>
+            <Animated.View
+              style={[styles.stepIconLayer, { opacity: pendingOpac }]}
+              pointerEvents="none"
+            >
+              <View style={styles.stepIconPending}>
+                <Ionicons name={step.pendingIcon} size={16} color="rgba(255,255,255,0.2)" />
+              </View>
+            </Animated.View>
+            <Animated.View style={[styles.stepIconLayer, { opacity: activeOpac }]} pointerEvents="none">
+              <ActiveStepPulseIcon />
+            </Animated.View>
+            <Animated.View style={[styles.stepIconLayer, { opacity: doneOpac }]} pointerEvents="none">
+              <View style={styles.stepIconDone}>
+                <Ionicons name="checkmark" size={14} color="#60a5fa" />
+              </View>
+            </Animated.View>
+          </View>
+        </View>
+        <View style={styles.stepTextCol}>
+          <Text style={[styles.stepLabel, state === "pending" && styles.stepLabelPending]}>{step.label}</Text>
+          {sublabel ? <Text style={styles.stepSublabel}>{sublabel}</Text> : null}
+        </View>
+        <View style={styles.stepBadgeCol}>
+          <View style={styles.badgeStack}>
+            <Animated.View style={[styles.badgeLayer, { opacity: badgeProgressOpac }]} pointerEvents="none">
+              <View style={styles.badgeActive}>
+                <Text style={styles.badgeActiveText}>In progress</Text>
+              </View>
+            </Animated.View>
+            <Animated.View style={[styles.badgeLayer, { opacity: badgeDoneOpac }]} pointerEvents="none">
+              <View style={styles.badgeDone}>
+                <Text style={styles.badgeDoneText}>Done</Text>
+              </View>
+            </Animated.View>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+export function ProcessingScreen({ navigation, route }: Props) {
+  const { accentColor } = useAppSettings();
+  const studyPrefs = useStudyPreferences();
+  const { addScan, activeBook, scans } = useScanContext();
+  const { recordSuccessfulScan } = useStreak();
+  const [error, setError] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [apiSuccess, setApiSuccess] = useState(false);
+  const pendingNavRef = useRef<ScanItem | null>(null);
+  const didNavigateRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
 
     const run = async () => {
       try {
-        setLoading(true);
         setError(null);
         const studyPreferencesSnapshot = {
           tone: studyPrefs.tone,
@@ -213,8 +310,108 @@ export function ProcessingScreen({ navigation, route }: Props) {
           highlightDefinitions: studyPrefs.highlightDefinitions,
           highlightNumbersDates: studyPrefs.highlightNumbersDates,
         };
-        const notes = await generateNotesFromImage(route.params.imageUri, studyPreferencesSnapshot);
+        const extractionModes = route.params.extractionModes ?? [
+          route.params.extractionMode ?? "everything",
+        ];
+        const notes = await generateNotesFromImage(
+          route.params.imageUri,
+          studyPreferencesSnapshot,
+          extractionModes
+        );
         if (!mounted) return;
+        const pageLabel = route.params.page?.trim() || notes.pageNumber?.trim() || "";
+        const mappedChapter = findChapterForPage(
+          parseNumericPage(pageLabel),
+          activeBook?.chapterRanges
+        );
+        const chapterLabel =
+          route.params.chapter?.trim() || mappedChapter || notes.sectionHeadings?.[0]?.trim() || "";
+        const previousBookScans = activeBook?.id
+          ? scans.filter((scan) => scan.bookId === activeBook.id)
+          : [];
+        const reinforcedIdeas = detectReinforcedIdeas(
+          notes.mainIdeas,
+          pageLabel || undefined,
+          previousBookScans
+        );
+
+        const pageTextForEntities = [
+          notes.summary?.trim() ?? "",
+          ...(Array.isArray(notes.mainIdeas) ? notes.mainIdeas : []),
+          notes.detailedNotes?.trim() ?? "",
+          ...(Array.isArray(notes.quotes) ? notes.quotes : []),
+        ]
+          .map((part) => part.trim())
+          .filter((part) => part.length > 0)
+          .join("\n");
+
+        const existingEntityMap = new Map<string, ExistingEntitySeed>();
+        if (activeBook?.id) {
+          previousBookScans.forEach((scan) => {
+            (scan.entityGraph?.entities ?? []).forEach((entity) => {
+              const current = existingEntityMap.get(entity.id);
+              if (current) {
+                const mergedAliases = Array.from(
+                  new Set([...(current.aliases ?? []), ...(entity.aliases ?? [])])
+                );
+                existingEntityMap.set(entity.id, {
+                  ...current,
+                  aliases: mergedAliases,
+                });
+                return;
+              }
+              existingEntityMap.set(entity.id, {
+                id: entity.id,
+                canonical_name: entity.canonical_name,
+                type: entity.type,
+                aliases: entity.aliases,
+              });
+            });
+          });
+        }
+
+        let entityGraph:
+          | {
+              entities: {
+                id: string;
+                canonical_name: string;
+                type: "person" | "place" | "concept" | "work" | "organization" | "event";
+                aliases: string[];
+                description: string;
+                salience: "high" | "medium" | "low";
+                first_seen_page: number;
+              }[];
+              relationships: {
+                source_id: string;
+                target_id: string;
+                type: string;
+                evidence: string;
+                page: number;
+              }[];
+              page_summary: string;
+            }
+          | undefined;
+
+        if (pageTextForEntities.length > 0) {
+          try {
+            entityGraph = await extractEntitiesFromPageText({
+              bookMetadata: {
+                title: activeBook?.title ?? "",
+                author: activeBook?.author ?? "",
+                context: activeBook?.chapterRanges?.length
+                  ? `Known chapter ranges: ${activeBook.chapterRanges
+                      .map((r) => `${r.title} (${r.startPage}${r.endPage ? `-${r.endPage}` : "+"})`)
+                      .join(", ")}`
+                  : undefined,
+              },
+              pageText: pageTextForEntities,
+              pageNumber: parseNumericPage(pageLabel) ?? 0,
+              existingEntities: Array.from(existingEntityMap.values()),
+            });
+          } catch {
+            // Entity graph is optional; do not block notes/report generation on this step.
+          }
+        }
 
         const item = {
           id: `${Date.now()}`,
@@ -222,20 +419,24 @@ export function ProcessingScreen({ navigation, route }: Props) {
           imageUri: route.params.imageUri,
           bookId: activeBook?.id,
           book: activeBook?.title,
-          ...(route.params.page?.trim() ? { page: route.params.page.trim() } : {}),
+          ...(pageLabel ? { page: pageLabel } : {}),
+          ...(chapterLabel ? { chapter: chapterLabel } : {}),
+          extractionMode: extractionModes[0] ?? "everything",
+          extractionModes,
           notes,
+          ...(reinforcedIdeas.length > 0 ? { reinforcedIdeas } : {}),
+          ...(entityGraph ? { entityGraph } : {}),
           studyPreferences: studyPreferencesSnapshot,
         };
 
         addScan(item);
         recordSuccessfulScan();
-        navigation.replace("Results", { item });
+        pendingNavRef.current = item;
+        setApiSuccess(true);
       } catch (e) {
         if (!mounted) return;
         const message = e instanceof Error ? e.message : "Failed to generate notes.";
         setError(message);
-      } finally {
-        if (mounted) setLoading(false);
       }
     };
 
@@ -249,7 +450,11 @@ export function ProcessingScreen({ navigation, route }: Props) {
     recordSuccessfulScan,
     route.params.imageUri,
     route.params.page,
+    route.params.chapter,
+    route.params.extractionMode,
+    route.params.extractionModes,
     activeBook,
+    scans,
     studyPrefs.tone,
     studyPrefs.length,
     studyPrefs.highlightKeyElements,
@@ -259,218 +464,89 @@ export function ProcessingScreen({ navigation, route }: Props) {
   ]);
 
   useEffect(() => {
-    if (!loading) return;
+    if (error) return;
+    const id = setInterval(() => {
+      setActiveIndex((prev) => {
+        const last = STEPS.length - 1;
+        if (prev >= last) return prev;
+        hapticStepCompleted();
+        return prev + 1;
+      });
+    }, STEP_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [error]);
 
-    let cancelled = false;
+  useEffect(() => {
+    if (didNavigateRef.current || !apiSuccess || error) return;
+    if (activeIndex < STEPS.length - 1) return;
+    const item = pendingNavRef.current;
+    if (!item) return;
+    didNavigateRef.current = true;
+    playSoundEffect("aiExtractionCompleted");
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 1,
+        routes: [{ name: "ScanCamera" }, { name: "Results", params: { item } }],
+      })
+    );
+  }, [apiSuccess, activeIndex, error, navigation]);
 
-    const afterCommit = () => delay(0);
-
-    const run = async () => {
-      layoutPendingRef.current = false;
-      layoutResolveRef.current = null;
-      progressFill.setValue(0);
-
-      animateStepFadeIn(0);
-      animateStepFadeIn(1);
-      animateStepFadeIn(2);
-      await afterCommit();
-      await waitForLayoutReady();
-      if (cancelled) return;
-      await Promise.all([runTextShimmerSweep(), animateProgressTo(0.25)]);
-      if (cancelled) return;
-      hapticStepCompleted();
-
-      setRowPhases(["solid", "shimmer", "pending"]);
-      await afterCommit();
-      await waitForLayoutReady();
-      if (cancelled) return;
-      await Promise.all([runTextShimmerSweep(), animateProgressTo(0.5)]);
-      if (cancelled) return;
-      hapticStepCompleted();
-
-      setRowPhases(["solid", "solid", "shimmer"]);
-      await afterCommit();
-      await waitForLayoutReady();
-      if (cancelled) return;
-      await Promise.all([runTextShimmerSweep(), animateProgressTo(0.75)]);
-      if (cancelled) return;
-      hapticStepCompleted();
-
-      setRowPhases(["solid", "solid", "solid"]);
-
-      setLoaderLinePhase("shimmer");
-      animateLoaderFadeIn();
-      await afterCommit();
-      await waitForLayoutReady();
-      if (cancelled) return;
-      await Promise.all([runTextShimmerSweep(), animateProgressTo(1)]);
-      if (cancelled) return;
-      setLoaderLinePhase("solid");
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-      layoutPendingRef.current = false;
-      const r = layoutResolveRef.current;
-      layoutResolveRef.current = null;
-      r?.();
-    };
-  }, [loading, animateLoaderFadeIn, animateProgressTo, animateStepFadeIn, progressFill, runTextShimmerSweep, waitForLayoutReady]);
-
-  /** Dark mode: brighter than default slate body for stronger contrast on cards. */
-  const processingBodyColor = darkMode ? "#ffffff" : lightColors.textPrimary;
-  const stepMutedColor = darkMode ? darkColors.textSecondary : lightColors.textSecondary;
-
-  const tw = Math.max(progressTrackWidth, 1);
-  const progressFillWidth = progressFill.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, tw],
-  });
+  const stepIndexShown = activeIndex + 1;
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
-      <HeaderText
-        title="Processing"
-        subtitle="The AI is extracting text and generating study notes."
-      />
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.screen}>
+      <View style={styles.centered}>
+        <View style={styles.headerBlock}>
+          <Text style={styles.title}>Extracting ideas</Text>
+          <Text style={styles.subtitle}>
+            Your page is being read and analysed — this takes a few seconds.
+          </Text>
+        </View>
 
-      {loading ? (
-        <LottieView
-          source={require("../../assets/ocrscan.json")}
-          autoPlay
-          loop
-          style={styles.ocrScanLottie}
-        />
-      ) : null}
+        <View style={styles.stepCard}>
+          {STEPS.map((step, i) => (
+            <ProcessingStepRow
+              key={step.label}
+              state={stepStateForIndex(activeIndex, i)}
+              step={step}
+              isLast={i === STEPS.length - 1}
+            />
+          ))}
+        </View>
 
-      <View style={[styles.processingCard, darkMode && styles.processingCardDark]}>
-        {PROCESSING_STEPS.map((label, index) => {
-          const phase = rowPhases[index];
-          const activeLabel = `${label} (active)`;
-          return (
-            <Animated.View
-              key={label}
-              style={{
-                opacity: stepFade[index].opacity,
-                transform: [{ translateY: stepFade[index].translateY }],
-              }}
-            >
-              <View style={styles.stepRow}>
-                <View style={styles.stepGlyphCol}>
-                  {phase === "solid" ? (
-                    <Ionicons name="checkmark" size={20} color={accentColor} accessibilityLabel="Done" />
-                  ) : null}
-                  {phase === "shimmer" ? (
-                    <View style={styles.stepActiveGlyph}>
-                      <Text style={[styles.stepArrow, { color: accentColor }]}>→</Text>
-                      <ActivePulseDot color={accentColor} />
-                    </View>
-                  ) : null}
-                  {phase === "pending" ? (
-                    <Text style={[styles.stepPendingCircle, { color: stepMutedColor }]} accessibilityLabel="Pending">
-                      ○
-                    </Text>
-                  ) : null}
-                </View>
-                <View style={styles.stepBody}>
-                  {phase === "shimmer" ? (
-                    <AccentShimmerText
-                      text={activeLabel}
-                      textStyle={[
-                        styles.processingStep,
-                        styles.processingStepMono,
-                        { color: processingBodyColor },
-                      ]}
-                      accentColor={accentColor}
-                      restColor={processingBodyColor}
-                      restTrackAlpha={darkMode ? 0.2 : 0.12}
-                      restShoulderAlpha={darkMode ? 0.45 : 0.35}
-                      shimmerPhase={textShimmerDriver}
-                      onLayoutReady={handleAccentLayoutReady}
-                    />
-                  ) : (
-                    <Text
-                      style={[
-                        styles.processingStep,
-                        styles.processingStepMono,
-                        { color: stepMutedColor },
-                      ]}
-                    >
-                      {label}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            </Animated.View>
-          );
-        })}
+        <View style={styles.progressSection}>
+          <View style={styles.progressTrack}>
+            <View style={styles.progressFillTrack}>
+              <ProgressBarFillPulse />
+            </View>
+          </View>
+          <Text style={styles.progressCaption}>
+            Step {stepIndexShown} of {STEPS.length}
+          </Text>
+        </View>
       </View>
 
-      {loading && (
-        <View style={[styles.loaderWrap, darkMode && styles.loaderWrapDark]}>
-          <View
-            style={[styles.progressTrack, darkMode && styles.progressTrackDark]}
-            onLayout={(e) => setProgressTrackWidth(e.nativeEvent.layout.width)}
-          >
-            <Animated.View
-              style={[
-                styles.progressFill,
-                {
-                  width: progressFillWidth,
-                },
-              ]}
+      {error ? (
+        <View style={styles.errorOverlay}>
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity
+              style={[styles.retryButton, { backgroundColor: accentColor }]}
+              onPress={() =>
+                navigation.replace("Processing", {
+                  imageUri: route.params.imageUri,
+                  ...(route.params.page ? { page: route.params.page } : {}),
+                  ...(route.params.chapter ? { chapter: route.params.chapter } : {}),
+                  ...(route.params.extractionMode ? { extractionMode: route.params.extractionMode } : {}),
+                  ...(route.params.extractionModes ? { extractionModes: route.params.extractionModes } : {}),
+                })
+              }
             >
-              <LinearGradient
-                colors={accentGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFill}
-              />
-            </Animated.View>
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
           </View>
-          {loaderLinePhase !== "hidden" ? (
-            <Animated.View
-              style={{
-                opacity: loaderFade.opacity,
-                transform: [{ translateY: loaderFade.translateY }],
-              }}
-            >
-              {loaderLinePhase === "shimmer" ? (
-                <AccentShimmerText
-                  text="Generating notes..."
-                  textStyle={[styles.loaderText, { color: processingBodyColor }]}
-                  accentColor={accentColor}
-                  restColor={processingBodyColor}
-                  restTrackAlpha={darkMode ? 0.2 : 0.12}
-                  restShoulderAlpha={darkMode ? 0.45 : 0.35}
-                  shimmerPhase={textShimmerDriver}
-                  onLayoutReady={handleAccentLayoutReady}
-                />
-              ) : (
-                <Text style={[styles.loaderText, { color: processingBodyColor }]}>Generating notes...</Text>
-              )}
-            </Animated.View>
-          ) : null}
         </View>
-      )}
-
-      {error && (
-        <View style={[styles.errorBox, darkMode && styles.errorBoxDark]}>
-          <Text style={[styles.errorText, darkMode && styles.errorTextDark]}>{error}</Text>
-          <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: accentColor }]}
-            onPress={() =>
-              navigation.replace("Processing", {
-                imageUri: route.params.imageUri,
-                ...(route.params.page ? { page: route.params.page } : {}),
-              })
-            }
-          >
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -478,124 +554,196 @@ export function ProcessingScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: lightColors.background,
-    paddingHorizontal: 18,
-    paddingTop: 10,
+    backgroundColor: SCREEN_BG,
   },
-  screenDark: {
-    backgroundColor: darkColors.background,
+  centered: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 40,
+    gap: 32,
   },
-  processingCard: {
-    backgroundColor: lightColors.card,
-    borderWidth: 1,
-    borderColor: lightColors.border,
+  headerBlock: {
+    gap: 10,
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: "600",
+    color: "#ffffff",
+    letterSpacing: -0.52,
+  },
+  subtitle: {
+    fontSize: 13,
+    fontWeight: "400",
+    color: "rgba(255,255,255,0.4)",
+    lineHeight: 19.5,
+  },
+  stepCard: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.08)",
     borderRadius: 16,
-    padding: 16,
-    gap: 10,
-    marginTop: 4,
-    marginBottom: 16,
+    overflow: "hidden",
   },
-  processingCardDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
+  stepRowWithDivider: {
+    borderBottomWidth: 0.5,
+    borderBottomColor: "rgba(255,255,255,0.06)",
   },
-  processingStep: {
-    fontSize: 15,
-  },
-  processingStepMono: {
-    fontFamily: STEP_MONO,
-  },
-  stepRow: {
+  stepRowInner: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
   },
-  stepGlyphCol: {
+  stepIconCol: {
     width: 28,
     alignItems: "center",
-    paddingTop: 1,
+    justifyContent: "center",
   },
-  stepActiveGlyph: {
-    flexDirection: "row",
+  stepIconStack: {
+    width: 28,
+    height: 24,
+    position: "relative",
     alignItems: "center",
-    gap: 5,
+    justifyContent: "center",
   },
-  stepArrow: {
-    fontSize: 16,
-    fontFamily: STEP_MONO,
-    fontWeight: "600",
+  stepIconLayer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  stepPendingCircle: {
-    fontSize: 15,
-    fontFamily: STEP_MONO,
+  pulseIconCell: {
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  stepBody: {
+  stepIconActiveGlow: {
+    position: "absolute",
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  stepIconDone: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(59,130,246,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepIconPending: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepPulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  stepTextCol: {
     flex: 1,
     minWidth: 0,
+    gap: 2,
   },
-  pulseDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 999,
+  stepLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#ffffff",
   },
-  loaderWrap: {
-    alignItems: "center",
-    gap: 10,
-    marginTop: 6,
-    backgroundColor: lightColors.card,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    borderRadius: 14,
-    padding: 14,
+  stepLabelPending: {
+    color: "rgba(255,255,255,0.3)",
   },
-  loaderWrapDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
+  stepSublabel: {
+    fontSize: 11,
+    fontWeight: "400",
+    color: "rgba(255,255,255,0.3)",
+    lineHeight: 14,
+  },
+  stepBadgeCol: {
+    minWidth: 72,
+    alignItems: "flex-end",
+  },
+  badgeStack: {
+    minWidth: 72,
+    height: 28,
+    position: "relative",
+  },
+  badgeLayer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+  badgeDone: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: "rgba(59,130,246,0.1)",
+  },
+  badgeDoneText: {
+    fontSize: 10,
+    fontWeight: "500",
+    color: "#60a5fa",
+  },
+  badgeActive: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: "rgba(251,191,36,0.1)",
+  },
+  badgeActiveText: {
+    fontSize: 10,
+    fontWeight: "500",
+    color: "#fbbf24",
+  },
+  progressSection: {
+    gap: 8,
+    width: "100%",
   },
   progressTrack: {
     width: "100%",
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: lightColors.border,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.08)",
     overflow: "hidden",
   },
-  progressTrackDark: {
-    backgroundColor: "#2a2a2a",
-  },
-  progressFill: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    borderRadius: 999,
+  progressFillTrack: {
+    width: "65%",
+    height: "100%",
+    borderRadius: 2,
     overflow: "hidden",
   },
-  loaderText: {
-    fontWeight: "600",
+  progressFillInner: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#60a5fa",
+    borderRadius: 2,
   },
-  ocrScanLottie: {
-    width: 300,
-    height: 300,
-    alignSelf: "center",
-    marginTop:-30,
+  progressCaption: {
+    fontSize: 11,
+    fontWeight: "400",
+    color: "rgba(255,255,255,0.3)",
+    textAlign: "right",
+  },
+  errorOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    backgroundColor: "rgba(0,0,0,0.55)",
   },
   errorBox: {
-    marginTop: 20,
-    backgroundColor: lightColors.dangerBg,
-    borderColor: lightColors.dangerBorder,
+    backgroundColor: darkColors.dangerBg,
+    borderColor: darkColors.dangerBorder,
     borderWidth: 1,
     borderRadius: 12,
     padding: 12,
     gap: 10,
   },
-  errorBoxDark: {
-    backgroundColor: darkColors.dangerBg,
-    borderColor: darkColors.dangerBorder,
-  },
   errorText: {
-    color: lightColors.dangerText,
-  },
-  errorTextDark: {
     color: darkColors.dangerText,
   },
   retryButton: {

@@ -35,6 +35,8 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   // Hide bottom nav on full-screen detail/result flows to avoid overlap.
   if (
     activeNestedRouteName === "ReportDetails" ||
+    activeNestedRouteName === "CropPhoto" ||
+    activeNestedRouteName === "ExtractionOptions" ||
     activeNestedRouteName === "Processing" ||
     activeNestedRouteName === "Results" ||
     activeNestedRouteName === "StreakDetails" ||

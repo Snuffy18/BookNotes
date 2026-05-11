@@ -1,5 +1,6 @@
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { BookReport } from "../types/note";
+import { stripMarkdownBoldMarkers } from "../utils/stripMarkdownBoldMarkers";
 
 export function BookReportCard({
   report,
@@ -17,7 +18,7 @@ export function BookReportCard({
         <Text style={styles.title}>{report.book.title}</Text>
         <Text style={styles.meta}>{report.scans.length} scanned page(s)</Text>
         <Text style={styles.preview} numberOfLines={2}>
-          {latestScan?.notes.summary ?? "No summary yet."}
+          {latestScan ? stripMarkdownBoldMarkers(latestScan.notes.summary) : "No summary yet."}
         </Text>
         <Text style={styles.date}>
           Last scan: {latestScan ? new Date(latestScan.createdAt).toLocaleDateString() : "-"}

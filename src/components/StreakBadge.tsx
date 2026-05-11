@@ -34,7 +34,9 @@ export function StreakBadge() {
       hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
     >
       <FireIcon size={16} />
-      <Text style={[styles.count, darkMode && styles.countDark]}>{streak.currentStreak}</Text>
+      <Text style={[styles.count, darkMode && styles.countDark]}>
+        {streak.currentStreak} {streak.currentStreak === 1 ? "day" : "days"}
+      </Text>
     </Pressable>
   );
 }
@@ -59,11 +61,12 @@ const styles = StyleSheet.create({
     opacity: 0.75,
   },
   count: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "800",
     color: lightColors.textPrimary,
   },
   countDark: {
+    fontSize: 13,
     color: darkColors.textPrimary,
   },
 });

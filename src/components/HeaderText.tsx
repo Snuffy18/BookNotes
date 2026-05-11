@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { StyleProp, ViewStyle } from "react-native";
+import type { StyleProp, TextStyle, ViewStyle } from "react-native";
 import { StyleSheet, Text, View } from "react-native";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { darkColors, lightColors } from "../theme/colors";
@@ -10,15 +10,20 @@ export function HeaderText({
   subtitle,
   subtitleMuted = false,
   style,
+  titleStyle,
   /** Renders on the same row as the title (e.g. streak pill). */
   trailing,
+  /** Renders under the title row, before the subtitle. */
+  belowTitle,
 }: {
   title: string;
   subtitle?: string;
   /** Smaller subtitle at ~70% opacity for clearer hierarchy (e.g. Scan). */
   subtitleMuted?: boolean;
   style?: StyleProp<ViewStyle>;
+  titleStyle?: StyleProp<TextStyle>;
   trailing?: ReactNode;
+  belowTitle?: ReactNode;
 }) {
   const { darkMode } = useAppSettings();
 
@@ -32,13 +37,19 @@ export function HeaderText({
     <View style={[styles.headerBlock, !subtitle && styles.headerBlockTitleOnly, style]}>
       <View style={[styles.titleRow, hasTrailing && styles.titleRowWithTrailing]}>
         <Text
-          style={[styles.headerTitle, darkMode && styles.headerTitleDark, hasTrailing && styles.headerTitleFlex]}
+          style={[
+            styles.headerTitle,
+            darkMode && styles.headerTitleDark,
+            hasTrailing && styles.headerTitleFlex,
+            titleStyle,
+          ]}
           numberOfLines={1}
         >
           {title}
         </Text>
         {trailing}
       </View>
+      {belowTitle}
       {subtitle ? (
         <Text
           style={[

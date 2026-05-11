@@ -1,12 +1,14 @@
 import { StyleSheet, Text, View } from "react-native";
 import type { ScanItem } from "../types/note";
+import { FONT_CANELA_TEXT_BOLD } from "../theme/fonts";
+import { stripMarkdownBoldMarkers } from "../utils/stripMarkdownBoldMarkers";
 
 export function LibraryCard({ item }: { item: ScanItem }) {
   return (
     <View style={styles.libraryCard}>
       <Text style={styles.libraryBook}>{item.book ?? "Scanned Book Page"}</Text>
       <Text style={styles.libraryChapter}>{item.chapter ?? "AI Generated Notes"}</Text>
-      <Text style={styles.libraryPreview}>{item.notes.summary}</Text>
+      <Text style={styles.libraryPreview}>{stripMarkdownBoldMarkers(item.notes.summary)}</Text>
       <Text style={styles.libraryDate}>
         {new Date(item.createdAt).toLocaleDateString()}
       </Text>
@@ -24,13 +26,15 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   libraryBook: {
-    fontWeight: "700",
     color: "#0f172a",
     fontSize: 16,
+    fontFamily: FONT_CANELA_TEXT_BOLD,
+    fontWeight: "400",
   },
   libraryChapter: {
     color: "#1e40af",
-    fontWeight: "600",
+    fontFamily: FONT_CANELA_TEXT_BOLD,
+    fontWeight: "400",
   },
   libraryPreview: {
     color: "#334155",

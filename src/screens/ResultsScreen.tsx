@@ -7,30 +7,62 @@ import { StudySettingsSummaryCard } from "../components/StudySettingsSummaryCard
 import { useAppSettings } from "../context/AppSettingsContext";
 import type { ScanStackParamList } from "../navigation/types";
 import { DEFAULT_STUDY_PREFERENCES } from "../types/studyPreferences";
+import type { ExtractionMode } from "../types/note";
 import { stripMarkdownBoldMarkers } from "../utils/stripMarkdownBoldMarkers";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<ScanStackParamList, "Results">;
 
+const EXTRACTION_LABELS: Record<ExtractionMode, string> = {
+  quotes: "Quotes",
+  words: "Words",
+  bulletPoints: "Bullet Points",
+  everything: "Everything",
+};
+
+function getExtractionModes(itemMode?: ExtractionMode, itemModes?: ExtractionMode[]) {
+  return itemModes && itemModes.length > 0 ? itemModes : [itemMode ?? "everything"];
+}
+
+function formatExtractionLabel(modes: ExtractionMode[]) {
+  if (modes.includes("everything")) return EXTRACTION_LABELS.everything;
+  return modes.map((mode) => EXTRACTION_LABELS[mode]).join(" + ");
+}
+
 export function ResultsScreen({ route }: Props) {
   const { darkMode, accentColor } = useAppSettings();
   const { item } = route.params;
   const studyPrefsUsed = item.studyPreferences ?? DEFAULT_STUDY_PREFERENCES;
+  const extractionModes = getExtractionModes(item.extractionMode, item.extractionModes);
+  const showEverything = extractionModes.includes("everything");
+  const showSummary = showEverything;
+  const showMainIdeas = showEverything || extractionModes.includes("bulletPoints");
+  const showDetailedNotes = showEverything;
+  const showQuotes = showEverything || extractionModes.includes("quotes");
+  const showKeywords = showEverything || extractionModes.includes("words");
+  const showVocabularyDefinitions = !showEverything && extractionModes.includes("words");
   const createdAt = new Date(item.createdAt);
   const createdLabel = createdAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
   const readingMinutes = Math.max(1, Math.round((item.notes.detailedNotes.length || 120) / 900));
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={[styles.heroCard, darkMode && styles.cardDark]}>
           <Text style={[styles.heroTitle, darkMode && styles.textPrimaryDark]}>
             {item.book ?? "AI Notes"}
           </Text>
           <Text style={[styles.heroMeta, darkMode && styles.textMutedDark]}>{createdLabel}</Text>
+          {item.chapter?.trim() ? (
+            <Text style={[styles.heroMeta, darkMode && styles.textMutedDark]}>
+              {item.chapter.trim()}
+            </Text>
+          ) : null}
           <View style={styles.heroMetaRow}>
             <View style={[styles.badge, { borderColor: accentColor }]}>
-              <Text style={[styles.badgeText, { color: accentColor }]}>Generated now</Text>
+              <Text style={[styles.badgeText, { color: accentColor }]}>
+                {formatExtractionLabel(extractionModes)}
+              </Text>
             </View>
             <Text style={[styles.heroMeta, darkMode && styles.textMutedDark]}>
               ~{readingMinutes} min read
@@ -40,32 +72,42 @@ export function ResultsScreen({ route }: Props) {
 
         <StudySettingsSummaryCard prefs={studyPrefsUsed} darkMode={darkMode} accentColor={accentColor} />
 
-        <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
-          <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Summary</Text>
-          <RichNoteText
-            text={item.notes.summary}
-            style={[styles.sectionText, darkMode && styles.textSecondaryDark]}
-          />
-        </View>
-
-        <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
-          <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Main Ideas</Text>
-          <View style={styles.ideasList}>
-            {item.notes.mainIdeas.map((idea, index) => (
-              <View key={`${idea}-${index}`} style={styles.ideaRow}>
-                <View style={[styles.ideaIndex, { borderColor: accentColor }]}>
-                  <Text style={[styles.ideaIndexText, { color: accentColor }]}>{index + 1}</Text>
-                </View>
-                <RichNoteText
-                  text={idea}
-                  style={[styles.sectionText, styles.ideaText, darkMode && styles.textSecondaryDark]}
-                />
-              </View>
-            ))}
+        {showSummary ? (
+          <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
+            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Summary</Text>
+            <RichNoteText
+              text={item.notes.summary}
+              style={[styles.sectionText, darkMode && styles.textSecondaryDark]}
+            />
           </View>
-        </View>
+        ) : null}
 
-        {item.notes.sectionHeadings && item.notes.sectionHeadings.length > 0 ? (
+        {showMainIdeas ? (
+          <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
+            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Bullet Points</Text>
+            <View style={styles.ideasList}>
+              {item.notes.mainIdeas.length > 0 ? (
+                item.notes.mainIdeas.map((idea, index) => (
+                  <View key={`${idea}-${index}`} style={styles.ideaRow}>
+                    <View style={[styles.ideaIndex, { borderColor: accentColor }]}>
+                      <Text style={[styles.ideaIndexText, { color: accentColor }]}>{index + 1}</Text>
+                    </View>
+                    <RichNoteText
+                      text={idea}
+                      style={[styles.sectionText, styles.ideaText, darkMode && styles.textSecondaryDark]}
+                    />
+                  </View>
+                ))
+              ) : (
+                <Text style={[styles.sectionText, darkMode && styles.textSecondaryDark]}>
+                  No bullet points were extracted from this page.
+                </Text>
+              )}
+            </View>
+          </View>
+        ) : null}
+
+        {showEverything && item.notes.sectionHeadings && item.notes.sectionHeadings.length > 0 ? (
           <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
             <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Section headings</Text>
             <View style={styles.headingsList}>
@@ -80,46 +122,79 @@ export function ResultsScreen({ route }: Props) {
           </View>
         ) : null}
 
-        <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
-          <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Detailed Notes</Text>
-          <RichNoteText
-            text={item.notes.detailedNotes}
-            style={[styles.sectionText, darkMode && styles.textSecondaryDark]}
-          />
-        </View>
-
-        {item.notes.quotes && item.notes.quotes.length > 0 ? (
+        {showDetailedNotes ? (
           <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
-            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Quotes</Text>
-            <View style={styles.quotesList}>
-              {item.notes.quotes.map((quote, index) => (
-                <View
-                  key={`${index}-${quote.slice(0, 24)}`}
-                  style={[styles.quoteBlock, { borderLeftColor: accentColor }]}
-                >
-                  <RichNoteText
-                    text={quote}
-                    style={[styles.sectionText, styles.quoteText, darkMode && styles.textSecondaryDark]}
-                  />
-                </View>
-              ))}
-            </View>
+            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Detailed Notes</Text>
+            <RichNoteText
+              text={item.notes.detailedNotes}
+              style={[styles.sectionText, darkMode && styles.textSecondaryDark]}
+            />
           </View>
         ) : null}
 
-        <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
-          <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Keywords</Text>
-          <View style={styles.keywordWrap}>
-            {item.notes.keywords.map((keyword) => {
-              const label = stripMarkdownBoldMarkers(keyword);
-              return (
-                <View key={label || keyword} style={[styles.keywordChip, { borderColor: accentColor }]}>
-                  <Text style={[styles.keywordText, { color: accentColor }]}>{label}</Text>
-                </View>
-              );
-            })}
+        {showQuotes ? (
+          <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
+            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>Quotes</Text>
+            {item.notes.quotes && item.notes.quotes.length > 0 ? (
+              <View style={styles.quotesList}>
+                {item.notes.quotes.map((quote, index) => (
+                  <View
+                    key={`${index}-${quote.slice(0, 24)}`}
+                    style={[styles.quoteBlock, { borderLeftColor: accentColor }]}
+                  >
+                    <RichNoteText
+                      text={quote}
+                      style={[styles.sectionText, styles.quoteText, darkMode && styles.textSecondaryDark]}
+                    />
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={[styles.sectionText, darkMode && styles.textSecondaryDark]}>
+                No quotes were found on this page.
+              </Text>
+            )}
           </View>
-        </View>
+        ) : null}
+
+        {showKeywords ? (
+          <View style={[styles.sectionCard, darkMode && styles.cardDark]}>
+            <Text style={[styles.sectionTitle, darkMode && styles.textPrimaryDark]}>
+              {showEverything ? "Keywords" : "Words"}
+            </Text>
+            {showVocabularyDefinitions && item.notes.vocabularyTerms && item.notes.vocabularyTerms.length > 0 ? (
+              <View style={styles.vocabularyList}>
+                {item.notes.vocabularyTerms.map((term, index) => (
+                  <View
+                    key={`${index}-${term.word}`}
+                    style={[styles.vocabularyCard, darkMode && styles.vocabularyCardDark]}
+                  >
+                    <Text style={[styles.vocabularyWord, { color: accentColor }]}>{term.word}</Text>
+                    <RichNoteText
+                      text={term.definition}
+                      style={[styles.sectionText, darkMode && styles.textSecondaryDark]}
+                    />
+                  </View>
+                ))}
+              </View>
+            ) : item.notes.keywords.length > 0 ? (
+              <View style={styles.keywordWrap}>
+                {item.notes.keywords.map((keyword) => {
+                  const label = stripMarkdownBoldMarkers(keyword);
+                  return (
+                    <View key={label || keyword} style={[styles.keywordChip, { borderColor: accentColor }]}>
+                      <Text style={[styles.keywordText, { color: accentColor }]}>{label}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={[styles.sectionText, darkMode && styles.textSecondaryDark]}>
+                No words were extracted from this page.
+              </Text>
+            )}
+          </View>
+        ) : null}
       </ScrollView>
 
       <View style={[styles.stickyActionBar, darkMode && styles.cardDark]}>
@@ -271,6 +346,25 @@ const styles = StyleSheet.create({
   keywordText: {
     fontSize: 12,
     fontWeight: "700",
+  },
+  vocabularyList: {
+    gap: 10,
+  },
+  vocabularyCard: {
+    borderWidth: 1,
+    borderColor: lightColors.border,
+    borderRadius: 12,
+    padding: 12,
+    gap: 5,
+    backgroundColor: lightColors.background,
+  },
+  vocabularyCardDark: {
+    borderColor: darkColors.border,
+    backgroundColor: darkColors.background,
+  },
+  vocabularyWord: {
+    fontSize: 15,
+    fontWeight: "800",
   },
   stickyActionBar: {
     position: "absolute",
