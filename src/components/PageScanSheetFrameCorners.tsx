@@ -2,6 +2,7 @@ import { StyleSheet, View } from "react-native";
 
 const PAGE_SCAN_SHEET_CORNER_LEN = 26;
 const PAGE_SCAN_SHEET_CORNER_INSET = 14;
+const PAGE_SCAN_SHEET_CORNER_RADIUS = 6;
 const PAGE_SCAN_SHEET_STROKE = 3;
 const PAGE_SCAN_CORNER_COLOR = "rgba(255,255,255,0.9)";
 
@@ -93,6 +94,7 @@ export function PageScanSheetFrameCorners() {
           top: PAGE_SCAN_SHEET_CORNER_INSET,
           borderLeftWidth: PAGE_SCAN_SHEET_STROKE,
           borderTopWidth: PAGE_SCAN_SHEET_STROKE,
+          borderTopLeftRadius: PAGE_SCAN_SHEET_CORNER_RADIUS,
         }}
       />
       <View
@@ -102,6 +104,7 @@ export function PageScanSheetFrameCorners() {
           top: PAGE_SCAN_SHEET_CORNER_INSET,
           borderRightWidth: PAGE_SCAN_SHEET_STROKE,
           borderTopWidth: PAGE_SCAN_SHEET_STROKE,
+          borderTopRightRadius: PAGE_SCAN_SHEET_CORNER_RADIUS,
         }}
       />
       <View
@@ -111,6 +114,7 @@ export function PageScanSheetFrameCorners() {
           bottom: PAGE_SCAN_SHEET_CORNER_INSET,
           borderLeftWidth: PAGE_SCAN_SHEET_STROKE,
           borderBottomWidth: PAGE_SCAN_SHEET_STROKE,
+          borderBottomLeftRadius: PAGE_SCAN_SHEET_CORNER_RADIUS,
         }}
       />
       <View
@@ -120,6 +124,7 @@ export function PageScanSheetFrameCorners() {
           bottom: PAGE_SCAN_SHEET_CORNER_INSET,
           borderRightWidth: PAGE_SCAN_SHEET_STROKE,
           borderBottomWidth: PAGE_SCAN_SHEET_STROKE,
+          borderBottomRightRadius: PAGE_SCAN_SHEET_CORNER_RADIUS,
         }}
       />
     </View>

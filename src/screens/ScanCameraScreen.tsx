@@ -31,25 +31,26 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAddBookSheet } from "../context/AddBookSheetContext";
 import { useBarcodeScanBookSheet } from "../context/BarcodeScanBookSheetContext";
 import { useAppSettings } from "../context/AppSettingsContext";
-import { openReportInLibraryTab } from "../navigation/openReportInLibraryTab";
 import { ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING } from "../navigation/rootTabLayout";
-import type { RootTabParamList, ScanStackParamList } from "../navigation/types";
+import type { ScanStackParamList } from "../navigation/types";
 import type { BookItem, ChapterRange, ReadingSession, ScanItem } from "../types/note";
 import { BookTotalPageNudgeList } from "../components/BookTotalPageNudgeList";
 import { ChapterMapEmptyState } from "../components/ChapterMapEmptyState";
 import { HeaderText } from "../components/HeaderText";
 import { HandTapIcon } from "../components/HandTapIcon";
 import { HomeLockedContent, HOME_LOCKED_BG } from "../components/HomeLockedContent";
-import { PageScanSheetFrameCorners, CenteredViewfinderFrameCorners } from "../components/PageScanSheetFrameCorners";
+import { PageScanSheetFrameCorners } from "../components/PageScanSheetFrameCorners";
+import { ScanProcessingHomeWidget } from "../components/ScanProcessingHomeWidget";
 import { ReadingTimerActiveBanner } from "../components/ReadingTimerActiveBanner";
 import { ReadingTimerBottomSheet } from "../components/ReadingTimerBottomSheet";
 import { StreakBadge } from "../components/StreakBadge";
+import { takePendingOpenReadingTimerModal } from "../reading/pendingReadingTimerModal";
+import { takePendingOpenPageScanModal } from "../scan/pendingPageScanModal";
 import { useReadingSession } from "../context/ReadingSessionContext";
 import { useStreak } from "../context/StreakContext";
 import { useScanContext } from "../context/ScanContext";
@@ -57,7 +58,7 @@ import { isEligibleReadingLogSession } from "../reading/readingHistoryStats";
 import { extractBookMetadataFromImage, extractChapterRangesFromContentsImage } from "../services/ai";
 import { hexWithAlpha } from "../theme/colorUtils";
 import { darkColors, lightColors } from "../theme/colors";
-import { FONT_CANELA_TEXT_BOLD, FONT_HELVETICA } from "../theme/fonts";
+import { FONT_CANELA_TEXT_BOLD, FONT_CANELA_TEXT_REGULAR, FONT_HELVETICA } from "../theme/fonts";
 import { playSoundEffect } from "../utils/soundEffects";
 import { cropImageToViewfinder, type ViewfinderLayout } from "../utils/cropImageToViewfinder";
 import { CAMERA_PICTURE_OPTIONS } from "../utils/cameraCapture";
@@ -263,6 +264,7 @@ function libraryPromoKindLabel(kind: LibraryPromoKind): string {
 
 const LIBRARY_PROMO_DOT_COUNT_CAP = 7;
 const FROM_LIBRARY_MODAL_HORIZONTAL_PAD = 18;
+const CONTENTS_MODAL_HORIZONTAL_PAD = 20;
 /** Next card visible by at least this many pixels when paging. */
 const FROM_LIBRARY_CARD_PEEK_PX = 12;
 const FROM_LIBRARY_CARD_WIDTH_RATIO = 0.9;
@@ -442,13 +444,13 @@ function ChapterMapShimmerRows({
             key={`chapter-map-shimmer-${index}`}
             style={[
               styles.chapterMapRow,
-              index > 0 && styles.chapterMapRowBorder,
               styles.chapterMapShimmerRow,
             ]}
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
           >
-            <View style={styles.chapterMapRowLeft}>
+            <View style={[styles.chapterMapShimmerBar, styles.chapterMapShimmerBarChapter]} />
+            <View style={styles.chapterMapRowContent}>
               <View style={[styles.chapterMapShimmerBar, { width: titleWidth }]} />
               {index % 2 === 0 ? (
                 <View style={[styles.chapterMapShimmerBar, styles.chapterMapShimmerBarShort]} />
@@ -500,6 +502,19 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const libraryModalSheetMaxHeight = Math.round(windowHeight * FROM_LIBRARY_MODAL_SHEET_MAX_HEIGHT_RATIO);
   const libraryModalSheetHideY = useMemo(() => Math.ceil(windowHeight * 0.45), [windowHeight]);
 
+  const contentsViewfinderWidth = useMemo(() => {
+    const maxWidth =
+      windowWidth - CONTENTS_MODAL_HORIZONTAL_PAD * 2 - insets.left - insets.right;
+    const maxHeight = windowHeight - insets.top - insets.bottom - 300;
+    const widthFromHeight = maxHeight * (3 / 4);
+    return Math.max(0, Math.floor(Math.min(maxWidth, widthFromHeight)));
+  }, [windowHeight, windowWidth, insets.bottom, insets.left, insets.right, insets.top]);
+
+  const contentsViewfinderHeight = useMemo(
+    () => Math.floor(contentsViewfinderWidth * (4 / 3)),
+    [contentsViewfinderWidth]
+  );
+
   /** Vertical gap between scan page sections (title, picker, camera, CTA, etc.). */
   const SCAN_PAGE_SECTION_GAP = 12;
 
@@ -536,7 +551,6 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const cameraRef = useRef<CameraView | null>(null);
   const pageScanPreviewLayoutRef = useRef<ViewfinderLayout | null>(null);
   const contentsPreviewLayoutRef = useRef<ViewfinderLayout | null>(null);
-  const [contentsViewfinderLayout, setContentsViewfinderLayout] = useState({ width: 0, height: 0 });
   const contentsCameraRef = useRef<CameraView | null>(null);
   const [isBookModalOpen, setIsBookModalOpen] = useState(false);
   /** Keeps Modal mounted until close animation finishes. */
@@ -550,6 +564,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const lastExtractExpandAnim = useRef(new Animated.Value(0)).current;
   const [searchQuery, setSearchQuery] = useState("");
   const [flashEnabled, setFlashEnabled] = useState(false);
+  const [contentsFlashEnabled, setContentsFlashEnabled] = useState(false);
   const [tipIndex, setTipIndex] = useState(0);
   /** True while adding a book from Library (or auto-open): capture → crop → metadata, not page scan. */
   const [addingAnotherBookCover, setAddingAnotherBookCover] = useState(false);
@@ -592,7 +607,9 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const [chapterEditEnd, setChapterEditEnd] = useState("");
   const chapterEditSheetY = useRef(new Animated.Value(360)).current;
   const chapterMapBookPickerY = useRef(new Animated.Value(420)).current;
+  const chapterMapBookPickerBackdropOp = useRef(new Animated.Value(0)).current;
   const [chapterMapBookPickerVisible, setChapterMapBookPickerVisible] = useState(false);
+  const [chapterMapBookPickerMounted, setChapterMapBookPickerMounted] = useState(false);
   const [readingTimerModalVisible, setReadingTimerModalVisible] = useState(false);
   /** `null` = All books with scans. */
   const [libraryPromoFilterBookId, setLibraryPromoFilterBookId] = useState<string | null>(null);
@@ -883,31 +900,41 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     return "Scan pages for this book. Snippets from your notes show up here as compact preview cards.";
   }, [needsFirstBook, activeBookId]);
 
+  const openReportFromScanHome = useCallback(
+    (scan: ScanItem): boolean => {
+      if (!scan.bookId?.trim()) return false;
+      navigation.navigate("ReportDetails", {
+        item: scan,
+        reportNavOrigin: "scan",
+      });
+      return true;
+    },
+    [navigation]
+  );
+
   const onRecentScanCardPress = useCallback(
     (scan: ScanItem) => {
       Haptics.selectionAsync().catch(() => {});
-      const tabNav = navigation.getParent() as NavigationProp<RootTabParamList> | undefined;
-      if (!openReportInLibraryTab(tabNav, scan, { reportNavOrigin: "scan" })) {
+      if (!openReportFromScanHome(scan)) {
         Alert.alert(
           "Can’t open full report",
           "This scan isn’t linked to a book yet. Save it to a book from the library, then open it there.",
         );
       }
     },
-    [navigation]
+    [openReportFromScanHome]
   );
 
   const onOpenLastExtractFullReport = useCallback(() => {
     if (!lastExtractedScan) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    const tabNav = navigation.getParent() as NavigationProp<RootTabParamList> | undefined;
-    if (!openReportInLibraryTab(tabNav, lastExtractedScan)) {
+    if (!openReportFromScanHome(lastExtractedScan)) {
       Alert.alert(
         "Can’t open full report",
         "This scan isn’t linked to a book yet. Save it to a book from the library, then open it there.",
       );
     }
-  }, [navigation, lastExtractedScan]);
+  }, [lastExtractedScan, openReportFromScanHome]);
 
   const bookIdsWithScans = useMemo(() => {
     const set = new Set<string>();
@@ -1110,15 +1137,14 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     (slide: LibraryPromoSlide) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setLibraryPromoModalVisible(false);
-      const tabNav = navigation.getParent() as NavigationProp<RootTabParamList> | undefined;
-      if (!openReportInLibraryTab(tabNav, slide.scan)) {
+      if (!openReportFromScanHome(slide.scan)) {
         Alert.alert(
           "Can’t open full report",
           "This scan isn’t linked to a book yet. Save it to a book from the library, then open it there.",
         );
       }
     },
-    [navigation]
+    [openReportFromScanHome]
   );
 
   const chapterMapRows = useMemo(() => {
@@ -1221,25 +1247,38 @@ export function ScanCameraScreen({ navigation, route }: Props) {
       setChapterEditSortedIndex(null);
       chapterEditSheetY.setValue(360);
       setChapterMapBookPickerVisible(false);
+      setChapterMapBookPickerMounted(false);
       chapterMapBookPickerY.setValue(420);
+      chapterMapBookPickerBackdropOp.setValue(0);
     }
-  }, [isChapterOverviewOpen, chapterEditSheetY, chapterMapBookPickerY]);
+  }, [isChapterOverviewOpen, chapterEditSheetY, chapterMapBookPickerY, chapterMapBookPickerBackdropOp]);
 
   const dismissChapterMapBookPicker = useCallback(() => {
-    Animated.timing(chapterMapBookPickerY, {
-      toValue: 420,
-      duration: 240,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
+    Animated.parallel([
+      Animated.timing(chapterMapBookPickerBackdropOp, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(chapterMapBookPickerY, {
+        toValue: 420,
+        duration: 240,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
       if (finished) {
         setChapterMapBookPickerVisible(false);
+        setChapterMapBookPickerMounted(false);
       }
     });
-  }, [chapterMapBookPickerY]);
+  }, [chapterMapBookPickerBackdropOp, chapterMapBookPickerY]);
 
   const openChapterMapBookPicker = useCallback(() => {
     if (books.length < 2 || chapterEditVisible) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setChapterMapBookPickerMounted(true);
     setChapterMapBookPickerVisible(true);
   }, [books.length, chapterEditVisible]);
 
@@ -1247,14 +1286,26 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     if (!chapterMapBookPickerVisible) {
       return;
     }
+    chapterMapBookPickerBackdropOp.setValue(0);
     chapterMapBookPickerY.setValue(420);
-    Animated.spring(chapterMapBookPickerY, {
-      toValue: 0,
-      friction: 9,
-      tension: 64,
-      useNativeDriver: true,
-    }).start();
-  }, [chapterMapBookPickerVisible, chapterMapBookPickerY]);
+    const id = requestAnimationFrame(() => {
+      Animated.parallel([
+        Animated.timing(chapterMapBookPickerBackdropOp, {
+          toValue: 1,
+          duration: 280,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(chapterMapBookPickerY, {
+          toValue: 0,
+          friction: 9,
+          tension: 64,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [chapterMapBookPickerVisible, chapterMapBookPickerBackdropOp, chapterMapBookPickerY]);
 
   const saveChapterEdit = useCallback(() => {
     if (!activeBook || chapterEditSortedIndex === null) return;
@@ -1345,6 +1396,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
       if (finished) {
         setPageScanSheetVisible(false);
         setPageScanSheetPurpose("page");
+        setFlashEnabled(false);
         if (wasBookCover) {
           setAddingAnotherBookCover(false);
         }
@@ -1472,6 +1524,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
 
   const navigateToContentsCrop = useCallback(
     (imageUri: string, append: boolean) => {
+      setContentsFlashEnabled(false);
       setIsContentsScannerOpen(false);
       navigation.push("CropPhoto", {
         imageUri,
@@ -1511,6 +1564,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
       if (!activeBook) return;
       setContentsExtractAppending(append);
       setContentsExtractError(null);
+      setContentsFlashEnabled(false);
       setIsContentsScannerOpen(false);
       setIsChapterOverviewOpen(true);
       setContentsExtracting(true);
@@ -1571,6 +1625,43 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     setPageScanSheetVisible(true);
     navigation.setParams({ autoOpenCoverCamera: undefined });
   }, [books.length, navigation, route.params?.autoOpenCoverCamera]);
+
+  const tryOpenReadingTimerModal = useCallback(() => {
+    if (needsFirstBook) {
+      Alert.alert(
+        "Reading timer",
+        "Add a book to your library first. Scan a book cover from this screen, then you can track reading sessions here."
+      );
+      return;
+    }
+    setReadingTimerModalVisible(true);
+  }, [needsFirstBook]);
+
+  useEffect(() => {
+    if (!route.params?.openReadingTimer) return;
+    navigation.setParams({ openReadingTimer: undefined });
+    tryOpenReadingTimerModal();
+  }, [navigation, route.params?.openReadingTimer, tryOpenReadingTimerModal]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!takePendingOpenReadingTimerModal()) return;
+      tryOpenReadingTimerModal();
+    }, [tryOpenReadingTimerModal])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      const pendingBookId = takePendingOpenPageScanModal();
+      if (!pendingBookId) return;
+      setActiveBookId(pendingBookId);
+      setCoverExtractError(null);
+      setIsCameraOpen(false);
+      setAddingAnotherBookCover(false);
+      setPageScanSheetPurpose("page");
+      setPageScanSheetVisible(true);
+    }, [setActiveBookId])
+  );
 
   useEffect(() => {
     const uri = route.params?.bookCoverCropResultUri;
@@ -1777,6 +1868,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     if (!activeBook) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setContentsExtractError(null);
+    setContentsFlashEnabled(false);
     setIsCameraOpen(false);
     setContentsScanAppend(opts?.append ?? false);
     setIsContentsScannerOpen(true);
@@ -1914,6 +2006,20 @@ export function ScanCameraScreen({ navigation, route }: Props) {
         {books.length > 0 ? (
           <>
             <ReadingTimerActiveBanner darkMode={darkMode} onPress={onPressActiveReadingTimerBanner} />
+
+            {navigation.getParent() ? (
+              <ScanProcessingHomeWidget
+                darkMode={darkMode}
+                navigation={navigation}
+                onTakeAnotherPhoto={() => {
+                  setCoverExtractError(null);
+                  setIsCameraOpen(false);
+                  setAddingAnotherBookCover(false);
+                  setPageScanSheetPurpose("page");
+                  setPageScanSheetVisible(true);
+                }}
+              />
+            ) : null}
 
             <TouchableOpacity
               style={[styles.scanIntoBookRow, darkMode && styles.scanIntoBookRowDark]}
@@ -2535,12 +2641,12 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                         android_ripple={{ color: "rgba(255,255,255,0.08)" }}
                         style={({ pressed }) => [
                           styles.chapterMapRow,
-                          index > 0 && styles.chapterMapRowBorder,
                           Platform.OS === "ios" && pressed && !contentsExtracting && styles.chapterMapRowPressed,
                           contentsExtracting && styles.chapterMapRowDisabled,
                         ]}
                       >
-                        <View style={styles.chapterMapRowLeft}>
+                        <Text style={styles.chapterMapRowNumber}>Ch {index + 1}</Text>
+                        <View style={styles.chapterMapRowContent}>
                           <Text style={styles.chapterMapRowTitle} numberOfLines={2}>
                             {(range.title || "Untitled").trim()}
                           </Text>
@@ -2656,9 +2762,18 @@ export function ScanCameraScreen({ navigation, route }: Props) {
             </View>
           ) : null}
 
-          {chapterMapBookPickerVisible ? (
+          {chapterMapBookPickerMounted ? (
             <View style={styles.chapterMapBookPickerOverlay} pointerEvents="box-none">
-              <Pressable style={styles.chapterMapBookPickerBackdrop} onPress={dismissChapterMapBookPicker} />
+              <Animated.View
+                style={[styles.chapterMapBookPickerBackdrop, { opacity: chapterMapBookPickerBackdropOp }]}
+              >
+                <Pressable
+                  style={StyleSheet.absoluteFillObject}
+                  onPress={dismissChapterMapBookPicker}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close book picker"
+                />
+              </Animated.View>
               <View style={styles.chapterMapBookPickerSheetWrap} pointerEvents="box-none">
                 <Animated.View
                   style={[
@@ -2807,16 +2922,37 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 <PageScanSheetFrameCorners />
               </View>
             </View>
-            <TouchableOpacity
-              style={styles.pageScanTakePhotoBtn}
-              onPress={() => void onCapturePageFromSheet()}
-              activeOpacity={0.88}
-              accessibilityRole="button"
-              accessibilityLabel="Take photo"
-            >
-              <Ionicons name="camera" size={18} color="#111111" />
-              <Text style={styles.pageScanTakePhotoBtnText}>Take photo</Text>
-            </TouchableOpacity>
+            <View style={styles.pageScanActionsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.contentsFlashButton,
+                  flashEnabled && styles.contentsFlashButtonActive,
+                ]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setFlashEnabled((on) => !on);
+                }}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={flashEnabled ? "Turn flash off" : "Turn flash on"}
+              >
+                <Ionicons
+                  name={flashEnabled ? "flash" : "flash-outline"}
+                  size={22}
+                  color={flashEnabled ? "#fbbf24" : "#fff"}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.pageScanTakePhotoBtn}
+                onPress={() => void onCapturePageFromSheet()}
+                activeOpacity={0.88}
+                accessibilityRole="button"
+                accessibilityLabel="Take photo"
+              >
+                <Ionicons name="camera" size={18} color="#111111" />
+                <Text style={styles.pageScanTakePhotoBtnText}>Take photo</Text>
+              </TouchableOpacity>
+            </View>
             <Pressable
               style={styles.pageScanGalleryLinkWrap}
               onPress={() => void onPickFromGallery()}
@@ -2852,30 +2988,49 @@ export function ScanCameraScreen({ navigation, route }: Props) {
         onRequestClose={() => {
           if (!contentsExtracting) {
             setContentsScanAppend(false);
+            setContentsFlashEnabled(false);
             setIsContentsScannerOpen(false);
           }
         }}
       >
-        <View style={[styles.contentsModalScreen, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }]}>
+        <View
+          style={[
+            styles.contentsModalScreen,
+            {
+              paddingTop: insets.top + 8,
+              paddingBottom: insets.bottom + 16,
+              paddingLeft: CONTENTS_MODAL_HORIZONTAL_PAD + insets.left,
+              paddingRight: CONTENTS_MODAL_HORIZONTAL_PAD + insets.right,
+            },
+          ]}
+        >
           <View style={styles.contentsChrome}>
-            <View style={styles.contentsTopBar}>
-              <TouchableOpacity
-                style={styles.contentsCloseButton}
-                onPress={() => {
-                  setContentsScanAppend(false);
-                  setIsContentsScannerOpen(false);
-                }}
-                disabled={contentsExtracting}
-                activeOpacity={0.82}
-              >
-                <Ionicons name="close" size={22} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
             <View style={styles.contentsHeaderBlock}>
-              <Text style={styles.contentsSheetTitle}>
-                {contentsScanAppend ? "Add another contents page" : "Scan the contents page"}
-              </Text>
+              <View style={styles.contentsTitleRow}>
+                <Pressable
+                  onPress={() => {
+                    setContentsScanAppend(false);
+                    setContentsFlashEnabled(false);
+                    setIsContentsScannerOpen(false);
+                  }}
+                  disabled={contentsExtracting}
+                  style={({ pressed }) => [
+                    styles.chapterMapCloseHit,
+                    pressed && styles.chapterMapClosePressed,
+                  ]}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close contents scanner"
+                >
+                  <View style={styles.chapterMapCloseCircle}>
+                    <Text style={styles.chapterMapCloseGlyph}>×</Text>
+                  </View>
+                </Pressable>
+                <Text style={styles.contentsSheetTitle} numberOfLines={2}>
+                  {contentsScanAppend ? "Add another contents page" : "Scan the contents page"}
+                </Text>
+                <View style={styles.chapterMapHeaderBalance} />
+              </View>
               <Text style={styles.contentsSheetSubtitle}>
                 {contentsScanAppend
                   ? "Capture the next part of your table of contents. New chapters will be merged with what you already have."
@@ -2884,14 +3039,14 @@ export function ScanCameraScreen({ navigation, route }: Props) {
             </View>
 
             <View
-              style={styles.contentsViewfinderWrap}
+              style={[
+                styles.contentsViewfinderWrap,
+                { width: contentsViewfinderWidth, height: contentsViewfinderHeight },
+              ]}
               onLayout={(e) => {
                 const { width, height } = e.nativeEvent.layout;
                 if (width > 0 && height > 0) {
                   contentsPreviewLayoutRef.current = { width, height };
-                  setContentsViewfinderLayout((prev) =>
-                    prev.width === width && prev.height === height ? prev : { width, height }
-                  );
                 }
               }}
             >
@@ -2902,16 +3057,15 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                   facing="back"
                   selectedLens={selectedLens}
                   zoom={0}
+                  flash={contentsFlashEnabled ? "on" : "off"}
+                  enableTorch={contentsFlashEnabled}
                   {...(Platform.OS === "android"
                     ? { ratio: "4:3" as const, videoQuality: "4:3" as const }
                     : {})}
                 />
               </View>
               <View style={styles.contentsViewfinderCornersOverlay} pointerEvents="none">
-                <CenteredViewfinderFrameCorners
-                  width={contentsViewfinderLayout.width}
-                  height={contentsViewfinderLayout.height}
-                />
+                <PageScanSheetFrameCorners />
               </View>
             </View>
 
@@ -2921,21 +3075,44 @@ export function ScanCameraScreen({ navigation, route }: Props) {
               </View>
             ) : null}
 
-            <TouchableOpacity
-              style={styles.contentsCaptureButton}
-              onPress={onCaptureContents}
-              disabled={contentsExtracting}
-              activeOpacity={0.9}
-            >
-              {contentsExtracting ? (
-                <ActivityIndicator color="#0f172a" />
-              ) : (
-                <Ionicons name="scan-outline" size={22} color="#0f172a" />
-              )}
-              <Text style={styles.contentsCaptureText}>
-                {contentsExtracting ? "Reading contents..." : "Scan contents"}
-              </Text>
-            </TouchableOpacity>
+            <View style={[styles.contentsActionsRow, { width: contentsViewfinderWidth }]}>
+              <TouchableOpacity
+                style={[
+                  styles.contentsFlashButton,
+                  contentsFlashEnabled && styles.contentsFlashButtonActive,
+                ]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setContentsFlashEnabled((on) => !on);
+                }}
+                disabled={contentsExtracting}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={contentsFlashEnabled ? "Turn flash off" : "Turn flash on"}
+              >
+                <Ionicons
+                  name={contentsFlashEnabled ? "flash" : "flash-outline"}
+                  size={22}
+                  color={contentsFlashEnabled ? "#fbbf24" : "#fff"}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.contentsCaptureButton}
+                onPress={onCaptureContents}
+                disabled={contentsExtracting}
+                activeOpacity={0.9}
+              >
+                {contentsExtracting ? (
+                  <ActivityIndicator color="#0f172a" />
+                ) : (
+                  <Ionicons name="scan-outline" size={22} color="#0f172a" />
+                )}
+                <Text style={styles.contentsCaptureText}>
+                  {contentsExtracting ? "Reading contents..." : "Scan contents"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -4299,20 +4476,24 @@ const styles = StyleSheet.create({
   },
   chapterMapRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    minHeight: 48,
-    paddingVertical: 12,
+    alignItems: "center",
+    paddingVertical: 16,
     paddingHorizontal: 20,
     gap: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "rgba(255,255,255,0.1)",
   },
-  chapterMapRowLeft: {
+  chapterMapRowNumber: {
+    width: 32,
+    fontSize: 11,
+    fontWeight: "400",
+    color: "rgba(255,255,255,0.3)",
+    flexShrink: 0,
+  },
+  chapterMapRowContent: {
     flex: 1,
     minWidth: 0,
     gap: 4,
-  },
-  chapterMapRowBorder: {
-    borderTopWidth: 0.5,
-    borderTopColor: "rgba(255,255,255,0.1)",
   },
   chapterMapRowPressed: {
     backgroundColor: "rgba(255,255,255,0.06)",
@@ -4328,6 +4509,11 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  chapterMapShimmerBarChapter: {
+    width: 32,
+    height: 10,
+    flexShrink: 0,
   },
   chapterMapShimmerBarShort: {
     width: "48%",
@@ -4351,7 +4537,7 @@ const styles = StyleSheet.create({
   },
   chapterMapRowTitle: {
     fontSize: 13,
-    fontFamily: FONT_CANELA_TEXT_BOLD,
+    fontFamily: FONT_CANELA_TEXT_REGULAR,
     fontWeight: "400",
     color: "#ffffff",
   },
@@ -4366,7 +4552,7 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     color: "rgba(255,255,255,0.35)",
     flexShrink: 0,
-    marginTop: 2,
+    textAlign: "right",
   },
   chapterMapFooter: {
     paddingHorizontal: 20,
@@ -4375,24 +4561,24 @@ const styles = StyleSheet.create({
     borderTopColor: "rgba(255,255,255,0.1)",
   },
   chapterMapFooterButton: {
-    paddingVertical: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.12)",
-    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
     overflow: "hidden",
   },
   chapterMapFooterButtonPressed: {
-    backgroundColor: "rgba(255,255,255,0.06)",
+    opacity: 0.88,
   },
   chapterMapFooterButtonDisabled: {
     opacity: 0.35,
   },
   chapterMapFooterButtonText: {
     fontSize: 14,
-    fontWeight: "500",
-    color: "#ffffff",
+    fontWeight: "600",
+    color: "#111111",
   },
   chapterMapBookPickerOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -4675,7 +4861,14 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "rgba(255,255,255,0.45)",
   },
+  pageScanActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "stretch",
+    gap: 12,
+  },
   pageScanTakePhotoBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -4684,7 +4877,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 16,
-    alignSelf: "stretch",
   },
   pageScanTakePhotoBtnText: {
     fontSize: 15,
@@ -4722,31 +4914,30 @@ const styles = StyleSheet.create({
   },
   contentsModalScreen: {
     flex: 1,
-    backgroundColor: "#000",
-    paddingHorizontal: 18,
+    backgroundColor: CHAPTER_MAP_BG,
   },
   contentsChrome: {
     flex: 1,
     justifyContent: "space-between",
-  },
-  contentsTopBar: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginBottom: 8,
-  },
-  contentsCloseButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(15,23,42,0.55)",
+    width: "100%",
   },
   contentsHeaderBlock: {
+    alignSelf: "stretch",
+    width: "100%",
     marginBottom: 12,
-    gap: 6,
+    gap: 8,
+    paddingBottom: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "rgba(255,255,255,0.07)",
+  },
+  contentsTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 44,
   },
   contentsSheetTitle: {
+    flex: 1,
     color: "#fff",
     fontSize: 18,
     fontWeight: "800",
@@ -4761,17 +4952,13 @@ const styles = StyleSheet.create({
   },
   contentsViewfinderWrap: {
     position: "relative",
-    width: "100%",
-    aspectRatio: 3 / 4,
     alignSelf: "center",
     borderRadius: 14,
     overflow: "hidden",
     backgroundColor: "#0a0a0a",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255,255,255,0.12)",
-    flexGrow: 1,
-    flexShrink: 1,
-    minHeight: 0,
+    marginBottom: 4,
   },
   contentsViewfinderCameraSlot: {
     flex: 1,
@@ -4799,7 +4986,29 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontWeight: "600",
   },
+  contentsActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "center",
+    gap: 12,
+    marginTop: 20,
+  },
+  contentsFlashButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.14)",
+  },
+  contentsFlashButtonActive: {
+    backgroundColor: "rgba(251,191,36,0.16)",
+    borderColor: "rgba(251,191,36,0.35)",
+  },
   contentsCaptureButton: {
+    flex: 1,
     minHeight: 56,
     borderRadius: 16,
     backgroundColor: "#fff",

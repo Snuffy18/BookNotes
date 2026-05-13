@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { CropPhotoScreen } from "../screens/CropPhotoScreen";
 import { ExtractionOptionsScreen } from "../screens/ExtractionOptionsScreen";
 import { ProcessingScreen } from "../screens/ProcessingScreen";
+import { ReportDetailsScreen } from "../screens/ReportDetailsScreen";
 import { ReadingHistoryScreen } from "../screens/ReadingHistoryScreen";
 import { ResultsScreen } from "../screens/ResultsScreen";
 import { ScanCameraScreen } from "../screens/ScanCameraScreen";
@@ -29,6 +30,7 @@ export function ScanStackNavigator() {
       <ScanStack.Screen name="ExtractionOptions" component={ExtractionOptionsScreen} />
       <ScanStack.Screen name="Processing" component={ProcessingScreen} />
       <ScanStack.Screen name="Results" component={ResultsScreen} />
+      <ScanStack.Screen name="ReportDetails" component={ReportDetailsScreen} />
     </ScanStack.Navigator>
   );
 }

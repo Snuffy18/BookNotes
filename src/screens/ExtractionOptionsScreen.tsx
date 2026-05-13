@@ -9,36 +9,61 @@ import * as Haptics from "expo-haptics";
 import { HeaderText } from "../components/HeaderText";
 import { useAppSettings } from "../context/AppSettingsContext";
 import type { ScanStackParamList } from "../navigation/types";
-import { darkColors, lightColors } from "../theme/colors";
+import { hexWithAlpha } from "../theme/colorUtils";
+import { darkColors } from "../theme/colors";
 import type { ExtractionMode } from "../types/note";
 
 type Props = NativeStackScreenProps<ScanStackParamList, "ExtractionOptions">;
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
-const SMART_BLUE_BG = "rgba(59,130,246,0.12)";
-const SMART_BLUE_BORDER = "rgba(59,130,246,0.4)";
-const SMART_BLUE_ICON = "#60a5fa";
-const SMART_ICON_CIRCLE = "rgba(59,130,246,0.15)";
-const SMART_CHECK_FILL = "#3b82f6";
+const SCREEN_BG = "#111";
 
 const EXTRACTION_OPTIONS: Array<{
   mode: ExtractionMode;
   label: string;
+  subtitle: string;
   icon: IoniconName;
 }> = [
-  { mode: "quotes", label: "Quotes", icon: "chatbubble-ellipses-outline" },
-  { mode: "words", label: "Words", icon: "text-outline" },
-  { mode: "bulletPoints", label: "Bullet Points", icon: "list-outline" },
-  { mode: "everything", label: "Everything", icon: "sparkles-outline" },
+  {
+    mode: "quotes",
+    label: "Quotes",
+    subtitle: "Notable quotes and passages from the text",
+    icon: "chatbubble-ellipses-outline",
+  },
+  {
+    mode: "words",
+    label: "Words",
+    subtitle: "Key vocabulary, terms and definitions",
+    icon: "text-outline",
+  },
+  {
+    mode: "bulletPoints",
+    label: "Bullet Points",
+    subtitle: "Main ideas as concise bullet points",
+    icon: "list-outline",
+  },
+  {
+    mode: "everything",
+    label: "Everything",
+    subtitle: "All of the above combined",
+    icon: "sparkles-outline",
+  },
 ];
 
 export function ExtractionOptionsScreen({ navigation, route }: Props) {
-  const { darkMode, accentGradient } = useAppSettings();
+  const { accentGradient, accentColor } = useAppSettings();
   const [smartExtractSelected, setSmartExtractSelected] = useState(true);
   const [selectedModes, setSelectedModes] = useState<ExtractionMode[]>([]);
   const selectedModeSet = useMemo(() => new Set(selectedModes), [selectedModes]);
 
-  const titleColor = darkMode ? "#ffffff" : lightColors.textPrimary;
+  const accentCardBg = useMemo(() => hexWithAlpha(accentColor, 0.12), [accentColor]);
+  const accentCardBorder = useMemo(() => hexWithAlpha(accentColor, 0.4), [accentColor]);
+  const accentIconCircle = useMemo(() => hexWithAlpha(accentColor, 0.15), [accentColor]);
+  const accentCheckBorder = useMemo(() => hexWithAlpha(accentColor, 0.5), [accentColor]);
+  const accentRowSelectedBg = useMemo(() => hexWithAlpha(accentColor, 0.1), [accentColor]);
+  const accentRowSelectedBorder = useMemo(() => hexWithAlpha(accentColor, 0.35), [accentColor]);
+
+  const titleColor = "#ffffff";
 
   const onSelectSmartExtract = () => {
     Haptics.selectionAsync().catch(() => {});
@@ -84,14 +109,14 @@ export function ExtractionOptionsScreen({ navigation, route }: Props) {
   };
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.screen}>
       <View style={styles.headerRow}>
         <TouchableOpacity
-          style={[styles.backButton, darkMode && styles.backButtonDark]}
+          style={styles.backButton}
           onPress={() => navigation.goBack()}
           activeOpacity={0.8}
         >
-          <Ionicons name="chevron-back" size={22} color={darkMode ? darkColors.textPrimary : lightColors.textPrimary} />
+          <Ionicons name="chevron-back" size={22} color={darkColors.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -102,24 +127,30 @@ export function ExtractionOptionsScreen({ navigation, route }: Props) {
           end={{ x: 1, y: 1 }}
           style={styles.iconHero}
         >
-          <Ionicons name="scan" size={32} color="#fff" />
+          <Ionicons name="scan" size={20} color="#fff" />
         </LinearGradient>
 
         <HeaderText
-          title="What do you want to extract"
+          title="What do you want to extract?"
           style={styles.titleBlock}
           titleStyle={[styles.titleText, { color: titleColor }]}
         />
 
         <TouchableOpacity
-          style={styles.smartExtractCard}
+          style={[
+            styles.smartExtractCard,
+            {
+              backgroundColor: accentCardBg,
+              borderColor: accentCardBorder,
+            },
+          ]}
           onPress={onSelectSmartExtract}
           activeOpacity={0.88}
           accessibilityRole="button"
           accessibilityState={{ selected: smartExtractSelected }}
         >
-          <View style={styles.smartExtractIconCircle}>
-            <Ionicons name="sparkles" size={20} color={SMART_BLUE_ICON} />
+          <View style={[styles.smartExtractIconCircle, { backgroundColor: accentIconCircle }]}>
+            <Ionicons name="sparkles" size={20} color={accentColor} />
           </View>
           <View style={styles.smartExtractCopy}>
             <Text style={styles.smartExtractTitle}>Smart Extract</Text>
@@ -130,21 +161,18 @@ export function ExtractionOptionsScreen({ navigation, route }: Props) {
           <View
             style={[
               styles.smartExtractCheck,
-              smartExtractSelected && styles.smartExtractCheckSelected,
+              { borderColor: accentCheckBorder },
+              smartExtractSelected && {
+                backgroundColor: accentColor,
+                borderColor: accentColor,
+              },
             ]}
           >
             {smartExtractSelected ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}
           </View>
         </TouchableOpacity>
 
-        <Text
-          style={[
-            styles.manualDivider,
-            darkMode ? styles.manualDividerDark : styles.manualDividerLight,
-          ]}
-        >
-          Or choose manually
-        </Text>
+        <Text style={styles.manualDivider}>Or choose manually</Text>
 
         <View style={styles.optionList}>
           {EXTRACTION_OPTIONS.map((option) => {
@@ -154,36 +182,30 @@ export function ExtractionOptionsScreen({ navigation, route }: Props) {
                 key={option.mode}
                 style={[
                   styles.optionRow,
-                  darkMode ? styles.optionRowDark : styles.optionRowLight,
-                  isSelected && styles.optionRowSelected,
+                  isSelected && {
+                    backgroundColor: accentRowSelectedBg,
+                    borderColor: accentRowSelectedBorder,
+                  },
                 ]}
                 onPress={() => onToggleManual(option.mode)}
                 activeOpacity={0.86}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
               >
-                <View
-                  style={[
-                    styles.optionIcon,
-                    darkMode ? styles.optionIconDark : styles.optionIconLight,
-                  ]}
-                >
-                  <Ionicons
-                    name={option.icon}
-                    size={18}
-                    color={darkMode ? "#ffffff" : lightColors.textPrimary}
-                  />
+                <View style={styles.optionIcon}>
+                  <Ionicons name={option.icon} size={15} color="#ffffff" />
                 </View>
-                <Text
-                  style={[styles.optionText, darkMode ? styles.optionTextDark : styles.optionTextLight]}
-                >
-                  {option.label}
-                </Text>
+                <View style={styles.optionTextCol}>
+                  <Text style={styles.optionText}>{option.label}</Text>
+                  <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
+                </View>
                 <View
                   style={[
                     styles.radioCircle,
-                    darkMode ? styles.radioCircleDark : styles.radioCircleLight,
-                    isSelected && styles.radioCircleSelected,
+                    isSelected && {
+                      borderColor: accentColor,
+                      backgroundColor: accentColor,
+                    },
                   ]}
                 >
                   {isSelected ? <View style={styles.radioCircleDot} /> : null}
@@ -205,12 +227,9 @@ export function ExtractionOptionsScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: lightColors.background,
+    backgroundColor: SCREEN_BG,
     paddingHorizontal: 18,
     paddingTop: 10,
-  },
-  screenDark: {
-    backgroundColor: darkColors.background,
   },
   headerRow: {
     height: 44,
@@ -223,12 +242,8 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: lightColors.card,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-  },
-  backButtonDark: {
     backgroundColor: darkColors.card,
+    borderWidth: 1,
     borderColor: darkColors.border,
   },
   content: {
@@ -238,9 +253,9 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   iconHero: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
     alignSelf: "center",
@@ -248,7 +263,7 @@ const styles = StyleSheet.create({
   titleBlock: {
     alignItems: "center",
     marginBottom: 18,
-    marginTop: 4,
+    marginTop: 12,
   },
   titleText: {
     fontSize: 24,
@@ -261,16 +276,13 @@ const styles = StyleSheet.create({
     width: "100%",
     padding: 18,
     borderRadius: 16,
-    backgroundColor: SMART_BLUE_BG,
     borderWidth: 1.5,
-    borderColor: SMART_BLUE_BORDER,
     gap: 14,
   },
   smartExtractIconCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: SMART_ICON_CIRCLE,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -295,14 +307,9 @@ const styles = StyleSheet.create({
     height: 26,
     borderRadius: 13,
     borderWidth: 1.5,
-    borderColor: "rgba(96,165,250,0.5)",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
-  },
-  smartExtractCheckSelected: {
-    backgroundColor: SMART_CHECK_FILL,
-    borderColor: SMART_CHECK_FILL,
   },
   manualDivider: {
     alignSelf: "center",
@@ -312,12 +319,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     marginTop: 20,
     marginBottom: 16,
-  },
-  manualDividerDark: {
     color: "rgba(255,255,255,0.3)",
-  },
-  manualDividerLight: {
-    color: "rgba(15,23,42,0.3)",
   },
   optionList: {
     gap: 8,
@@ -326,69 +328,50 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 0.5,
     gap: 12,
-  },
-  optionRowDark: {
     backgroundColor: "rgba(255,255,255,0.05)",
     borderColor: "rgba(255,255,255,0.08)",
   },
-  optionRowLight: {
-    backgroundColor: "rgba(0,0,0,0.04)",
-    borderColor: "rgba(0,0,0,0.08)",
-  },
-  optionRowSelected: {
-    backgroundColor: "rgba(59,130,246,0.1)",
-    borderColor: "rgba(59,130,246,0.35)",
-  },
   optionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-  },
-  optionIconDark: {
     backgroundColor: "rgba(255,255,255,0.08)",
   },
-  optionIconLight: {
-    backgroundColor: "rgba(0,0,0,0.06)",
+  optionTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
   },
   optionText: {
-    flex: 1,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "500",
-  },
-  optionTextDark: {
     color: "#ffffff",
   },
-  optionTextLight: {
-    color: lightColors.textPrimary,
+  optionSubtitle: {
+    fontSize: 11,
+    fontWeight: "400",
+    color: "rgba(255,255,255,0.4)",
+    lineHeight: 14,
   },
   radioCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-  },
-  radioCircleDark: {
-    borderColor: "rgba(255,255,255,0.35)",
-  },
-  radioCircleLight: {
-    borderColor: "rgba(15,23,42,0.28)",
-  },
-  radioCircleSelected: {
-    borderColor: SMART_CHECK_FILL,
-    backgroundColor: SMART_CHECK_FILL,
+    borderColor: "rgba(255,255,255,0.25)",
   },
   radioCircleDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: "#ffffff",
   },
   extractButton: {

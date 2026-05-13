@@ -8,6 +8,7 @@ import { BarcodeScanBookSheetProvider } from "./src/context/BarcodeScanBookSheet
 import { AppSettingsProvider } from "./src/context/AppSettingsContext";
 import { ReadingRemindersProvider } from "./src/context/ReadingRemindersContext";
 import { ReadingSessionProvider } from "./src/context/ReadingSessionContext";
+import { ScanProcessingProvider } from "./src/context/ScanProcessingContext";
 import { ScanProvider } from "./src/context/ScanContext";
 import { StreakProvider } from "./src/context/StreakContext";
 import { ExportPreferencesProvider } from "./src/context/ExportPreferencesContext";
@@ -32,17 +33,19 @@ export default function App() {
           <ExportPreferencesProvider>
             <StudyPreferencesProvider>
               <ReadingRemindersProvider>
-              <ScanProvider>
-                <BarcodeScanBookSheetProvider>
-                  <AddBookSheetProvider>
-                    <ReadingSessionProvider>
-                      <StreakProvider>
-                        <AppRoot />
-                      </StreakProvider>
-                    </ReadingSessionProvider>
-                  </AddBookSheetProvider>
-                </BarcodeScanBookSheetProvider>
-              </ScanProvider>
+                <ScanProvider>
+                  <BarcodeScanBookSheetProvider>
+                    <AddBookSheetProvider>
+                      <ReadingSessionProvider>
+                        <StreakProvider>
+                          <ScanProcessingProvider>
+                            <AppRoot />
+                          </ScanProcessingProvider>
+                        </StreakProvider>
+                      </ReadingSessionProvider>
+                    </AddBookSheetProvider>
+                  </BarcodeScanBookSheetProvider>
+                </ScanProvider>
               </ReadingRemindersProvider>
             </StudyPreferencesProvider>
           </ExportPreferencesProvider>

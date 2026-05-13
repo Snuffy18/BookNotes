@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import { getActiveElapsedSeconds, useReadingSession, type ReadingRunState } from "../context/ReadingSessionContext";
 import { useScanContext } from "../context/ScanContext";
-import type { RootTabParamList } from "../navigation/types";
+import type { ScanStackParamList } from "../navigation/types";
 import { isEligibleReadingLogSession } from "../reading/readingHistoryStats";
 import { formatReadingTimerHMS, READING_TIMER_FONT_FAMILY } from "../reading/readingTimerDisplay";
 import type { ReadingSession } from "../types/note";
@@ -41,6 +41,22 @@ const PRIMARY_TEXT = "#111111";
 const SUBTITLE_BLUE = "#60a5fa";
 const PHASE_CROSSFADE_MS = 280;
 const PHASE_EASE = Easing.out(Easing.cubic);
+const BOOK_PICKER_ANIM_MS = 280;
+const BOOK_PICKER_EASE = Easing.out(Easing.cubic);
+const BOOK_PICKER_LIST_MAX_HEIGHT = 2400;
+const BOOK_PICKER_COMPACT_ROW_HEIGHT = 68;
+const BOOK_PICKER_COMPACT_ROW_GAP = 4;
+const BOOK_PICKER_LIST_CHROME = 12;
+const BOOK_PICKER_FULL_EXPANSION_BOOK_COUNT = 3;
+
+function compactBookPickerListHeight(bookCount: number): number {
+  const rows = 1 + bookCount;
+  return (
+    BOOK_PICKER_LIST_CHROME +
+    rows * BOOK_PICKER_COMPACT_ROW_HEIGHT +
+    Math.max(0, rows - 1) * BOOK_PICKER_COMPACT_ROW_GAP
+  );
+}
 
 type LiveReadingRun = Extract<ReadingRunState, { phase: "running" | "paused" }>;
 
@@ -76,7 +92,7 @@ type Props = {
 };
 
 export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp<ScanStackParamList>>();
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
   const { books, activeBookId, activeBook, scans } = useScanContext();
@@ -96,6 +112,9 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
   const [startPageDraft, setStartPageDraft] = useState("");
   const [endPageDraft, setEndPageDraft] = useState("");
   const [bookPickerOpen, setBookPickerOpen] = useState(false);
+  const [idleExtrasHeight, setIdleExtrasHeight] = useState(0);
+  const bookPickerProgress = useRef(new Animated.Value(0)).current;
+  const idleExtrasHeightRef = useRef(0);
   const [tick, setTick] = useState(0);
   const [mounted, setMounted] = useState(false);
   const translateY = useRef(new Animated.Value(winH)).current;
@@ -211,11 +230,64 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
   useEffect(() => {
     if (visible && !prevVisible.current) {
       setBookPickerOpen(false);
+      bookPickerProgress.setValue(0);
     }
     prevVisible.current = visible;
-  }, [visible]);
+  }, [visible, bookPickerProgress]);
 
-  const handleDismiss = useCallback(() => {
+  useEffect(() => {
+    Animated.timing(bookPickerProgress, {
+      toValue: bookPickerOpen ? 1 : 0,
+      duration: BOOK_PICKER_ANIM_MS,
+      easing: BOOK_PICKER_EASE,
+      useNativeDriver: false,
+    }).start();
+  }, [bookPickerOpen, bookPickerProgress]);
+
+  const bookPickerUsesFullExpansion = books.length > BOOK_PICKER_FULL_EXPANSION_BOOK_COUNT;
+  const bookPickerListExpandedHeight = useMemo(
+    () =>
+      bookPickerUsesFullExpansion
+        ? BOOK_PICKER_LIST_MAX_HEIGHT
+        : compactBookPickerListHeight(books.length),
+    [books.length, bookPickerUsesFullExpansion]
+  );
+
+  const idleExtrasCollapsedHeight = idleExtrasHeight > 0 ? idleExtrasHeight : 360;
+  const readingTimerTitleOpacity = bookPickerProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+  const chooseBookTitleOpacity = bookPickerProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+  const idleExtrasMaxHeight = bookPickerProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [idleExtrasCollapsedHeight, 0],
+  });
+  const idleExtrasOpacity = bookPickerProgress.interpolate({
+    inputRange: [0, 0.55, 1],
+    outputRange: [1, 0.2, 0],
+  });
+  const idleExtrasTranslateY = bookPickerProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 28],
+  });
+  const bookPickerListMaxHeight = bookPickerProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, bookPickerListExpandedHeight],
+  });
+  const bookPickerListOpacity = bookPickerProgress.interpolate({
+    inputRange: [0, 0.18, 1],
+    outputRange: [0, 0.55, 1],
+  });
+  const bookPickerChevronRotate = bookPickerProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "180deg"],
+  });
+
+  const handleDismiss = useCallback((afterDismiss?: () => void) => {
     if (animatingOut.current) return;
     animatingOut.current = true;
     backdropOp.stopAnimation();
@@ -239,6 +311,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
         clearLastCompletedSession();
         setMounted(false);
         onDismiss();
+        afterDismiss?.();
       }
     });
   }, [backdropOp, winH, translateY, onDismiss, clearLastCompletedSession]);
@@ -351,13 +424,19 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
   );
 
   const step1BookSubtitle = useMemo(() => {
-    if (timerBookId === undefined) return null;
-    if (timerBookId === null) return selectedBookTitle;
-    if (typeof totalPages === "number" && totalPages > 0) {
-      return `${selectedBookTitle} · ${totalPages} pages`;
-    }
-    return selectedBookTitle;
-  }, [timerBookId, selectedBookTitle, totalPages]);
+    if (timerBookId === undefined || timerBookId === null) return null;
+    const author = timerBook?.author?.trim();
+    const pages =
+      typeof totalPages === "number" && totalPages > 0
+        ? totalPages
+        : estimatedTotal != null && estimatedTotal > 0
+          ? estimatedTotal
+          : null;
+    if (author && pages != null) return `${author} · ${pages} pages`;
+    if (author) return author;
+    if (pages != null) return `${pages} pages`;
+    return null;
+  }, [timerBookId, timerBook?.author, totalPages, estimatedTotal]);
 
   const startRunNum = useMemo(() => {
     if (!run || run.phase !== "stopped") return 1;
@@ -456,13 +535,10 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
 
   const openSavedSessions = useCallback(() => {
     hapticLight();
-    clearLastCompletedSession();
-    onDismiss();
-    const tabNav = navigation.getParent<NavigationProp<RootTabParamList>>();
-    requestAnimationFrame(() => {
-      tabNav?.navigate("ScanFlow", { screen: "ReadingHistory" });
+    handleDismiss(() => {
+      navigation.navigate("ReadingHistory");
     });
-  }, [navigation, onDismiss, clearLastCompletedSession]);
+  }, [navigation, handleDismiss]);
 
 
   const completedBook = useMemo(
@@ -513,7 +589,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
       visible={mounted}
       transparent
       animationType="none"
-      onRequestClose={handleDismiss}
+      onRequestClose={() => handleDismiss()}
       statusBarTranslucent
     >
       <KeyboardAvoidingView
@@ -528,7 +604,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
           >
             <Pressable
               style={[styles.overlay, StyleSheet.absoluteFill]}
-              onPress={handleDismiss}
+              onPress={() => handleDismiss()}
               accessibilityRole="button"
               accessibilityLabel="Dismiss reading timer"
             />
@@ -550,147 +626,232 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                   session={lastCompletedSession}
                   totalPages={completedBook?.totalPageCount ?? null}
                   author={completedBook?.author?.trim() ? completedBook.author : null}
-                  onDone={handleDismiss}
+                  onDone={() => handleDismiss()}
                 />
               </View>
             ) : (
               <>
             <View style={styles.sheetColumn}>
-            {!bookPickerOpen ? (
-              <>
-                <Text style={styles.sheetTitle}>Reading timer</Text>
-                {(isRunning || isPaused || isStopped) && activeRunBookTitle ? (
-                  <Text style={styles.sheetActiveBookTitle} numberOfLines={2}>
-                    {activeRunBookTitle}
-                  </Text>
-                ) : null}
-              </>
+            <View style={styles.sheetTitleWrap}>
+              <Animated.Text
+                style={[styles.sheetTitle, styles.sheetTitleLayer, { opacity: readingTimerTitleOpacity }]}
+                pointerEvents="none"
+              >
+                Reading timer
+              </Animated.Text>
+              <Animated.Text
+                style={[styles.sheetTitle, styles.sheetTitleLayer, { opacity: chooseBookTitleOpacity }]}
+                pointerEvents="none"
+              >
+                Choose book
+              </Animated.Text>
+            </View>
+            {(isRunning || isPaused || isStopped) && activeRunBookTitle ? (
+              <Animated.Text
+                style={[
+                  styles.sheetActiveBookTitle,
+                  { opacity: readingTimerTitleOpacity },
+                ]}
+                numberOfLines={2}
+                pointerEvents="none"
+              >
+                {activeRunBookTitle}
+              </Animated.Text>
             ) : null}
 
-            {bookPickerOpen ? (
             <View style={styles.sheetBody}>
               <ScrollView
                 style={styles.sheetBodyScroll}
-                contentContainerStyle={styles.pickerScrollContent}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-              >
-                <Text style={styles.pickerSectionLabel}>Choose book</Text>
-                <TouchableOpacity
-                  style={[styles.pickerRow, timerBookId === null && styles.pickerRowSelected]}
-                  onPress={() => {
-                    hapticLight();
-                    setTimerBookId(null);
-                    setBookPickerOpen(false);
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.pickerRowText}>Not tied to a book</Text>
-                  {timerBookId === null ? <Ionicons name="checkmark" size={18} color={MUTED} /> : null}
-                </TouchableOpacity>
-                {books.map((book) => {
-                  const sel = timerBookId === book.id;
-                  return (
-                    <TouchableOpacity
-                      key={book.id}
-                      style={[styles.pickerRow, sel && styles.pickerRowSelected]}
-                      onPress={() => {
-                        hapticLight();
-                        setTimerBookId(book.id);
-                        setBookPickerOpen(false);
-                      }}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={styles.pickerRowText} numberOfLines={2}>
-                        {book.title}
-                      </Text>
-                      {sel ? <Ionicons name="checkmark" size={18} color={MUTED} /> : null}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-            ) : (
-            <View style={styles.sheetBody}>
-              <ScrollView
-                style={styles.sheetBodyScroll}
-                contentContainerStyle={styles.sheetBodyScrollContent}
+                contentContainerStyle={[
+                  styles.sheetBodyScrollContent,
+                  bookPickerOpen &&
+                    isIdle &&
+                    bookPickerUsesFullExpansion &&
+                    styles.sheetBodyScrollContentExpanded,
+                ]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 nestedScrollEnabled
+                scrollEnabled={!bookPickerOpen || !isIdle}
               >
                 {isIdle ? (
-                  <View style={styles.bodyGap}>
-                    <TouchableOpacity
-                      style={styles.bookRow}
-                      onPress={() => {
-                        hapticLight();
-                        setBookPickerOpen(true);
-                      }}
-                      activeOpacity={0.88}
-                      accessibilityRole="button"
-                      accessibilityLabel="Choose book for reading timer"
+                  <View
+                    style={[
+                      styles.bodyGap,
+                      bookPickerOpen && bookPickerUsesFullExpansion && styles.bodyGapExpanded,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.bookPickerCard,
+                        bookPickerOpen && bookPickerUsesFullExpansion && styles.bookPickerCardOpen,
+                      ]}
                     >
-                      <View style={styles.bookRowLeft}>
-                        <View style={styles.blueDot} />
-                        <View style={styles.bookRowTextCol}>
-                          <Text style={styles.labelMuted}>Reading</Text>
-                          <Text style={styles.bookTitleText} numberOfLines={1}>
-                            {selectedBookTitle}
-                          </Text>
-                          {step1BookSubtitle != null ? (
-                            <Text style={styles.bookSubtitleBlue} numberOfLines={2}>
-                              {step1BookSubtitle}
+                      <TouchableOpacity
+                        style={styles.bookRow}
+                        onPress={() => {
+                          hapticLight();
+                          setBookPickerOpen((open) => !open);
+                        }}
+                        activeOpacity={0.88}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          bookPickerOpen ? "Collapse book list" : "Choose book for reading timer"
+                        }
+                        accessibilityState={{ expanded: bookPickerOpen }}
+                      >
+                        <View style={styles.bookRowLeft}>
+                          <View style={styles.blueDot} />
+                          <View style={styles.bookRowTextCol}>
+                            <Text style={styles.labelMuted}>Reading</Text>
+                            <Text style={styles.bookTitleText} numberOfLines={1}>
+                              {selectedBookTitle}
                             </Text>
-                          ) : null}
+                            {step1BookSubtitle != null ? (
+                              <Animated.View
+                                style={{
+                                  overflow: "hidden",
+                                  maxHeight: bookPickerProgress.interpolate({
+                                    inputRange: [0, 0.4, 1],
+                                    outputRange: [44, 10, 0],
+                                  }),
+                                  opacity: readingTimerTitleOpacity,
+                                }}
+                              >
+                                <Text style={styles.bookSubtitleBlue} numberOfLines={2}>
+                                  {step1BookSubtitle}
+                                </Text>
+                              </Animated.View>
+                            ) : null}
+                          </View>
                         </View>
-                      </View>
-                      <Ionicons name="chevron-down" size={16} color={MUTED} />
-                    </TouchableOpacity>
+                        <Animated.View style={{ transform: [{ rotate: bookPickerChevronRotate }] }}>
+                          <Ionicons name="chevron-down" size={16} color={MUTED} />
+                        </Animated.View>
+                      </TouchableOpacity>
 
-                    <View>
-                      <View style={styles.stepRow}>
-                        <View style={styles.stepBadge}>
-                          <Text style={styles.stepBadgeText}>1</Text>
-                        </View>
-                        <Text style={styles.fieldLabel}>Page you start on</Text>
-                      </View>
-                      <ReadingTimerPageWheel
-                        pages={startPages}
-                        value={draftStartNum}
-                        totalPages={estimatedTotal}
-                        onValueChange={(p) => setStartPageDraft(String(p))}
-                      />
+                      <Animated.View
+                        style={[
+                          styles.bookPickerListWrap,
+                          {
+                            maxHeight: bookPickerListMaxHeight,
+                            opacity: bookPickerListOpacity,
+                          },
+                        ]}
+                        pointerEvents={bookPickerOpen ? "auto" : "none"}
+                      >
+                        <ScrollView
+                          style={styles.bookPickerList}
+                          contentContainerStyle={styles.bookPickerListContent}
+                          keyboardShouldPersistTaps="handled"
+                          showsVerticalScrollIndicator={bookPickerUsesFullExpansion}
+                          nestedScrollEnabled
+                          scrollEnabled={bookPickerUsesFullExpansion}
+                        >
+                          <TouchableOpacity
+                            style={[styles.pickerRow, timerBookId === null && styles.pickerRowSelected]}
+                            onPress={() => {
+                              hapticLight();
+                              setTimerBookId(null);
+                              setBookPickerOpen(false);
+                            }}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={styles.pickerRowText}>Not tied to a book</Text>
+                            {timerBookId === null ? (
+                              <Ionicons name="checkmark" size={18} color={MUTED} />
+                            ) : null}
+                          </TouchableOpacity>
+                          {books.map((book) => {
+                            const sel = timerBookId === book.id;
+                            return (
+                              <TouchableOpacity
+                                key={book.id}
+                                style={[styles.pickerRow, sel && styles.pickerRowSelected]}
+                                onPress={() => {
+                                  hapticLight();
+                                  setTimerBookId(book.id);
+                                  setBookPickerOpen(false);
+                                }}
+                                activeOpacity={0.85}
+                              >
+                                <Text style={styles.pickerRowText} numberOfLines={2}>
+                                  {book.title}
+                                </Text>
+                                {sel ? <Ionicons name="checkmark" size={18} color={MUTED} /> : null}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+                      </Animated.View>
                     </View>
 
-                    <TouchableOpacity
-                      style={styles.startBtn}
-                      onPress={() => {
-                        hapticLight();
-                        const startPage = startPageDraft.trim() || String(draftStartNum);
-                        startReading(startPage, timerBookId === undefined ? null : timerBookId);
+                    <Animated.View
+                      style={{
+                        overflow: "hidden",
+                        maxHeight: idleExtrasMaxHeight,
+                        opacity: idleExtrasOpacity,
                       }}
-                      activeOpacity={0.9}
+                      pointerEvents={bookPickerOpen ? "none" : "auto"}
                     >
-                      <Ionicons name="play" size={20} color={PRIMARY_TEXT} />
-                      <Text style={styles.startBtnText}>Start timer</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.savedSessionsRowCompact}
-                      onPress={openSavedSessions}
-                      activeOpacity={0.85}
-                      accessibilityRole="button"
-                      accessibilityLabel="View saved reading sessions"
-                    >
-                      <Text style={styles.savedSessionsLabel}>Saved sessions</Text>
-                      {eligibleSavedSessionCount > 0 ? (
-                        <View style={styles.savedSessionsBadge}>
-                          <Text style={styles.savedSessionsBadgeText}>{eligibleSavedSessionCount}</Text>
+                      <Animated.View
+                        style={{ transform: [{ translateY: idleExtrasTranslateY }] }}
+                        onLayout={(event) => {
+                          const height = event.nativeEvent.layout.height;
+                          if (height <= 0 || Math.abs(height - idleExtrasHeightRef.current) < 1) return;
+                          idleExtrasHeightRef.current = height;
+                          setIdleExtrasHeight(height);
+                        }}
+                      >
+                        <View style={styles.idleExtrasGap}>
+                        <View>
+                          <View style={styles.stepRow}>
+                            <View style={styles.stepBadge}>
+                              <Text style={styles.stepBadgeText}>1</Text>
+                            </View>
+                            <Text style={styles.fieldLabel}>Page you start on</Text>
+                          </View>
+                          <ReadingTimerPageWheel
+                            pages={startPages}
+                            value={draftStartNum}
+                            totalPages={estimatedTotal}
+                            onValueChange={(p) => setStartPageDraft(String(p))}
+                          />
                         </View>
-                      ) : null}
-                      <Ionicons name="chevron-forward" size={16} color={MUTED} />
-                    </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.startBtn}
+                          onPress={() => {
+                            hapticLight();
+                            const startPage = startPageDraft.trim() || String(draftStartNum);
+                            startReading(startPage, timerBookId === undefined ? null : timerBookId);
+                          }}
+                          activeOpacity={0.9}
+                        >
+                          <Ionicons name="play" size={20} color={PRIMARY_TEXT} />
+                          <Text style={styles.startBtnText}>Start timer</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.savedSessionsRowCompact}
+                          onPress={openSavedSessions}
+                          activeOpacity={0.85}
+                          accessibilityRole="button"
+                          accessibilityLabel="View saved reading sessions"
+                        >
+                          <Text style={styles.savedSessionsLabel}>Saved sessions</Text>
+                          {eligibleSavedSessionCount > 0 ? (
+                            <View style={styles.savedSessionsBadge}>
+                              <Text style={styles.savedSessionsBadgeText}>
+                                {eligibleSavedSessionCount}
+                              </Text>
+                            </View>
+                          ) : null}
+                          <Ionicons name="chevron-forward" size={16} color={MUTED} />
+                        </TouchableOpacity>
+                        </View>
+                      </Animated.View>
+                    </Animated.View>
                   </View>
                 ) : null}
 
@@ -796,7 +957,6 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                 ) : null}
               </ScrollView>
             </View>
-            )}
             </View>
               </>
             )}
@@ -840,6 +1000,38 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: 4,
   },
+  sheetBodyScrollContentExpanded: {
+    flexGrow: 1,
+  },
+  bodyGapExpanded: {
+    flex: 1,
+    minHeight: 0,
+  },
+  bookPickerCard: {
+    width: "100%",
+    borderRadius: 14,
+    borderWidth: 0.5,
+    backgroundColor: CARD_BG,
+    borderColor: BORDER_10,
+    overflow: "hidden",
+  },
+  bookPickerCardOpen: {
+    flex: 1,
+    minHeight: 0,
+  },
+  bookPickerListWrap: {
+    overflow: "hidden",
+  },
+  bookPickerList: {
+    flexGrow: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: BORDER_10,
+  },
+  bookPickerListContent: {
+    paddingHorizontal: 8,
+    paddingTop: 4,
+    paddingBottom: 8,
+  },
   stoppedTimerSection: {
     alignItems: "center",
     gap: 8,
@@ -856,6 +1048,18 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginTop: 10,
     marginBottom: 12,
+  },
+  sheetTitleWrap: {
+    minHeight: 30,
+    marginBottom: 10,
+    justifyContent: "center",
+  },
+  sheetTitleLayer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    marginBottom: 0,
   },
   sheetTitle: {
     fontSize: 20,
@@ -874,6 +1078,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   bodyGap: {
+    gap: 16,
+    paddingBottom: 8,
+  },
+  idleExtrasGap: {
     gap: 16,
     paddingBottom: 8,
   },
@@ -897,10 +1105,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 12,
     paddingHorizontal: 14,
-    borderRadius: 14,
-    borderWidth: 0.5,
-    backgroundColor: CARD_BG,
-    borderColor: BORDER_10,
   },
   bookRowLeft: {
     flexDirection: "row",
@@ -1050,16 +1254,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    marginBottom: 6,
-    backgroundColor: CARD_BG,
-    borderWidth: 0.5,
-    borderColor: BORDER_10,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginBottom: 4,
   },
   pickerRowSelected: {
-    borderColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "rgba(255,255,255,0.06)",
   },
   pickerRowText: {
     flex: 1,

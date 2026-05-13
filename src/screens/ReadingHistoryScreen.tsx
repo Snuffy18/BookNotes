@@ -18,6 +18,8 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { ReadingSessionCompleteView } from "../components/ReadingSessionCompleteView";
+import { ReadingHistoryEmptyState } from "../components/ReadingHistoryEmptyState";
+import { requestOpenReadingTimerModal } from "../reading/pendingReadingTimerModal";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { useReadingSession } from "../context/ReadingSessionContext";
 import { useScanContext } from "../context/ScanContext";
@@ -411,7 +413,16 @@ export function ReadingHistoryScreen() {
   const summarizeDisabled = sessions.length === 0 || summaryLoading;
 
   const hasAnyLoggable = eligibleSessions.length > 0;
-  const emptyGlobal = sessions.length === 0;
+
+  const onStartReadingSession = useCallback(() => {
+    hapticLight();
+    requestOpenReadingTimerModal();
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    navigation.navigate("ScanCamera");
+  }, [navigation]);
 
   const t = darkMode ? styles : stylesLight;
 
@@ -464,13 +475,7 @@ export function ReadingHistoryScreen() {
         </TouchableOpacity>
       </View>
 
-      {emptyGlobal ? (
-        <View style={styles.emptyWrap}>
-          <Text style={[styles.empty, darkMode && styles.emptyDark]}>
-            No saved sessions yet. Finish a timer on the Scan page and tap Save session to see it here.
-          </Text>
-        </View>
-      ) : (
+      {hasAnyLoggable ? (
         <ScrollView
           style={styles.scrollFlex}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 28) }]}
@@ -547,11 +552,7 @@ export function ReadingHistoryScreen() {
             })}
           </ScrollView>
 
-          {!hasAnyLoggable ? (
-            <Text style={[styles.logEmptyNote, t.logEmptyNote]}>
-              Sessions need a linked book and at least 1 minute to appear here.
-            </Text>
-          ) : logGroups.length === 0 ? (
+          {logGroups.length === 0 ? (
             <Text style={[styles.logEmptyNote, t.logEmptyNote]}>No sessions for this filter.</Text>
           ) : (
             logGroups.map((g, gi) => (
@@ -572,6 +573,8 @@ export function ReadingHistoryScreen() {
             ))
           )}
         </ScrollView>
+      ) : (
+        <ReadingHistoryEmptyState darkMode={darkMode} onStartReading={onStartReadingSession} />
       )}
 
       <Modal
@@ -828,20 +831,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "500",
     color: "#ffffff",
-  },
-  emptyWrap: {
-    flex: 1,
-    justifyContent: "center",
-    paddingVertical: 40,
-  },
-  empty: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: lightColors.textMuted,
-    textAlign: "center",
-  },
-  emptyDark: {
-    color: darkColors.textSecondary,
   },
   weekCard: {
     borderRadius: 16,

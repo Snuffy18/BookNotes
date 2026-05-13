@@ -71,6 +71,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const activeNestedRouteName = getDeepestRouteName(activeRootRoute);
 
   const hidden =
+    activeNestedRouteName === "BookReports" ||
     activeNestedRouteName === "ReportDetails" ||
     activeNestedRouteName === "CropPhoto" ||
     activeNestedRouteName === "ExtractionOptions" ||

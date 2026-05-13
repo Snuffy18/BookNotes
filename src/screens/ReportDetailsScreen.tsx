@@ -51,7 +51,10 @@ const COPIED_TOAST_EXPAND_MS = 650;
 const COPIED_TOAST_VISIBLE_MS =
   COPIED_TOAST_HOLD_MS + COPIED_TOAST_EXPAND_MS + 1800;
 
-type Props = NativeStackScreenProps<LibraryStackParamList, "ReportDetails">;
+type Props = NativeStackScreenProps<
+  LibraryStackParamList & ScanStackParamList,
+  "ReportDetails"
+>;
 
 type CopySectionKey =
   | "summary"

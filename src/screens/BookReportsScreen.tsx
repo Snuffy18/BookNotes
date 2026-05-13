@@ -22,17 +22,21 @@ import {
 } from "react-native";
 import { ScrollView, Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, StackActions } from "@react-navigation/native";
+import type { NavigationProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { PdfExportToast, type PdfExportToastMode } from "../components/PdfExportToast";
+import { BookReportsEmptyIllustration } from "../components/BookReportsEmptyIllustration";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { useExportPreferences } from "../context/ExportPreferencesContext";
 import { useScanContext } from "../context/ScanContext";
 import { ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING } from "../navigation/rootTabLayout";
-import type { LibraryStackParamList } from "../navigation/types";
+import type { LibraryStackParamList, RootTabParamList } from "../navigation/types";
+import { navigateToScanHomeResettingLibrary } from "../navigation/navigateToScanHomeResettingLibrary";
+import { requestOpenPageScanModal } from "../scan/pendingPageScanModal";
 import { generateBookReportsInsights, themesFallbackFromFacts } from "../services/ai";
 import { fetchBookPageCountFromApi } from "../services/openLibrary";
 import type { BookInsightsSummary, ScanItem } from "../types/note";
@@ -234,6 +238,7 @@ export function BookReportsScreen() {
     setBookInsightsSummary,
     clearBookInsightsSummary,
     updateBookTotalPageCount,
+    setActiveBookId,
   } = useScanContext();
   const [searchQuery, setSearchQuery] = useState("");
   const [listFilter, setListFilter] = useState<ListFilterId>("all");
@@ -291,8 +296,35 @@ export function BookReportsScreen() {
     Object.values(reportSwipeRefs.current).forEach((ref) => ref?.close());
   };
 
+  const dismissOpenReportSwipes = useCallback(() => {
+    closeAllReportSwipes();
+    insightsSwipeRef.current?.close();
+  }, []);
+
   const hapticLight = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   const hapticSelect = () => Haptics.selectionAsync().catch(() => {});
+
+  const goToLibraryRoot = useCallback(() => {
+    const state = navigation.getState();
+    const libraryHomeIndex = state.routes.findIndex((route) => route.name === "LibraryHome");
+    if (libraryHomeIndex >= 0 && state.index > libraryHomeIndex) {
+      navigation.dispatch(StackActions.popToTop());
+      return;
+    }
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    navigation.navigate("LibraryHome");
+  }, [navigation]);
+
+  const onScanFirstPage = useCallback(() => {
+    hapticSelect();
+    setActiveBookId(bookId);
+    requestOpenPageScanModal(bookId);
+    const tabNav = navigation.getParent<NavigationProp<RootTabParamList>>();
+    navigateToScanHomeResettingLibrary(tabNav);
+  }, [bookId, navigation, setActiveBookId]);
 
   const onConfirmDeleteInsights = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
@@ -446,7 +478,7 @@ export function BookReportsScreen() {
           style: "destructive",
           onPress: () => {
             removeBook(book.id);
-            navigation.navigate("LibraryHome");
+            goToLibraryRoot();
           },
         },
       ]
@@ -610,6 +642,20 @@ export function BookReportsScreen() {
     [darkMode, accentColor]
   );
 
+  const renderSwipeDeleteAction = (onPress: () => void, accessibilityLabel: string) => (
+    <View style={styles.reportSwipeDeleteWrap}>
+      <TouchableOpacity
+        style={styles.reportSwipeDelete}
+        onPress={onPress}
+        activeOpacity={0.88}
+        accessibilityLabel={accessibilityLabel}
+      >
+        <Ionicons name="trash-outline" size={22} color="#ffffff" />
+        <Text style={styles.reportSwipeDeleteLabel}>Delete</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   const renderReportCard = (entry: ReportListItem) => (
     <Swipeable
       ref={(r) => {
@@ -621,22 +667,17 @@ export function BookReportsScreen() {
         insightsSwipeRef.current?.close();
         closeOtherReportSwipes(entry.report.id);
       }}
-      renderRightActions={() => (
-        <TouchableOpacity
-          style={styles.reportSwipeDelete}
-          onPress={() => onConfirmDeleteReport(entry.report)}
-          activeOpacity={0.88}
-          accessibilityLabel="Delete report"
-        >
-          <Ionicons name="trash-outline" size={22} color="#ffffff" />
-          <Text style={styles.reportSwipeDeleteLabel}>Delete</Text>
-        </TouchableOpacity>
-      )}
+      renderRightActions={() =>
+        renderSwipeDeleteAction(() => onConfirmDeleteReport(entry.report), "Delete report")
+      }
     >
       <TouchableOpacity
         style={[
           styles.newReportCard,
-          { backgroundColor: bd.cardBg, borderColor: bd.cardBorder },
+          {
+            backgroundColor: darkMode ? darkColors.card : lightColors.card,
+            borderColor: bd.cardBorder,
+          },
         ]}
         onPress={() =>
           navigation.navigate("ReportDetails", {
@@ -707,17 +748,9 @@ export function BookReportsScreen() {
         friction={2}
         overshootRight={false}
         onSwipeableWillOpen={() => closeAllReportSwipes()}
-        renderRightActions={() => (
-          <TouchableOpacity
-            style={styles.reportSwipeDelete}
-            onPress={onConfirmDeleteInsights}
-            activeOpacity={0.88}
-            accessibilityLabel="Remove AI reading insights"
-          >
-            <Ionicons name="trash-outline" size={22} color="#ffffff" />
-            <Text style={styles.reportSwipeDeleteLabel}>Delete</Text>
-          </TouchableOpacity>
-        )}
+        renderRightActions={() =>
+          renderSwipeDeleteAction(onConfirmDeleteInsights, "Remove AI reading insights")
+        }
       >
         <TouchableOpacity
           activeOpacity={0.92}
@@ -759,6 +792,8 @@ export function BookReportsScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.scrollContent, styles.scrollContentMain]}
         showsVerticalScrollIndicator={false}
+        onScrollBeginDrag={dismissOpenReportSwipes}
+        onMomentumScrollBegin={dismissOpenReportSwipes}
       >
         <View style={styles.detailHeaderRow}>
           <TouchableOpacity
@@ -769,7 +804,7 @@ export function BookReportsScreen() {
             ]}
             onPress={() => {
               hapticLight();
-              navigation.navigate("LibraryHome");
+              goToLibraryRoot();
             }}
             activeOpacity={0.82}
             hitSlop={4}
@@ -838,9 +873,9 @@ export function BookReportsScreen() {
             <Text style={[styles.coverageHeaderText, { color: bd.progressLabel }]} numberOfLines={1}>
               {coverageLabelLeft}
             </Text>
-            <Text style={[styles.coverageHeaderText, { color: bd.progressLabel }]}>{coveragePct}%</Text>
+            <Text style={[styles.coveragePctText, { color: bd.progressLabel }]}>{coveragePct}%</Text>
           </View>
-            <View style={[styles.coverageTrack, { backgroundColor: bd.progressTrack }]}>
+          <View style={[styles.coverageTrack, { backgroundColor: bd.progressTrack }]}>
             <View style={[styles.coverageFill, { width: `${coveragePct}%`, backgroundColor: accentColor }]} />
           </View>
         </View>
@@ -899,15 +934,35 @@ export function BookReportsScreen() {
 
         {showListEmpty ? (
           <View style={styles.emptyWrap}>
-            <Ionicons name={query ? "search-outline" : "document-text-outline"} size={44} color={bd.emptyIcon} />
-            <Text style={[styles.emptyTitle, { color: bd.emptyTitle }]}>
-              {query ? "No matching reports" : "No reports yet"}
-            </Text>
-            <Text style={[styles.emptyText, { color: bd.emptyText }]}>
-              {query
-                ? "Try another keyword to find where it appears."
-                : "Scan a page from the Scan tab to create one."}
-            </Text>
+            {query ? (
+              <>
+                <Ionicons name="search-outline" size={44} color={bd.emptyIcon} />
+                <Text style={[styles.emptyTitle, { color: bd.emptyTitle }]}>No matching reports</Text>
+                <Text style={[styles.emptyText, { color: bd.emptyText }]}>
+                  Try another keyword to find where it appears.
+                </Text>
+              </>
+            ) : (
+              <View style={styles.emptyContent}>
+                <BookReportsEmptyIllustration darkMode={darkMode} accentColor={accentColor} />
+                <View style={styles.emptyTextBlock}>
+                  <Text style={[styles.emptyTitle, { color: bd.emptyTitle }]}>No reports yet</Text>
+                  <Text style={[styles.emptySubtitle, darkMode && styles.emptySubtitleDark]}>
+                    Scan a page from this book and AI will extract the ideas, quotes and summaries.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.emptyScanBtn}
+                  onPress={onScanFirstPage}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel="Scan your first page"
+                >
+                  <Ionicons name="camera-outline" size={15} color="#111111" />
+                  <Text style={styles.emptyScanBtnText}>Scan your first page</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         ) : (
           groupedSections.map((section, sIdx) => (
@@ -1257,18 +1312,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 6,
+    gap: 8,
   },
   coverageHeaderText: {
     fontSize: 11,
     fontWeight: "500",
     flex: 1,
-    marginRight: 8,
+    minWidth: 0,
   },
   coverageTrack: {
     height: 3,
     borderRadius: 2,
     overflow: "hidden",
     width: "100%",
+  },
+  coveragePctText: {
+    fontSize: 11,
+    fontWeight: "500",
+    flexShrink: 0,
   },
   coverageFill: {
     height: 3,
@@ -1644,6 +1705,14 @@ const styles = StyleSheet.create({
     paddingTop: 28,
     paddingBottom: 24,
   },
+  emptyContent: {
+    alignItems: "center",
+  },
+  emptyTextBlock: {
+    alignItems: "center",
+    marginTop: 16,
+    gap: 6,
+  },
   emptyTitle: {
     color: "#334155",
     fontSize: 18,
@@ -1652,6 +1721,33 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#64748b",
     textAlign: "center",
+  },
+  emptySubtitle: {
+    fontSize: 12,
+    lineHeight: 19.2,
+    fontWeight: "400",
+    color: "rgba(15,23,42,0.4)",
+    textAlign: "center",
+    maxWidth: 200,
+  },
+  emptySubtitleDark: {
+    color: "rgba(255,255,255,0.4)",
+  },
+  emptyScanBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 20,
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 22,
+  },
+  emptyScanBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#111111",
   },
   reportCard: {
     backgroundColor: lightColors.card,
@@ -1665,13 +1761,17 @@ const styles = StyleSheet.create({
     backgroundColor: darkColors.card,
     borderColor: darkColors.border,
   },
+  reportSwipeDeleteWrap: {
+    width: 88,
+    marginLeft: 8,
+    alignSelf: "stretch",
+  },
   reportSwipeDelete: {
+    flex: 1,
     backgroundColor: "#dc2626",
     justifyContent: "center",
     alignItems: "center",
-    width: 88,
-    borderRadius: 14,
-    marginLeft: 8,
+    borderRadius: 12,
     gap: 4,
   },
   reportSwipeDeleteLabel: {

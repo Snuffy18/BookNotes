@@ -22,6 +22,7 @@ export type ScanStackParamList = {
         bookCoverCropResultUri?: string;
         contentsCropResultUri?: string;
         contentsScanAppend?: boolean;
+        openReadingTimer?: boolean;
       }
     | undefined;
   ReadingHistory: undefined;
@@ -48,6 +49,7 @@ export type ScanStackParamList = {
     rescanReturnTab?: RescanReturnTab;
   };
   Results: { item: ScanItem };
+  ReportDetails: { item: ScanItem; highlightQuery?: string; reportNavOrigin?: RescanReturnTab };
 };
 
 export type LibraryStackParamList = {
