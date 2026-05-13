@@ -8,7 +8,8 @@ export function parseScanPageNumber(raw?: string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function estimateBookPageTotal(book: BookItem): number | null {
+/** Last page implied by a scanned table-of-contents / chapter map. */
+export function maxChapterMapPage(book: BookItem): number | null {
   const ranges = book.chapterRanges;
   if (!ranges?.length) return null;
   let max = 0;
@@ -17,6 +18,18 @@ export function estimateBookPageTotal(book: BookItem): number | null {
     max = Math.max(max, r.startPage, end);
   }
   return max > 0 ? max : null;
+}
+
+/** Total pages for progress: chapter map wins over API / saved totalPageCount. */
+export function estimateBookPageTotal(book: BookItem): number | null {
+  const fromChapterMap = maxChapterMapPage(book);
+  if (fromChapterMap != null) return fromChapterMap;
+
+  const saved = book.totalPageCount;
+  if (typeof saved === "number" && Number.isFinite(saved) && saved > 0) {
+    return Math.round(saved);
+  }
+  return null;
 }
 
 export function pagesScannedPercent(book: BookItem, bookScans: ScanItem[]): number {
@@ -54,6 +67,16 @@ export function countDistinctNumericPages(scans: ScanItem[]): number {
     if (p != null) set.add(p);
   }
   return set.size;
+}
+
+/** Highest numeric page reached by any scan for this book (0 when none). */
+export function maxScannedPageNumber(scans: ScanItem[]): number {
+  let max = 0;
+  for (const s of scans) {
+    const p = parseScanPageNumber(s.page) ?? parseScanPageNumber(s.notes?.pageNumber);
+    if (p != null) max = Math.max(max, p);
+  }
+  return max;
 }
 
 export function countChaptersForBook(book: BookItem, scans: ScanItem[]): number {

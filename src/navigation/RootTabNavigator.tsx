@@ -30,7 +30,7 @@ const MOVE_MS = 200;
 const LABEL_MS = 150;
 
 const TABS = [
-  { routeName: "ScanFlow" as const, label: "Scan", icon: "scan-outline" as const },
+  { routeName: "ScanFlow" as const, label: "Home", icon: "scan-outline" as const },
   { routeName: "Library" as const, label: "Library", icon: "library-outline" as const },
   { routeName: "Profile" as const, label: "Profile", icon: "person-outline" as const },
 ];

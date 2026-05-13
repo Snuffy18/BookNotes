@@ -111,6 +111,10 @@ export type BookItem = {
   author: string;
   coverUri: string;
   createdAt: string;
+  /** Physical last page of the book; set from scan nudge or elsewhere. Omitted until known. */
+  totalPageCount?: number;
+  /** ISBN from barcode lookup; used to fetch metadata such as page count. */
+  isbn?: string;
   isRead?: boolean;
   readAt?: string;
   chapterRanges?: ChapterRange[];

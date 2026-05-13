@@ -1,7 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   Modal,
   Pressable,
   ScrollView,
@@ -9,6 +11,7 @@ import {
   Switch,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,6 +33,9 @@ const BLUE = "#60a5fa";
 const ROW_ICON_W = 18;
 const ROW_ICON_GAP = 12;
 const DIVIDER_INSET = 14 + ROW_ICON_W + ROW_ICON_GAP;
+const SHEET_ANIM_MS = 280;
+const BACKDROP_FADE_MS = 260;
+const SHEET_EASE = Easing.out(Easing.cubic);
 
 const TONE_CHOICES: Choice<StudyTone>[] = [
   { id: "simple", title: "Simple", subtitle: "Like explaining to a beginner" },
@@ -59,8 +65,54 @@ export function ReportStudySettingsModal({
   onContinueToExtract,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { height: winH } = useWindowDimensions();
   const [draft, setDraft] = useState<StudyPreferencesSnapshot>(initialPrefs);
   const [openMenu, setOpenMenu] = useState<"tone" | "length" | "highlight" | null>(null);
+  const [sheetMounted, setSheetMounted] = useState(false);
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const sheetTranslateY = useRef(new Animated.Value(winH)).current;
+
+  useEffect(() => {
+    if (visible) {
+      setSheetMounted(true);
+      backdropOpacity.setValue(0);
+      sheetTranslateY.setValue(winH);
+      Animated.parallel([
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: BACKDROP_FADE_MS,
+          easing: SHEET_EASE,
+          useNativeDriver: true,
+        }),
+        Animated.timing(sheetTranslateY, {
+          toValue: 0,
+          duration: SHEET_ANIM_MS,
+          easing: SHEET_EASE,
+          useNativeDriver: true,
+        }),
+      ]).start();
+      return;
+    }
+
+    if (!sheetMounted) return;
+
+    Animated.parallel([
+      Animated.timing(backdropOpacity, {
+        toValue: 0,
+        duration: BACKDROP_FADE_MS,
+        easing: SHEET_EASE,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetTranslateY, {
+        toValue: winH,
+        duration: SHEET_ANIM_MS,
+        easing: SHEET_EASE,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) setSheetMounted(false);
+    });
+  }, [visible, sheetMounted, backdropOpacity, sheetTranslateY, winH]);
 
   useEffect(() => {
     if (visible) {
@@ -90,14 +142,16 @@ export function ReportStudySettingsModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={sheetMounted} animationType="none" transparent onRequestClose={onClose}>
       <View style={styles.modalRoot}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
-        <View
+        <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Dismiss study settings" />
+        </Animated.View>
+        <Animated.View
           style={[
             styles.sheet,
             darkMode && styles.sheetDark,
-            { paddingBottom: Math.max(insets.bottom, 16) },
+            { paddingBottom: Math.max(insets.bottom, 16), transform: [{ translateY: sheetTranslateY }] },
           ]}
         >
           <View style={styles.sheetHeader}>
@@ -208,7 +262,7 @@ export function ReportStudySettingsModal({
               <Ionicons name="arrow-forward" size={18} color="#111" />
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
       </View>
 
       <Modal

@@ -6,11 +6,27 @@ import type { StudyPreferencesSnapshot } from "../types/studyPreferences";
 /** Where to return after re-extracting an existing report from Processing. */
 export type RescanReturnTab = "library" | "scan";
 
+export type CropPhotoRouteParams = {
+  imageUri: string;
+  page?: string;
+  chapter?: string;
+  purpose?: "page" | "bookCover" | "contents" | "libraryBookCover";
+  contentsScanAppend?: boolean;
+  bookId?: string;
+};
+
 export type ScanStackParamList = {
-  ScanCamera: { autoOpenCoverCamera?: boolean; bookCoverCropResultUri?: string } | undefined;
+  ScanCamera:
+    | {
+        autoOpenCoverCamera?: boolean;
+        bookCoverCropResultUri?: string;
+        contentsCropResultUri?: string;
+        contentsScanAppend?: boolean;
+      }
+    | undefined;
   ReadingHistory: undefined;
   StreakDetails: undefined;
-  CropPhoto: { imageUri: string; page?: string; chapter?: string; purpose?: "page" | "bookCover" };
+  CropPhoto: CropPhotoRouteParams;
   ExtractionOptions: {
     imageUri: string;
     page?: string;
@@ -38,6 +54,7 @@ export type LibraryStackParamList = {
   LibraryHome: undefined;
   BookReports: { bookId: string };
   ReportDetails: { item: ScanItem; highlightQuery?: string; reportNavOrigin?: RescanReturnTab };
+  CropPhoto: CropPhotoRouteParams;
 };
 
 export type ProfileStackParamList = {

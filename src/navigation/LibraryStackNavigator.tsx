@@ -1,5 +1,6 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { BookReportsScreen } from "../screens/BookReportsScreen";
+import { CropPhotoScreen } from "../screens/CropPhotoScreen";
 import { LibraryScreen } from "../screens/LibraryScreen";
 import { ReportDetailsScreen } from "../screens/ReportDetailsScreen";
 import type { LibraryStackParamList } from "./types";
@@ -16,6 +17,15 @@ export function LibraryStackNavigator() {
         getId={({ params }) => String(params.bookId)}
       />
       <LibraryStack.Screen name="ReportDetails" component={ReportDetailsScreen} />
+      <LibraryStack.Screen
+        name="CropPhoto"
+        component={CropPhotoScreen}
+        getId={({ params }) => `crop-${params.purpose ?? "page"}-${params.imageUri}`}
+        options={{
+          gestureEnabled: false,
+          fullScreenGestureEnabled: false,
+        }}
+      />
     </LibraryStack.Navigator>
   );
 }

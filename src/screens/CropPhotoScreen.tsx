@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -9,17 +9,21 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type {
+  NativeStackNavigationProp,
+  NativeStackScreenProps,
+} from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import * as ImageManipulator from "expo-image-manipulator";
 import { HeaderText } from "../components/HeaderText";
 import { useAppSettings } from "../context/AppSettingsContext";
-import type { ScanStackParamList } from "../navigation/types";
+import { useScanContext } from "../context/ScanContext";
+import type { CropPhotoRouteParams, LibraryStackParamList, ScanStackParamList } from "../navigation/types";
 import { darkColors, lightColors } from "../theme/colors";
 
-type Props = NativeStackScreenProps<ScanStackParamList, "CropPhoto">;
+type Props = NativeStackScreenProps<ScanStackParamList & LibraryStackParamList, "CropPhoto">;
 
 type CropPx = { left: number; top: number; right: number; bottom: number };
 
@@ -32,6 +36,8 @@ function clamp(n: number, lo: number, hi: number) {
 
 export function CropPhotoScreen({ navigation, route }: Props) {
   const { darkMode, accentColor, accentGradient } = useAppSettings();
+  const { updateBookCoverUri } = useScanContext();
+  const scanNavigation = navigation as NativeStackNavigationProp<ScanStackParamList, "CropPhoto">;
   const imageUri = route.params.imageUri;
   const purpose = route.params.purpose ?? "page";
 
@@ -65,6 +71,13 @@ export function CropPhotoScreen({ navigation, route }: Props) {
 
   envRef.current.display = display;
   envRef.current.minSize = minSize;
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      gestureEnabled: false,
+      fullScreenGestureEnabled: false,
+    });
+  }, [navigation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,18 +151,40 @@ export function CropPhotoScreen({ navigation, route }: Props) {
 
   const continueAfterCrop = useCallback(
     (uri: string) => {
-      if (purpose === "bookCover") {
-        navigation.navigate("ScanCamera", { bookCoverCropResultUri: uri });
+      const cropPurpose = route.params.purpose ?? "page";
+      if (cropPurpose === "libraryBookCover" && route.params.bookId) {
+        updateBookCoverUri(route.params.bookId, uri);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        navigation.goBack();
+        return;
+      }
+      if (cropPurpose === "bookCover") {
+        scanNavigation.navigate("ScanCamera", { bookCoverCropResultUri: uri });
         navigation.getParent()?.navigate("Library");
         return;
       }
-      navigation.navigate("ExtractionOptions", {
+      if (cropPurpose === "contents") {
+        scanNavigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: "ScanCamera",
+              params: {
+                contentsCropResultUri: uri,
+                contentsScanAppend: route.params.contentsScanAppend ?? false,
+              },
+            },
+          ],
+        });
+        return;
+      }
+      scanNavigation.navigate("ExtractionOptions", {
         imageUri: uri,
         ...(route.params.page ? { page: route.params.page } : {}),
         ...(route.params.chapter ? { chapter: route.params.chapter } : {}),
       });
     },
-    [navigation, purpose, route.params.chapter, route.params.page]
+    [navigation, route.params, scanNavigation, updateBookCoverUri]
   );
 
   const onUseFullPage = useCallback(() => {
@@ -316,7 +351,9 @@ export function CropPhotoScreen({ navigation, route }: Props) {
         <Text style={[styles.errorText, darkMode && styles.errorTextDark]}>{error}</Text>
         <TouchableOpacity style={[styles.secondaryBtn, darkMode && styles.secondaryBtnDark]} onPress={onUseFullPage}>
           <Text style={[styles.secondaryBtnText, darkMode && styles.secondaryBtnTextDark]}>
-            {purpose === "bookCover" ? "Use full photo" : "Skip cropping"}
+            {purpose === "bookCover" || purpose === "libraryBookCover"
+              ? "Use full photo"
+              : "Skip cropping"}
           </Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -334,11 +371,21 @@ export function CropPhotoScreen({ navigation, route }: Props) {
           <Ionicons name="chevron-back" size={22} color={darkMode ? darkColors.textPrimary : lightColors.textPrimary} />
         </TouchableOpacity>
         <HeaderText
-          title={purpose === "bookCover" ? "Crop cover" : "Crop page"}
+          title={
+            purpose === "bookCover" || purpose === "libraryBookCover"
+              ? "Crop cover"
+              : purpose === "contents"
+                ? "Crop contents"
+                : "Crop page"
+          }
           subtitle={
-            purpose === "bookCover"
+            purpose === "libraryBookCover"
+              ? "Frame the book cover, or use the full photo."
+              : purpose === "bookCover"
               ? "Frame the title and author, or use the full photo. Then we read the cover with AI."
-              : "Drag the corners to keep only the text you want analyzed. Or use the full photo."
+              : purpose === "contents"
+                ? "Frame the chapter list and page numbers, or use the full photo."
+                : "Drag the corners to keep only the text you want analyzed. Or use the full photo."
           }
           style={styles.titleHeaderText}
         />

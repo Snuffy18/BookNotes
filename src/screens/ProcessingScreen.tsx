@@ -5,10 +5,12 @@ import type { ComponentProps } from "react";
 import { Animated, Easing, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CommonActions } from "@react-navigation/native";
+import type { NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { useExportPreferences } from "../context/ExportPreferencesContext";
-import type { ScanStackParamList } from "../navigation/types";
+import { openReportInLibraryTab } from "../navigation/openReportInLibraryTab";
+import type { RootTabParamList, ScanStackParamList } from "../navigation/types";
 import { extractEntitiesFromPageText, generateNotesFromImage } from "../services/ai";
 import { useStreak } from "../context/StreakContext";
 import { useScanContext } from "../context/ScanContext";
@@ -68,7 +70,7 @@ const STEPS: Array<{
 
 const PULSE_HALF_MS = 300;
 const STEP_CROSSFADE_MS = 300;
-const STEP_INTERVAL_MS = 3500;
+const STEP_INTERVAL_MS = 2000;
 const EASE_IN_OUT = Easing.inOut(Easing.ease);
 
 /** Amber glow + dot share one 0.6s loop; scale 0.6↔1.4, dot opacity 0.15↔1, glow opacity 0.08↔0.25 */
@@ -537,8 +539,15 @@ export function ProcessingScreen({ navigation, route }: Props) {
     const returnTab = route.params.rescanReturnTab;
 
     if (rescanId && returnTab) {
+      const tabNav = navigation.getParent() as NavigationProp<RootTabParamList> | undefined;
       if (returnTab === "library") {
-        navigation.getParent()?.getParent()?.navigate("Library");
+        openReportInLibraryTab(tabNav, item, { reportNavOrigin: "library" });
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{ name: "ScanCamera" }],
+          })
+        );
       } else {
         navigation.pop(1);
       }
@@ -552,6 +561,18 @@ export function ProcessingScreen({ navigation, route }: Props) {
         pdfContentOptionsFromPrefs(exportPrefs)
       ).catch(() => {});
     }
+
+    const tabNav = navigation.getParent() as NavigationProp<RootTabParamList> | undefined;
+    if (openReportInLibraryTab(tabNav, item, { reportNavOrigin: "scan" })) {
+      navigation.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: "ScanCamera" }],
+        })
+      );
+      return;
+    }
+
     navigation.dispatch(
       CommonActions.reset({
         index: 1,
@@ -594,7 +615,12 @@ export function ProcessingScreen({ navigation, route }: Props) {
 
         <View style={styles.progressSection}>
           <View style={styles.progressTrack}>
-            <View style={styles.progressFillTrack}>
+            <View
+              style={[
+                styles.progressFillTrack,
+                { width: `${((activeIndex + 1) / STEPS.length) * 100}%` },
+              ]}
+            >
               <ProgressBarFillPulse />
             </View>
           </View>
@@ -795,7 +821,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   progressFillTrack: {
-    width: "65%",
     height: "100%",
     borderRadius: 2,
     overflow: "hidden",

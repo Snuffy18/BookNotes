@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { reloadAppAsync } from "expo";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ComponentProps } from "react";
@@ -114,6 +115,34 @@ export function ProfileScreen() {
     } catch {
       Alert.alert("Sync", "Could not save sync time.");
     }
+  }, []);
+
+  const onClearAllLocalData = useCallback(() => {
+    Alert.alert(
+      "Delete all local data?",
+      "This removes everything stored in Async Storage on this device: library, scans, reading sessions, streaks, and other saved preferences. You cannot undo this.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete everything",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await AsyncStorage.clear();
+              setLastSyncedAt(null);
+              await reloadAppAsync(
+                "All local data was cleared. The app will reload so changes take effect."
+              );
+            } catch (e) {
+              Alert.alert(
+                "Could not finish reset",
+                e instanceof Error ? e.message : "Try force-quitting the app and opening it again."
+              );
+            }
+          },
+        },
+      ]
+    );
   }, []);
 
   const promoGradientColors = useMemo(() => {
@@ -312,6 +341,19 @@ export function ProfileScreen() {
               </Text>
               <Ionicons name="chevron-forward" size={18} color={chevronMainColor} />
             </TouchableOpacity>
+            <View style={dividerMain} />
+            <TouchableOpacity style={styles.prefRow} onPress={onClearAllLocalData} activeOpacity={0.82}>
+              <IconBubble name="trash-outline" bubbleBg="rgba(239,68,68,0.12)" iconColor="#f87171" />
+              <View style={styles.prefRowText}>
+                <Text style={[styles.prefTitle, styles.prefTitleDanger, darkMode && styles.prefTitleDangerDark]}>
+                  Clear local data
+                </Text>
+                <Text style={[styles.prefSubtitle, darkMode && styles.prefSubtitleDark]}>
+                  Delete Async Storage (library, sessions, preferences)
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={chevronMainColor} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -483,6 +525,12 @@ const styles = StyleSheet.create({
   },
   prefTitleDark: {
     color: "#ffffff",
+  },
+  prefTitleDanger: {
+    color: "#b91c1c",
+  },
+  prefTitleDangerDark: {
+    color: "#fca5a5",
   },
   prefSubtitle: {
     fontSize: 11,

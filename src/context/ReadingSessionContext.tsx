@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { appendReadingSession, loadReadingSessions } from "../reading/readingSessionsStorage";
 import type { ReadingSession } from "../types/note";
@@ -42,6 +42,9 @@ export function getActiveElapsedSeconds(run: ReadingRunState | null): number {
 type ReadingSessionContextValue = {
   sessions: ReadingSession[];
   run: ReadingRunState | null;
+  /** Set when the user saves a session; clear with `clearLastCompletedSession` (e.g. Done on summary). */
+  lastCompletedSession: ReadingSession | null;
+  clearLastCompletedSession: () => void;
   /** `bookId` null = not tied to a library book. Title is resolved from `books` when present. */
   startReading: (startPage: string, bookId: string | null) => void;
   pauseReading: () => void;
@@ -57,6 +60,13 @@ export function ReadingSessionProvider({ children }: { children: ReactNode }) {
   const { books } = useScanContext();
   const [sessions, setSessions] = useState<ReadingSession[]>([]);
   const [run, setRun] = useState<ReadingRunState | null>(null);
+  const [lastCompletedSession, setLastCompletedSession] = useState<ReadingSession | null>(null);
+  const runRef = useRef(run);
+  runRef.current = run;
+
+  const clearLastCompletedSession = useCallback(() => {
+    setLastCompletedSession(null);
+  }, []);
 
   useEffect(() => {
     loadReadingSessions().then(setSessions).catch(() => {});
@@ -130,22 +140,24 @@ export function ReadingSessionProvider({ children }: { children: ReactNode }) {
   const saveReading = useCallback((endPage: string) => {
     const trimmed = endPage.trim();
     if (!trimmed) return;
-    setRun((current) => {
-      if (!current || current.phase !== "stopped") return current;
-      const session: ReadingSession = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        bookId: current.bookId,
-        bookTitle: current.bookTitle,
-        startPage: current.startPage,
-        endPage: trimmed,
-        startedAt: new Date(current.startedAt).toISOString(),
-        endedAt: new Date(current.stoppedAt).toISOString(),
-        durationSeconds: current.durationSeconds,
-      };
-      void appendReadingSession(session).then(() => {
-        setSessions((prev) => [session, ...prev]);
-      });
-      return null;
+    const current = runRef.current;
+    if (!current || current.phase !== "stopped") return;
+    const session: ReadingSession = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      bookId: current.bookId,
+      bookTitle: current.bookTitle,
+      startPage: current.startPage,
+      endPage: trimmed,
+      startedAt: new Date(current.startedAt).toISOString(),
+      endedAt: new Date(current.stoppedAt).toISOString(),
+      durationSeconds: current.durationSeconds,
+    };
+    setRun(null);
+    setLastCompletedSession(session);
+    setSessions((prev) => [session, ...prev]);
+    void appendReadingSession(session).catch(() => {
+      setSessions((prev) => prev.filter((s) => s.id !== session.id));
+      setLastCompletedSession(null);
     });
   }, []);
 
@@ -157,6 +169,8 @@ export function ReadingSessionProvider({ children }: { children: ReactNode }) {
     () => ({
       sessions,
       run,
+      lastCompletedSession,
+      clearLastCompletedSession,
       startReading,
       pauseReading,
       resumeReading,
@@ -164,7 +178,18 @@ export function ReadingSessionProvider({ children }: { children: ReactNode }) {
       saveReading,
       cancelReading,
     }),
-    [sessions, run, startReading, pauseReading, resumeReading, stopReading, saveReading, cancelReading]
+    [
+      sessions,
+      run,
+      lastCompletedSession,
+      clearLastCompletedSession,
+      startReading,
+      pauseReading,
+      resumeReading,
+      stopReading,
+      saveReading,
+      cancelReading,
+    ]
   );
 
   return <ReadingSessionContext.Provider value={value}>{children}</ReadingSessionContext.Provider>;

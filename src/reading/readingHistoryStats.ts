@@ -19,6 +19,22 @@ export function pagesInReadingSession(session: ReadingSession): number {
   return Math.max(0, hi - lo + 1);
 }
 
+/** Pages per hour for one saved session (null when under 1 minute or no countable pages). */
+export function sessionPacePerHour(session: ReadingSession): number | null {
+  const sessionMinutes = session.durationSeconds / 60;
+  if (sessionMinutes < 1) return null;
+  const pagesRead = pagesInReadingSession(session);
+  if (pagesRead <= 0) return null;
+  return Math.round((pagesRead / sessionMinutes) * 60);
+}
+
+/** Saved-session log eligibility: linked book and at least 1 minute of reading. */
+export function isEligibleReadingLogSession(session: ReadingSession): boolean {
+  if (session.bookId == null) return false;
+  if (session.durationSeconds < 60) return false;
+  return true;
+}
+
 export type ReadingHistoryAggregates = {
   totalDurationSeconds: number;
   totalPagesRead: number;

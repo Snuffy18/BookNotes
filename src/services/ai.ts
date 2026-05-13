@@ -19,7 +19,16 @@ import type { StudyPreferencesSnapshot } from "../types/studyPreferences";
 import { DEFAULT_STUDY_PREFERENCES } from "../types/studyPreferences";
 
 const API_URL = "https://api.openai.com/v1/responses";
+/** Text-only and general tasks (entities, summaries, insights). */
 const DEFAULT_MODEL = "gpt-4.1-mini";
+/**
+ * Vision / image understanding (page notes, cover metadata, contents scan).
+ * Defaults to gpt-4o-mini for lower latency vs larger models; override with EXPO_PUBLIC_OPENAI_IMAGE_MODEL.
+ */
+const IMAGE_MODEL =
+  (typeof process.env.EXPO_PUBLIC_OPENAI_IMAGE_MODEL === "string"
+    ? process.env.EXPO_PUBLIC_OPENAI_IMAGE_MODEL.trim()
+    : "") || "gpt-4o-mini";
 
 type NotesResponse = GeneratedNotes & {
   isBookPage?: boolean;
@@ -244,7 +253,7 @@ export async function generateNotesFromImage(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: DEFAULT_MODEL,
+      model: IMAGE_MODEL,
       input: [
         {
           role: "system",
@@ -371,7 +380,7 @@ export async function extractBookMetadataFromImage(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: DEFAULT_MODEL,
+      model: IMAGE_MODEL,
       input: [
         {
           role: "system",
@@ -423,6 +432,61 @@ export async function extractBookMetadataFromImage(
   };
 }
 
+/**
+ * Optional second pass when catalog heuristics still leave dates, authors, or edition junk in the title.
+ */
+export async function polishBookTitleFromCatalogMetadata(
+  rawTitle: string,
+  author: string,
+  signal?: AbortSignal
+): Promise<string | null> {
+  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const response = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    signal,
+    body: JSON.stringify({
+      model: DEFAULT_MODEL,
+      input: [
+        {
+          role: "system",
+          content:
+            "You normalize noisy book-catalog titles and respond with clean JSON only.",
+        },
+        {
+          role: "user",
+          content:
+            `Raw catalog title: "${rawTitle}"\n` +
+            `Known author (stored separately): "${author}"\n` +
+            'Return ONLY JSON: {"title":"string"}.\n' +
+            "Keep the real book title and any genuine subtitle. " +
+            "Remove publication dates, bracketed metadata, duplicate author names, publisher or format junk. " +
+            "Do not invent words. Preserve numbers, colons, ampersands, and intentional punctuation in the title.",
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) return null;
+
+  const data = await response.json();
+  const rawText = extractTextFromResponse(data);
+  if (!rawText) return null;
+
+  try {
+    const parsed = JSON.parse(extractJson(rawText)) as { title?: string };
+    const title = parsed.title?.trim();
+    return title && title.length > 0 ? title : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function extractChapterRangesFromContentsImage(
   imageUri: string
 ): Promise<ChapterRange[]> {
@@ -442,7 +506,7 @@ export async function extractChapterRangesFromContentsImage(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: DEFAULT_MODEL,
+      model: IMAGE_MODEL,
       input: [
         {
           role: "system",

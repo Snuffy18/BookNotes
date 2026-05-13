@@ -9,7 +9,7 @@ import type { RootTabParamList } from "./types";
 export function openReportInLibraryTab(
   tabNav: NavigationProp<RootTabParamList> | undefined,
   item: ScanItem,
-  options?: { highlightQuery?: string }
+  options?: { highlightQuery?: string; reportNavOrigin?: "library" | "scan" }
 ): boolean {
   const bookId = item.bookId?.trim();
   if (!tabNav || !bookId) return false;
@@ -23,7 +23,7 @@ export function openReportInLibraryTab(
       screen: "ReportDetails",
       params: {
         item,
-        reportNavOrigin: "library",
+        reportNavOrigin: options?.reportNavOrigin ?? "library",
         ...(options?.highlightQuery ? { highlightQuery: options.highlightQuery } : {}),
       },
     });

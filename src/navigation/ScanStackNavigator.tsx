@@ -19,6 +19,7 @@ export function ScanStackNavigator() {
       <ScanStack.Screen
         name="CropPhoto"
         component={CropPhotoScreen}
+        getId={({ params }) => `crop-${params.purpose ?? "page"}-${params.imageUri}`}
         options={{
           // Avoid iOS edge-swipe back fighting crop handle drags (and odd nav state).
           gestureEnabled: false,

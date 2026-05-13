@@ -1,23 +1,26 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Modal,
+  Pressable,
   ScrollView,
-  SectionList,
-  SectionListData,
-  SectionListRenderItemInfo,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { ReadingSessionCompleteView } from "../components/ReadingSessionCompleteView";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { useReadingSession } from "../context/ReadingSessionContext";
+import { useScanContext } from "../context/ScanContext";
 import {
   appendReadingHistoryReport,
   loadReadingHistoryReports,
@@ -25,144 +28,224 @@ import {
 import {
   computeReadingHistoryStats,
   formatReadingTimeHero,
+  isEligibleReadingLogSession,
+  pagesInReadingSession,
+  sessionPacePerHour,
   type ReadingHistoryAggregates,
 } from "../reading/readingHistoryStats";
+import {
+  endedAtWeekdayIndexMon0,
+  formatWeekRangeLabel,
+  getMondayWeekRange,
+  sessionEndedInWeek,
+  sumPagesForSessions,
+} from "../reading/readingHistoryWeek";
 import type { ScanStackParamList } from "../navigation/types";
 import { generateReadingHistorySummary } from "../services/ai";
-import { FONT_CANELA_TEXT_REGULAR, FONT_HELVETICA } from "../theme/fonts";
+import { FONT_HELVETICA } from "../theme/fonts";
 import type { ReadingHistoryAiReport, ReadingSession } from "../types/note";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Nav = NativeStackNavigationProp<ScanStackParamList, "ReadingHistory">;
 
-type ReportSection = {
-  key: "reports";
-  title: string;
-  data: ReadingHistoryAiReport[];
-};
+const BLUE_STAT = "#60a5fa";
+const GREEN_STAT = "#4ade80";
+const AMBER_STAT = "#fbbf24";
 
-type SessionSection = {
-  key: "sessions";
-  title: string;
-  data: ReadingSession[];
-};
+const ACCENT_PALETTE = [
+  "#60a5fa",
+  "#4ade80",
+  "#fbbf24",
+  "#a855f7",
+  "#f472b6",
+  "#22d3ee",
+  "#fb923c",
+  "#94a3b8",
+];
 
-type HistorySection = ReportSection | SessionSection;
-
-function formatDurationLabel(totalSeconds: number): string {
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m} min`;
-  const h = Math.floor(m / 60);
-  const rm = m % 60;
-  return `${h}h ${rm}m`;
+function bookAccentColor(bookId: string): string {
+  let h = 0;
+  for (let i = 0; i < bookId.length; i++) h = ((h * 31) ^ bookId.charCodeAt(i)) >>> 0;
+  return ACCENT_PALETTE[h % ACCENT_PALETTE.length];
 }
 
-function formatSessionEndedAt(iso: string): string {
+/** Never raw seconds; minimum "1 min". Hide under 1 minute (return ""). */
+function formatLogDuration(totalSeconds: number): string {
+  if (totalSeconds < 60) return "";
+  const totalMin = Math.floor(totalSeconds / 60);
+  const h = Math.floor(totalMin / 60);
+  const min = totalMin % 60;
+  if (h === 0) return `${Math.max(1, totalMin)} min`;
+  if (min === 0) return `${h} hr`;
+  return `${h} hr ${min} min`;
+}
+
+function formatSessionClock(iso: string): string {
   try {
-    return new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+    return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   } catch {
-    return iso;
+    return "";
   }
 }
 
-function formatReportCreatedAt(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-  } catch {
-    return iso;
+function localDayKey(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatLogGroupTitle(dayKey: string, now: Date): string {
+  const [ys, ms, ds] = dayKey.split("-");
+  const d = new Date(Number(ys), Number(ms) - 1, Number(ds), 12, 0, 0, 0);
+  const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const t1 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayMs = 86400000;
+  if (t1 === t0) return "TODAY";
+  if (t1 === t0 - dayMs) {
+    const sub = d.toLocaleDateString(undefined, { day: "numeric", month: "short" }).toUpperCase();
+    return `YESTERDAY · ${sub}`;
   }
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }).toUpperCase();
 }
 
-function HistorySessionRow({ session, darkMode }: { session: ReadingSession; darkMode: boolean }) {
-  const title = session.bookTitle?.trim() || "No book selected";
-  const pages = `p. ${session.startPage} → ${session.endPage}`;
-  const meta = `${formatDurationLabel(session.durationSeconds)} · ${formatSessionEndedAt(session.endedAt)}`;
-  return (
-    <View style={[styles.sessionRow, darkMode && styles.sessionRowDark]}>
-      <Text style={[styles.sessionRowTitle, darkMode && styles.sessionRowTitleDark]} numberOfLines={2}>
-        {title}
-      </Text>
-      <Text style={[styles.sessionRowPages, darkMode && styles.sessionRowPagesDark]}>{pages}</Text>
-      <Text style={[styles.sessionRowMeta, darkMode && styles.sessionRowMetaDark]}>{meta}</Text>
-    </View>
-  );
-}
 
-function ReportCardRow({
-  report,
-  darkMode,
-  accentColor,
-  onPress,
-}: {
-  report: ReadingHistoryAiReport;
+type LogSessionCardProps = {
+  session: ReadingSession;
+  bookTitle: string;
   darkMode: boolean;
-  accentColor: string;
   onPress: () => void;
-}) {
+};
+
+function LogSessionCard({ session, bookTitle, darkMode, onPress }: LogSessionCardProps) {
+  const accent = session.bookId ? bookAccentColor(session.bookId) : ACCENT_PALETTE[0];
+  const pagesRead = pagesInReadingSession(session);
+  const pace = sessionPacePerHour(session);
+  const dur = formatLogDuration(session.durationSeconds);
+  const clock = formatSessionClock(session.endedAt);
+  const t = darkMode ? styles : stylesLight;
+
   return (
     <TouchableOpacity
-      style={[styles.reportCard, darkMode && styles.reportCardDark]}
+      style={[styles.logCard, darkMode ? styles.logCardDark : styles.logCardLight]}
       onPress={onPress}
       activeOpacity={0.88}
       accessibilityRole="button"
-      accessibilityLabel="Open saved reading report"
+      accessibilityLabel="View reading session"
     >
-      <View style={styles.reportCardTop}>
-        <View style={[styles.reportCardIconWrap, { backgroundColor: accentColor + "22" }]}>
-          <Ionicons name="sparkles" size={20} color={accentColor} />
-        </View>
-        <View style={styles.reportCardTopText}>
-          <Text style={[styles.reportCardTitle, darkMode && styles.reportCardTitleDark]}>Reading insight</Text>
-          <Text style={[styles.reportCardDate, darkMode && styles.reportCardDateDark]}>
-            {formatReportCreatedAt(report.createdAt)}
+      <View style={[styles.logAccentBar, { backgroundColor: accent }]} />
+      <View style={styles.logCardMid}>
+        <Text style={[styles.logTitle, t.logTitle]} numberOfLines={2}>
+          {bookTitle}
+        </Text>
+        <View style={styles.logMetaRow}>
+          <Text style={[styles.logMetaPages, t.logMetaPages]}>
+            p. {session.startPage} → {session.endPage}
           </Text>
-        </View>
-        <Ionicons
-          name="chevron-forward"
-          size={18}
-          color={darkMode ? "rgba(255,255,255,0.35)" : "rgba(15,23,42,0.35)"}
-        />
-      </View>
-      <View style={styles.reportCardStatsRow}>
-        <View style={styles.reportCardStat}>
-          <Text style={[styles.reportCardStatValue, darkMode && styles.reportCardStatValueDark]}>
-            {report.totalPagesRead}
-          </Text>
-          <Text style={[styles.reportCardStatLabel, darkMode && styles.reportCardStatLabelDark]}>pages</Text>
-        </View>
-        <View style={[styles.reportCardStatDivider, darkMode && styles.reportCardStatDividerDark]} />
-        <View style={styles.reportCardStat}>
-          <Text style={[styles.reportCardStatValue, { color: accentColor }]}>
-            {formatReadingTimeHero(report.totalDurationSeconds)}
-          </Text>
-          <Text style={[styles.reportCardStatLabel, darkMode && styles.reportCardStatLabelDark]}>time</Text>
-        </View>
-        <View style={[styles.reportCardStatDivider, darkMode && styles.reportCardStatDividerDark]} />
-        <View style={styles.reportCardStat}>
-          <Text style={[styles.reportCardStatValue, darkMode && styles.reportCardStatValueDark]}>
-            {report.sessionCount}
-          </Text>
-          <Text style={[styles.reportCardStatLabel, darkMode && styles.reportCardStatLabelDark]}>sessions</Text>
+          <View style={[styles.logMetaDot, t.logMetaDot]} />
+          <Text style={[styles.logMetaDur, t.logMetaDur]}>{dur}</Text>
         </View>
       </View>
+      <View style={styles.logCardRight}>
+        <Text style={[styles.logRightPages, t.logRightPages]}>{pagesRead}</Text>
+        {pace != null ? (
+          <Text style={[styles.logRightPace, t.logRightPace]}>{pace} p/hr</Text>
+        ) : null}
+        <Text style={[styles.logRightTime, t.logRightTime]}>{clock}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={13} color={darkMode ? "rgba(255,255,255,0.2)" : "rgba(15,23,42,0.2)"} />
     </TouchableOpacity>
+  );
+}
+
+type WeeklyCardProps = {
+  weekRangeLabel: string;
+  pages: number;
+  minutes: number;
+  sessions: number;
+  pacePhr: number | null;
+  dailyPages: number[];
+  darkMode: boolean;
+};
+
+function WeeklySummaryCard({
+  weekRangeLabel,
+  pages,
+  minutes,
+  sessions,
+  pacePhr,
+  dailyPages,
+  darkMode,
+}: WeeklyCardProps) {
+  const maxDay = Math.max(...dailyPages, 1);
+  const t = darkMode ? styles : stylesLight;
+
+  return (
+    <View style={[styles.weekCard, darkMode ? styles.weekCardDark : styles.weekCardLight]}>
+      <View style={styles.weekHeaderRow}>
+        <View style={styles.weekHeaderLeft}>
+          <Text style={[styles.weekTitle, t.weekTitle]}>This week</Text>
+          <Text style={[styles.weekSubtitle, t.weekSubtitle]}>{weekRangeLabel}</Text>
+        </View>
+        <Text style={[styles.weekDaysPill, t.weekDaysPill]}>7 days</Text>
+      </View>
+
+      <View style={styles.weekStatsRow}>
+        <View style={styles.weekStatCol}>
+          <Text style={[styles.weekStatVal, t.weekStatValWhite]}>{pages}</Text>
+          <Text style={[styles.weekStatLbl, t.weekStatLbl]}>PAGES</Text>
+        </View>
+        <View style={[styles.weekStatDivider, t.weekStatDivider]} />
+        <View style={styles.weekStatCol}>
+          <Text style={[styles.weekStatVal, { color: BLUE_STAT }]}>{minutes}</Text>
+          <Text style={[styles.weekStatLbl, t.weekStatLbl]}>MINUTES</Text>
+        </View>
+        <View style={[styles.weekStatDivider, t.weekStatDivider]} />
+        <View style={styles.weekStatCol}>
+          <Text style={[styles.weekStatVal, { color: GREEN_STAT }]}>{sessions}</Text>
+          <Text style={[styles.weekStatLbl, t.weekStatLbl]}>SESSIONS</Text>
+        </View>
+        <View style={[styles.weekStatDivider, t.weekStatDivider]} />
+        <View style={styles.weekStatCol}>
+          <Text style={[styles.weekStatVal, { color: AMBER_STAT }]}>
+            {pacePhr != null ? pacePhr : "—"}
+          </Text>
+          <Text style={[styles.weekStatLbl, t.weekStatLbl]}>P/HR</Text>
+        </View>
+      </View>
+
+      <View style={styles.weekBarsRow}>
+        {dailyPages.map((p, i) => {
+          const ratio = maxDay > 0 ? p / maxDay : 0;
+          const h = p > 0 ? Math.max(3, Math.round(ratio * 28)) : 3;
+          const fill = p > 0 ? BLUE_STAT : darkMode ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.08)";
+          return <View key={i} style={[styles.weekBar, { height: h, backgroundColor: fill }]} />;
+        })}
+      </View>
+    </View>
   );
 }
 
 export function ReadingHistoryScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
+  const { height: winH } = useWindowDimensions();
   const { darkMode, accentColor } = useAppSettings();
   const { sessions } = useReadingSession();
+  const { books } = useScanContext();
 
-  const [reports, setReports] = useState<ReadingHistoryAiReport[]>([]);
+  const [, setReports] = useState<ReadingHistoryAiReport[]>([]);
+  const [sessionDetail, setSessionDetail] = useState<ReadingSession | null>(null);
+  const sessionSheetTranslateY = useRef(new Animated.Value(winH)).current;
+  const sessionSheetAnimatingOut = useRef(false);
   const [summaryVisible, setSummaryVisible] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryText, setSummaryText] = useState<string | null>(null);
   const [summaryStats, setSummaryStats] = useState<ReadingHistoryAggregates | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [filterBookId, setFilterBookId] = useState<string | null>(null);
+  const [weekNow, setWeekNow] = useState(() => new Date());
 
   const hapticLight = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -174,37 +257,127 @@ export function ReadingHistoryScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setWeekNow(new Date());
       refreshReports();
     }, [refreshReports])
   );
 
-  const sections = useMemo((): HistorySection[] => {
-    const out: HistorySection[] = [];
-    if (reports.length > 0) {
-      out.push({ key: "reports", title: "Insights", data: reports });
+  const { weekStart, weekEnd } = useMemo(() => getMondayWeekRange(weekNow), [weekNow]);
+  const weekRangeLabel = useMemo(() => formatWeekRangeLabel(weekStart, weekEnd), [weekStart, weekEnd]);
+
+  const eligibleSessions = useMemo(
+    () => sessions.filter(isEligibleReadingLogSession).sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime()),
+    [sessions]
+  );
+
+  const bookPills = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { id: string; title: string }[] = [];
+    for (const s of eligibleSessions) {
+      if (!s.bookId || seen.has(s.bookId)) continue;
+      seen.add(s.bookId);
+      const title = books.find((b) => b.id === s.bookId)?.title?.trim() || s.bookTitle?.trim() || "Book";
+      out.push({ id: s.bookId, title });
     }
-    if (sessions.length > 0) {
-      out.push({ key: "sessions", title: "Reading log", data: sessions });
-    }
+    out.sort((a, b) => a.title.localeCompare(b.title));
     return out;
-  }, [reports, sessions]);
+  }, [eligibleSessions, books]);
+
+  const weekSessions = useMemo(
+    () =>
+      eligibleSessions.filter((s) => sessionEndedInWeek(s, weekStart, weekEnd)),
+    [eligibleSessions, weekStart, weekEnd]
+  );
+
+  const dailyPages = useMemo(() => {
+    const arr = [0, 0, 0, 0, 0, 0, 0];
+    for (const s of weekSessions) {
+      const idx = endedAtWeekdayIndexMon0(s.endedAt);
+      arr[idx] += pagesInReadingSession(s);
+    }
+    return arr;
+  }, [weekSessions]);
+
+  const weekTotals = useMemo(() => {
+    const pages = sumPagesForSessions(weekSessions);
+    const totalSec = weekSessions.reduce((a, s) => a + s.durationSeconds, 0);
+    const minutes = Math.max(0, Math.round(totalSec / 60));
+    const cnt = weekSessions.length;
+    const totalMin = totalSec / 60;
+    const pacePhr = totalMin >= 1 && pages > 0 ? Math.round((pages / totalMin) * 60) : null;
+    return { pages, minutes, sessions: cnt, pacePhr };
+  }, [weekSessions]);
+
+  const filteredLogSessions = useMemo(() => {
+    if (filterBookId == null) return eligibleSessions;
+    return eligibleSessions.filter((s) => s.bookId === filterBookId);
+  }, [eligibleSessions, filterBookId]);
+
+  const logGroups = useMemo(() => {
+    const map = new Map<string, ReadingSession[]>();
+    for (const s of filteredLogSessions) {
+      const k = localDayKey(s.endedAt);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(s);
+    }
+    const keys = [...map.keys()].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+    return keys.map((key) => ({ key, sessions: map.get(key)! }));
+  }, [filteredLogSessions]);
+
+  const resolveBookTitle = useCallback(
+    (s: ReadingSession) => {
+      const fromLib = s.bookId ? books.find((b) => b.id === s.bookId)?.title?.trim() : "";
+      return fromLib || s.bookTitle?.trim() || "Book";
+    },
+    [books]
+  );
 
   const closeSummary = useCallback(() => {
     setSummaryVisible(false);
   }, []);
 
-  const openSavedReport = useCallback((report: ReadingHistoryAiReport) => {
-    hapticLight();
-    setSummaryError(null);
-    setSummaryLoading(false);
-    setSummaryText(report.body);
-    setSummaryStats({
-      totalDurationSeconds: report.totalDurationSeconds,
-      totalPagesRead: report.totalPagesRead,
-      sessionCount: report.sessionCount,
+  const closeSessionDetail = useCallback(() => {
+    if (sessionSheetAnimatingOut.current) return;
+    sessionSheetAnimatingOut.current = true;
+    Animated.timing(sessionSheetTranslateY, {
+      toValue: winH,
+      duration: 260,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      sessionSheetAnimatingOut.current = false;
+      if (finished) setSessionDetail(null);
     });
-    setSummaryVisible(true);
-  }, []);
+  }, [winH, sessionSheetTranslateY]);
+
+  const openSessionDetail = useCallback(
+    (session: ReadingSession) => {
+      hapticLight();
+      sessionSheetAnimatingOut.current = false;
+      sessionSheetTranslateY.stopAnimation();
+      setSessionDetail(session);
+    },
+    [sessionSheetTranslateY]
+  );
+
+  useEffect(() => {
+    if (!sessionDetail) return;
+    sessionSheetAnimatingOut.current = false;
+    sessionSheetTranslateY.stopAnimation();
+    sessionSheetTranslateY.setValue(winH);
+    Animated.spring(sessionSheetTranslateY, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 68,
+      friction: 12,
+    }).start();
+  }, [sessionDetail, winH, sessionSheetTranslateY]);
+
+  const sessionDetailBook = useMemo(
+    () =>
+      sessionDetail?.bookId ? books.find((b) => b.id === sessionDetail.bookId) ?? null : null,
+    [books, sessionDetail]
+  );
 
   const openSummary = useCallback(async () => {
     if (sessions.length === 0) return;
@@ -236,86 +409,220 @@ export function ReadingHistoryScreen() {
   }, [sessions]);
 
   const summarizeDisabled = sessions.length === 0 || summaryLoading;
-  const summarizeIconColor = summarizeDisabled
-    ? darkMode
-      ? "rgba(255,255,255,0.28)"
-      : "rgba(15,23,42,0.28)"
-    : accentColor;
 
-  const renderItem = useCallback(
-    ({ item, section }: SectionListRenderItemInfo<ReadingHistoryAiReport | ReadingSession, HistorySection>) => {
-      if (section.key === "reports") {
-        return (
-          <ReportCardRow
-            report={item as ReadingHistoryAiReport}
-            darkMode={darkMode}
-            accentColor={accentColor}
-            onPress={() => openSavedReport(item as ReadingHistoryAiReport)}
-          />
-        );
-      }
-      return <HistorySessionRow session={item as ReadingSession} darkMode={darkMode} />;
-    },
-    [accentColor, darkMode, openSavedReport]
-  );
+  const hasAnyLoggable = eligibleSessions.length > 0;
+  const emptyGlobal = sessions.length === 0;
 
-  const listEmpty = sections.length === 0;
+  const t = darkMode ? styles : stylesLight;
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
       <View style={styles.topBar}>
         <TouchableOpacity
-          style={styles.topBarSide}
+          style={[styles.navCircle28, darkMode ? styles.navCircleBackDark : styles.navCircleBackLight]}
           onPress={() => {
             hapticLight();
             navigation.goBack();
           }}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <Ionicons
             name="chevron-back"
-            size={26}
-            color={darkMode ? darkColors.textPrimary : lightColors.textPrimary}
+            size={18}
+            color={darkMode ? "#ffffff" : lightColors.textPrimary}
           />
         </TouchableOpacity>
-        <Text style={[styles.topBarTitle, darkMode && styles.topBarTitleDark]} numberOfLines={1}>
+        <Text style={[styles.topBarTitle, t.topBarTitle]} numberOfLines={1}>
           Reading history
         </Text>
         <TouchableOpacity
-          style={styles.topBarSide}
+          style={[
+            styles.navCircle28,
+            darkMode ? styles.navCircleSparkDark : styles.navCircleSparkLight,
+          ]}
           onPress={() => void openSummary()}
           disabled={summarizeDisabled}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          activeOpacity={0.75}
           accessibilityRole="button"
-          accessibilityLabel="Summarize reading history with AI"
+          accessibilityLabel="Reading insights with AI"
         >
-          <Ionicons name="sparkles" size={22} color={summarizeIconColor} />
+          <Ionicons
+            name="sparkles"
+            size={16}
+            color={
+              summarizeDisabled
+                ? darkMode
+                  ? "rgba(255,255,255,0.28)"
+                  : "rgba(15,23,42,0.28)"
+                : BLUE_STAT
+            }
+          />
         </TouchableOpacity>
       </View>
 
-      {listEmpty ? (
+      {emptyGlobal ? (
         <View style={styles.emptyWrap}>
           <Text style={[styles.empty, darkMode && styles.emptyDark]}>
             No saved sessions yet. Finish a timer on the Scan page and tap Save session to see it here.
           </Text>
         </View>
       ) : (
-        <SectionList
-          sections={sections as SectionListData<ReadingHistoryAiReport | ReadingSession, HistorySection>[]}
-          keyExtractor={(item, index) =>
-            "body" in item ? `report-${item.id}` : `session-${(item as ReadingSession).id}-${index}`
-          }
-          renderItem={renderItem}
-          renderSectionHeader={({ section }) => (
-            <Text style={[styles.sectionHeader, darkMode && styles.sectionHeaderDark]}>{section.title}</Text>
-          )}
-          contentContainerStyle={styles.listContent}
-          stickySectionHeadersEnabled={false}
+        <ScrollView
+          style={styles.scrollFlex}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 28) }]}
           showsVerticalScrollIndicator={false}
-        />
+          keyboardShouldPersistTaps="handled"
+        >
+          <WeeklySummaryCard
+            weekRangeLabel={weekRangeLabel}
+            pages={weekTotals.pages}
+            minutes={weekTotals.minutes}
+            sessions={weekTotals.sessions}
+            pacePhr={weekTotals.pacePhr}
+            dailyPages={dailyPages}
+            darkMode={darkMode}
+          />
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillsRow}
+            style={styles.pillsScroll}
+            nestedScrollEnabled
+          >
+            <TouchableOpacity
+              onPress={() => {
+                hapticLight();
+                setFilterBookId(null);
+              }}
+              style={[
+                styles.pill,
+                darkMode ? styles.pillBaseDark : styles.pillBaseLight,
+                filterBookId === null && (darkMode ? styles.pillSelectedDark : styles.pillSelectedLight),
+              ]}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.pillText,
+                  darkMode ? styles.pillTextMutedDark : styles.pillTextMutedLight,
+                  filterBookId === null && (darkMode ? styles.pillTextSelectedDark : styles.pillTextSelectedLight),
+                ]}
+              >
+                All books
+              </Text>
+            </TouchableOpacity>
+            {bookPills.map((b) => {
+              const sel = filterBookId === b.id;
+              return (
+                <TouchableOpacity
+                  key={b.id}
+                  onPress={() => {
+                    hapticLight();
+                    setFilterBookId(b.id);
+                  }}
+                  style={[
+                    styles.pill,
+                    darkMode ? styles.pillBaseDark : styles.pillBaseLight,
+                    sel && (darkMode ? styles.pillSelectedDark : styles.pillSelectedLight),
+                  ]}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[
+                      styles.pillText,
+                      darkMode ? styles.pillTextMutedDark : styles.pillTextMutedLight,
+                      sel && (darkMode ? styles.pillTextSelectedDark : styles.pillTextSelectedLight),
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {b.title}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {!hasAnyLoggable ? (
+            <Text style={[styles.logEmptyNote, t.logEmptyNote]}>
+              Sessions need a linked book and at least 1 minute to appear here.
+            </Text>
+          ) : logGroups.length === 0 ? (
+            <Text style={[styles.logEmptyNote, t.logEmptyNote]}>No sessions for this filter.</Text>
+          ) : (
+            logGroups.map((g, gi) => (
+              <View key={g.key} style={[styles.logGroup, gi > 0 && styles.logGroupSpacing]}>
+                <Text style={[styles.logGroupLabel, t.logGroupLabel]}>{formatLogGroupTitle(g.key, weekNow)}</Text>
+                <View style={styles.logGroupCards}>
+                  {g.sessions.map((s) => (
+                    <LogSessionCard
+                      key={s.id}
+                      session={s}
+                      bookTitle={resolveBookTitle(s)}
+                      darkMode={darkMode}
+                      onPress={() => openSessionDetail(s)}
+                    />
+                  ))}
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
       )}
+
+      <Modal
+        visible={sessionDetail != null}
+        transparent
+        animationType="none"
+        onRequestClose={closeSessionDetail}
+        statusBarTranslucent
+      >
+        {sessionDetail ? (
+          <View style={styles.sessionModalRoot}>
+            <Pressable
+              style={styles.sessionModalBackdrop}
+              onPress={closeSessionDetail}
+              accessibilityRole="button"
+              accessibilityLabel="Close session details"
+            />
+            <Animated.View
+              style={[
+                styles.sessionModalSheet,
+                {
+                  paddingBottom: Math.max(insets.bottom, 12),
+                  transform: [{ translateY: sessionSheetTranslateY }],
+                },
+              ]}
+            >
+              <View style={styles.sessionModalGrabRow}>
+                <View style={styles.sessionModalHandle} />
+                <TouchableOpacity
+                  style={styles.sessionModalCloseBtn}
+                  onPress={closeSessionDetail}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                >
+                  <Ionicons name="close" size={26} color="rgba(255,255,255,0.88)" />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.sessionModalBody}>
+                <ReadingSessionCompleteView
+                  session={sessionDetail}
+                  totalPages={sessionDetailBook?.totalPageCount ?? null}
+                  author={sessionDetailBook?.author?.trim() ? sessionDetailBook.author : null}
+                  onDone={closeSessionDetail}
+                  anchorContentToBottom
+                />
+              </View>
+            </Animated.View>
+          </View>
+        ) : null}
+      </Modal>
 
       <Modal
         visible={summaryVisible}
@@ -333,14 +640,14 @@ export function ReadingHistoryScreen() {
           >
             <View style={styles.summaryModalHeaderSide} />
             <Text style={[styles.summaryModalTitle, darkMode && styles.summaryModalTitleDark]} numberOfLines={1}>
-              Reading summary
+              Reading insights
             </Text>
             <TouchableOpacity
               style={styles.summaryModalHeaderSide}
               onPress={closeSummary}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               accessibilityRole="button"
-              accessibilityLabel="Close summary"
+              accessibilityLabel="Close insights"
             >
               <Ionicons
                 name="close"
@@ -451,57 +758,81 @@ export function ReadingHistoryScreen() {
   );
 }
 
+/** Light-theme tokens for redesigned widgets (parallel to `styles`). */
+const stylesLight = StyleSheet.create({
+  topBarTitle: { color: lightColors.textPrimary },
+  weekTitle: { color: lightColors.textPrimary },
+  weekSubtitle: { color: "rgba(15,23,42,0.35)" },
+  weekDaysPill: { color: "rgba(15,23,42,0.3)" },
+  weekStatValWhite: { color: lightColors.textPrimary },
+  weekStatLbl: { color: "rgba(15,23,42,0.3)" },
+  weekStatDivider: { backgroundColor: "rgba(15,23,42,0.07)" },
+  logTitle: { color: lightColors.textPrimary },
+  logMetaPages: { color: "rgba(15,23,42,0.5)" },
+  logMetaDot: { backgroundColor: "rgba(15,23,42,0.35)" },
+  logMetaDur: { color: "rgba(15,23,42,0.35)" },
+  logRightPages: { color: "rgba(15,23,42,0.5)" },
+  logRightPace: { color: "rgba(15,23,42,0.35)" },
+  logRightTime: { color: "rgba(15,23,42,0.25)" },
+  logGroupLabel: { color: "rgba(15,23,42,0.3)" },
+  logEmptyNote: { color: "rgba(15,23,42,0.45)" },
+});
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: lightColors.background,
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     paddingTop: 4,
   },
   screenDark: {
     backgroundColor: darkColors.background,
   },
+  scrollFlex: { flex: 1 },
+  scrollContent: {
+    paddingTop: 4,
+    gap: 18,
+  },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 14,
     minHeight: 44,
   },
-  topBarSide: {
-    width: 40,
-    justifyContent: "center",
+  navCircle28: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
+    justifyContent: "center",
+  },
+  navCircleBackDark: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  navCircleBackLight: {
+    backgroundColor: "rgba(15,23,42,0.06)",
+  },
+  navCircleSparkDark: {
+    backgroundColor: "rgba(59,130,246,0.15)",
+    borderWidth: 0.5,
+    borderColor: "rgba(59,130,246,0.3)",
+  },
+  navCircleSparkLight: {
+    backgroundColor: "rgba(59,130,246,0.12)",
+    borderWidth: 0.5,
+    borderColor: "rgba(59,130,246,0.28)",
   },
   topBarTitle: {
     flex: 1,
     textAlign: "center",
-    fontSize: 21,
-    fontWeight: "700",
-    fontFamily: FONT_CANELA_TEXT_REGULAR,
-    color: lightColors.textPrimary,
-  },
-  topBarTitleDark: {
-    color: darkColors.textPrimary,
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#ffffff",
   },
   emptyWrap: {
     flex: 1,
     justifyContent: "center",
     paddingVertical: 40,
-  },
-  listContent: {
-    paddingBottom: 32,
-  },
-  sectionHeader: {
-    fontSize: 14,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.72,
-    color: "rgba(15,23,42,0.45)",
-    marginTop: 8,
-    marginBottom: 10,
-  },
-  sectionHeaderDark: {
-    color: "rgba(255,255,255,0.4)",
   },
   empty: {
     fontSize: 16,
@@ -512,121 +843,201 @@ const styles = StyleSheet.create({
   emptyDark: {
     color: darkColors.textSecondary,
   },
-  sessionRow: {
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: lightColors.borderStrong,
-  },
-  sessionRowDark: {
-    borderBottomColor: darkColors.border,
-  },
-  sessionRowTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: lightColors.textPrimary,
-    marginBottom: 4,
-  },
-  sessionRowTitleDark: {
-    color: darkColors.textPrimary,
-  },
-  sessionRowPages: {
-    fontSize: 16,
-    color: lightColors.textSecondary,
-    marginBottom: 2,
-  },
-  sessionRowPagesDark: {
-    color: darkColors.textSecondary,
-  },
-  sessionRowMeta: {
-    fontSize: 14,
-    color: lightColors.textMuted,
-  },
-  sessionRowMetaDark: {
-    color: darkColors.textSecondary,
-  },
-  reportCard: {
+  weekCard: {
     borderRadius: 16,
     borderWidth: 0.5,
-    borderColor: "rgba(15,23,42,0.12)",
-    backgroundColor: "rgba(0,0,0,0.03)",
     padding: 16,
-    marginBottom: 12,
-  },
-  reportCardDark: {
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
-  reportCardTop: {
-    flexDirection: "row",
-    alignItems: "center",
     gap: 12,
-    marginBottom: 14,
   },
-  reportCardIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
+  weekCardDark: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.08)",
   },
-  reportCardTopText: {
-    flex: 1,
-    minWidth: 0,
+  weekCardLight: {
+    backgroundColor: "rgba(15,23,42,0.04)",
+    borderColor: "rgba(15,23,42,0.08)",
   },
-  reportCardTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: lightColors.textPrimary,
-  },
-  reportCardTitleDark: {
-    color: darkColors.textPrimary,
-  },
-  reportCardDate: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: lightColors.textMuted,
-    marginTop: 2,
-  },
-  reportCardDateDark: {
-    color: darkColors.textSecondary,
-  },
-  reportCardStatsRow: {
+  weekHeaderRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
   },
-  reportCardStat: {
+  weekHeaderLeft: { gap: 2, flex: 1, minWidth: 0, paddingRight: 8 },
+  weekTitle: { fontSize: 12, fontWeight: "500", color: "#ffffff" },
+  weekSubtitle: { fontSize: 10, fontWeight: "400", color: "rgba(255,255,255,0.35)" },
+  weekDaysPill: { fontSize: 11, fontWeight: "400", color: "rgba(255,255,255,0.3)", marginTop: 2 },
+  weekStatsRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+  },
+  weekStatCol: {
     flex: 1,
     alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 4,
   },
-  reportCardStatDivider: {
-    width: StyleSheet.hairlineWidth,
-    alignSelf: "stretch",
-    backgroundColor: "rgba(15,23,42,0.12)",
-    marginHorizontal: 4,
-  },
-  reportCardStatDividerDark: {
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
-  reportCardStatValue: {
-    fontSize: 24,
-    fontWeight: "800",
-    fontFamily: FONT_HELVETICA,
-    color: lightColors.textPrimary,
-  },
-  reportCardStatValueDark: {
-    color: darkColors.textPrimary,
-  },
-  reportCardStatLabel: {
-    fontSize: 12,
+  weekStatVal: {
+    fontSize: 18,
     fontWeight: "600",
-    color: lightColors.textMuted,
-    marginTop: 2,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: -0.18,
+    fontFamily: FONT_HELVETICA,
   },
-  reportCardStatLabelDark: {
-    color: darkColors.textSecondary,
+  weekStatValWhite: { color: "#ffffff" },
+  weekStatLbl: {
+    marginTop: 4,
+    fontSize: 9,
+    fontWeight: "500",
+    letterSpacing: 0.06 * 9,
+    textTransform: "uppercase",
+    color: "rgba(255,255,255,0.3)",
+  },
+  weekStatDivider: {
+    width: 0.5,
+    alignSelf: "stretch",
+    backgroundColor: "rgba(255,255,255,0.07)",
+    marginVertical: 2,
+  },
+  weekBarsRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    height: 28,
+    gap: 3,
+  },
+  weekBar: {
+    flex: 1,
+    borderRadius: 2,
+    minHeight: 3,
+  },
+  pillsScroll: { marginHorizontal: -20, paddingHorizontal: 20 },
+  pillsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingRight: 20,
+  },
+  pill: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 0.5,
+    maxWidth: 220,
+  },
+  pillBaseDark: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  pillBaseLight: {
+    backgroundColor: "rgba(15,23,42,0.04)",
+    borderColor: "rgba(15,23,42,0.08)",
+  },
+  pillSelectedDark: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  pillSelectedLight: {
+    backgroundColor: "rgba(15,23,42,0.1)",
+    borderColor: "rgba(15,23,42,0.2)",
+  },
+  pillText: { fontSize: 11, fontWeight: "500" },
+  pillTextMutedDark: { color: "rgba(255,255,255,0.35)" },
+  pillTextMutedLight: { color: "rgba(15,23,42,0.35)" },
+  pillTextSelectedDark: { color: "#ffffff" },
+  pillTextSelectedLight: { color: lightColors.textPrimary },
+  logGroup: { gap: 6 },
+  logGroupSpacing: { marginTop: 18 },
+  logGroupLabel: {
+    fontSize: 10,
+    fontWeight: "500",
+    letterSpacing: 0.07 * 10,
+    textTransform: "uppercase",
+    color: "rgba(255,255,255,0.3)",
+    marginBottom: 2,
+  },
+  logGroupCards: { gap: 6 },
+  logEmptyNote: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "rgba(255,255,255,0.45)",
+    textAlign: "center",
+    marginTop: 4,
+  },
+  logCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 0.5,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  logCardDark: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  logCardLight: {
+    backgroundColor: "rgba(15,23,42,0.04)",
+    borderColor: "rgba(15,23,42,0.08)",
+  },
+  logAccentBar: {
+    width: 3,
+    height: 36,
+    borderRadius: 2,
+    flexShrink: 0,
+  },
+  logCardMid: { flex: 1, minWidth: 0, gap: 4 },
+  logTitle: { fontSize: 13, fontWeight: "500", color: "#ffffff" },
+  logMetaRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 },
+  logMetaPages: { fontSize: 11, fontWeight: "400", color: "rgba(255,255,255,0.5)" },
+  logMetaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: "rgba(255,255,255,0.35)",
+  },
+  logMetaDur: { fontSize: 11, fontWeight: "400", color: "rgba(255,255,255,0.35)" },
+  logCardRight: { alignItems: "flex-end", gap: 2, marginRight: 2 },
+  logRightPages: { fontSize: 12, fontWeight: "500", color: "rgba(255,255,255,0.5)" },
+  logRightPace: { fontSize: 11, fontWeight: "400", color: "rgba(255,255,255,0.35)" },
+  logRightTime: { fontSize: 10, fontWeight: "400", color: "rgba(255,255,255,0.25)" },
+  sessionModalRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  sessionModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  sessionModalSheet: {
+    height: "80%",
+    backgroundColor: "#1a1a1a",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    overflow: "hidden",
+  },
+  sessionModalGrabRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+    minHeight: 28,
+  },
+  sessionModalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  sessionModalCloseBtn: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    padding: 4,
+  },
+  sessionModalBody: {
+    flex: 1,
+    minHeight: 0,
   },
   summaryModalRoot: {
     flex: 1,
@@ -654,7 +1065,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 21,
     fontWeight: "700",
-    fontFamily: FONT_CANELA_TEXT_REGULAR,
     color: lightColors.textPrimary,
   },
   summaryModalTitleDark: {

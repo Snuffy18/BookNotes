@@ -1,6 +1,7 @@
 import {
   Fragment,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -33,6 +34,7 @@ import { useScanContext } from "../context/ScanContext";
 import { ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING } from "../navigation/rootTabLayout";
 import type { LibraryStackParamList } from "../navigation/types";
 import { generateBookReportsInsights, themesFallbackFromFacts } from "../services/ai";
+import { fetchBookPageCountFromApi } from "../services/openLibrary";
 import type { BookInsightsSummary, ScanItem } from "../types/note";
 import { pdfContentOptionsFromPrefs } from "../types/exportPreferences";
 import { createAllBookReportsPdf, sanitizeFileBase } from "../utils/bookReportsPdf";
@@ -43,7 +45,8 @@ import { hexWithAlpha } from "../theme/colorUtils";
 import { FONT_CANELA_TEXT_BOLD } from "../theme/fonts";
 import {
   countChaptersForBook,
-  countDistinctNumericPages,
+  estimateBookPageTotal,
+  maxScannedPageNumber,
   getCoveragePageRange,
   pagesScannedPercent,
 } from "../utils/bookReadingProgress";
@@ -230,6 +233,7 @@ export function BookReportsScreen() {
     toggleBookRead,
     setBookInsightsSummary,
     clearBookInsightsSummary,
+    updateBookTotalPageCount,
   } = useScanContext();
   const [searchQuery, setSearchQuery] = useState("");
   const [listFilter, setListFilter] = useState<ListFilterId>("all");
@@ -255,6 +259,27 @@ export function BookReportsScreen() {
     setInsightsModalVisible(false);
     insightsSwipeRef.current?.close();
   }, [bookId]);
+
+  useEffect(() => {
+    if (!book || book.totalPageCount != null || (book.chapterRanges?.length ?? 0) > 0) return;
+    const controller = new AbortController();
+    void fetchBookPageCountFromApi(
+      { isbn: book.isbn, title: book.title, author: book.author },
+      controller.signal
+    ).then((pages) => {
+      if (controller.signal.aborted || pages == null) return;
+      updateBookTotalPageCount(book.id, pages);
+    });
+    return () => controller.abort();
+  }, [
+    book?.id,
+    book?.isbn,
+    book?.title,
+    book?.author,
+    book?.totalPageCount,
+    book?.chapterRanges,
+    updateBookTotalPageCount,
+  ]);
 
   const closeOtherReportSwipes = (exceptId: string) => {
     Object.entries(reportSwipeRefs.current).forEach(([id, ref]) => {
@@ -379,7 +404,7 @@ export function BookReportsScreen() {
 
   const coverageRange = useMemo(() => (book ? getCoveragePageRange(reports) : null), [book, reports]);
   const coveragePct = useMemo(() => (book ? pagesScannedPercent(book, reports) : 0), [book, reports]);
-  const pagesReadCount = useMemo(() => countDistinctNumericPages(reports), [reports]);
+  const pagesReadCount = useMemo(() => maxScannedPageNumber(reports), [reports]);
   const chaptersCount = useMemo(() => (book ? countChaptersForBook(book, reports) : 0), [book, reports]);
 
   const headerMetaLine = useMemo(() => {
@@ -392,8 +417,12 @@ export function BookReportsScreen() {
     if (coverageRange) {
       return `Coverage · pp. ${coverageRange.min}–${coverageRange.max}`;
     }
+    const total = book ? estimateBookPageTotal(book) : null;
+    if (total) {
+      return `Coverage · ${total} pages total`;
+    }
     return "Coverage · add page numbers on scans";
-  }, [coverageRange]);
+  }, [coverageRange, book]);
 
   const reportPillNumber = useCallback(
     (reportId: string) => {
@@ -728,14 +757,27 @@ export function BookReportsScreen() {
       <ScrollView
         ref={bookReportsScrollRef}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.scrollContent,
-          styles.scrollContentMain,
-          showListEmpty && styles.scrollContentEmpty,
-        ]}
+        contentContainerStyle={[styles.scrollContent, styles.scrollContentMain]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.detailHeaderRow}>
+          <TouchableOpacity
+            style={[
+              styles.detailIconCircle,
+              styles.detailBackBtn,
+              { backgroundColor: bd.circleBg, borderColor: bd.circleBorder },
+            ]}
+            onPress={() => {
+              hapticLight();
+              navigation.goBack();
+            }}
+            activeOpacity={0.82}
+            hitSlop={4}
+            accessibilityRole="button"
+            accessibilityLabel="Back to library"
+          >
+            <Ionicons name="chevron-back" size={18} color={bd.circleIcon} />
+          </TouchableOpacity>
           <View style={styles.detailHeaderTextCol}>
             <Text style={[styles.detailBookTitle, { color: bd.title }]} numberOfLines={3}>
               {book ? book.title : "Book Reports"}
@@ -1140,7 +1182,11 @@ const styles = StyleSheet.create({
   detailHeaderRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 12,
+    gap: 10,
+  },
+  detailBackBtn: {
+    marginTop: 2,
+    flexShrink: 0,
   },
   detailHeaderTextCol: {
     flex: 1,
@@ -1148,8 +1194,8 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   detailBookTitle: {
-    fontSize: 24,
-    lineHeight: 31,
+    fontSize: 21,
+    lineHeight: 27,
     fontFamily: FONT_CANELA_TEXT_BOLD,
     fontWeight: "400",
   },
@@ -1375,10 +1421,6 @@ const styles = StyleSheet.create({
     gap: 14,
     flexGrow: 1,
   },
-  scrollContentEmpty: {
-    flexGrow: 1,
-    justifyContent: "center",
-  },
   headerTitleDark: {
     color: darkColors.textPrimary,
   },
@@ -1598,8 +1640,9 @@ const styles = StyleSheet.create({
   },
   emptyWrap: {
     alignItems: "center",
-    justifyContent: "center",
     gap: 8,
+    paddingTop: 28,
+    paddingBottom: 24,
   },
   emptyTitle: {
     color: "#334155",

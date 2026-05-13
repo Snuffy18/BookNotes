@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { View } from "react-native";
 import { loadScanLibrary, saveScanLibrary } from "../storage/scanLibraryStorage";
 import type {
   BookInsightsPayload,
@@ -10,6 +11,8 @@ import type {
   ScanItem,
 } from "../types/note";
 import { playSoundEffect } from "../utils/soundEffects";
+import { BookAddedToast } from "../components/BookAddedToast";
+import { BookDeletedToast } from "../components/BookDeletedToast";
 
 /**
  * Persists a full replace of book insights (no merge with the previous summary).
@@ -56,8 +59,16 @@ type ScanContextValue = {
   removeScan: (scanId: string) => void;
   removeBook: (bookId: string) => void;
   toggleBookRead: (bookId: string) => void;
-  addOrActivateBook: (book: { title: string; author: string; coverUri: string }) => void;
+  addOrActivateBook: (book: {
+    title: string;
+    author: string;
+    coverUri: string;
+    totalPageCount?: number;
+    isbn?: string;
+  }) => void;
   updateBookChapterRanges: (bookId: string, chapterRanges: ChapterRange[]) => void;
+  updateBookTotalPageCount: (bookId: string, totalPageCount: number) => void;
+  updateBookCoverUri: (bookId: string, coverUri: string) => void;
   setBookInsightsSummary: (
     bookId: string,
     summary: BookInsightsPayload & { updatedAt: string },
@@ -74,6 +85,8 @@ export function ScanProvider({ children }: { children: ReactNode }) {
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
   const [isCoverProcessing, setIsCoverProcessing] = useState(false);
   const [restoredFromStorage, setRestoredFromStorage] = useState(false);
+  const [bookAddedToastCount, setBookAddedToastCount] = useState(0);
+  const [bookDeletedToastCount, setBookDeletedToastCount] = useState(0);
 
   useEffect(() => {
     loadScanLibrary()
@@ -112,12 +125,16 @@ export function ScanProvider({ children }: { children: ReactNode }) {
 
   const removeScan = (scanId: string) => {
     setScans((current) => current.filter((s) => s.id !== scanId));
+    playSoundEffect("bookDeletedTrash");
+    setBookDeletedToastCount((c) => c + 1);
   };
 
   const removeBook = (bookId: string) => {
     setBooks((current) => current.filter((book) => book.id !== bookId));
     setScans((current) => current.filter((scan) => scan.bookId !== bookId));
     setActiveBookId((current) => (current === bookId ? null : current));
+    playSoundEffect("bookDeletedTrash");
+    setBookDeletedToastCount((c) => c + 1);
   };
 
   const toggleBookRead = (bookId: string) => {
@@ -138,6 +155,22 @@ export function ScanProvider({ children }: { children: ReactNode }) {
       current.map((book) => (book.id === bookId ? { ...book, chapterRanges } : book))
     );
   };
+
+  const updateBookTotalPageCount = useCallback((bookId: string, totalPageCount: number) => {
+    const n = Math.round(totalPageCount);
+    if (!Number.isFinite(n) || n <= 0) return;
+    setBooks((current) =>
+      current.map((book) => (book.id === bookId ? { ...book, totalPageCount: n } : book))
+    );
+  }, []);
+
+  const updateBookCoverUri = useCallback((bookId: string, coverUri: string) => {
+    const uri = coverUri.trim();
+    if (!uri) return;
+    setBooks((current) =>
+      current.map((book) => (book.id === bookId ? { ...book, coverUri: uri } : book))
+    );
+  }, []);
 
   const setBookInsightsSummary = (
     bookId: string,
@@ -163,16 +196,35 @@ export function ScanProvider({ children }: { children: ReactNode }) {
     title,
     author,
     coverUri,
+    totalPageCount,
+    isbn,
   }: {
     title: string;
     author: string;
     coverUri: string;
+    totalPageCount?: number;
+    isbn?: string;
   }) => {
     const normalizedTitle = title.trim().toLowerCase();
+    const normalizedIsbn = isbn?.trim() ? isbn.replace(/[^0-9X]/gi, "").toUpperCase() : undefined;
     const existing = books.find((book) => book.title.trim().toLowerCase() === normalizedTitle);
     if (existing) {
       if (!existing.isRead) {
         setActiveBookId(existing.id);
+      }
+      const needsPages = existing.totalPageCount == null && totalPageCount != null && totalPageCount > 0;
+      const needsIsbn = !existing.isbn && normalizedIsbn;
+      if (needsPages || needsIsbn) {
+        setBooks((current) =>
+          current.map((book) => {
+            if (book.id !== existing.id) return book;
+            return {
+              ...book,
+              ...(needsIsbn ? { isbn: normalizedIsbn } : {}),
+              ...(needsPages ? { totalPageCount: Math.round(totalPageCount!) } : {}),
+            };
+          })
+        );
       }
       return;
     }
@@ -183,10 +235,13 @@ export function ScanProvider({ children }: { children: ReactNode }) {
       author: author.trim(),
       coverUri,
       createdAt: new Date().toISOString(),
+      ...(totalPageCount != null && totalPageCount > 0 ? { totalPageCount: Math.round(totalPageCount) } : {}),
+      ...(normalizedIsbn ? { isbn: normalizedIsbn } : {}),
     };
     setBooks((current) => [nextBook, ...current]);
     setActiveBookId(nextBook.id);
     playSoundEffect("bookAddedSuccessful");
+    setBookAddedToastCount((c) => c + 1);
   };
 
   const activeBook = books.find((book) => book.id === activeBookId) ?? null;
@@ -214,14 +269,24 @@ export function ScanProvider({ children }: { children: ReactNode }) {
       toggleBookRead,
       addOrActivateBook,
       updateBookChapterRanges,
+      updateBookTotalPageCount,
+      updateBookCoverUri,
       setBookInsightsSummary,
       clearBookInsightsSummary,
       reports,
     }),
-    [scans, books, activeBookId, activeBook, isCoverProcessing, reports]
+    [scans, books, activeBookId, activeBook, isCoverProcessing, reports, updateBookTotalPageCount, updateBookCoverUri]
   );
 
-  return <ScanContext.Provider value={value}>{children}</ScanContext.Provider>;
+  return (
+    <ScanContext.Provider value={value}>
+      <View style={{ flex: 1 }}>
+        {children}
+        <BookAddedToast showCount={bookAddedToastCount} />
+        <BookDeletedToast showCount={bookDeletedToastCount} />
+      </View>
+    </ScanContext.Provider>
+  );
 }
 
 export function useScanContext() {

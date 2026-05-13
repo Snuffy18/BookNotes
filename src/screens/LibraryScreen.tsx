@@ -1,40 +1,42 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
+import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   Animated,
-  ActivityIndicator,
-  BackHandler,
   Easing,
   GestureResponderEvent,
   Image,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useAddBookSheet } from "../context/AddBookSheetContext";
+import { useBarcodeScanBookSheet } from "../context/BarcodeScanBookSheetContext";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { useScanContext } from "../context/ScanContext";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING } from "../navigation/rootTabLayout";
 import type { LibraryStackParamList } from "../navigation/types";
-import { extractBookMetadataFromImage } from "../services/ai";
 import type { BookItem, ScanItem } from "../types/note";
+import { LibraryEmptyState } from "../components/LibraryEmptyState";
 import { darkColors, lightColors } from "../theme/colors";
 import { FONT_CANELA_TEXT_BOLD } from "../theme/fonts";
 import { pagesScannedPercent } from "../utils/bookReadingProgress";
 import { stripMarkdownBoldMarkers } from "../utils/stripMarkdownBoldMarkers";
 
 type FilterId = "all" | "recent" | "mostReports";
+
+function hasBookCover(book: BookItem): boolean {
+  return Boolean(book.coverUri?.trim());
+}
 
 function formatRelativeScanTime(iso: string): string {
   const d = new Date(iso);
@@ -65,16 +67,15 @@ function snippetFromLatestScan(latest: ScanItem | undefined): string {
 
 export function LibraryScreen() {
   const { darkMode, accentColor, accentGradient } = useAppSettings();
-  const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
-  const { books, scans, activeBook, addOrActivateBook, isCoverProcessing, setIsCoverProcessing } = useScanContext();
+  const { books, scans, isCoverProcessing } = useScanContext();
+  const { closeAddBookSheet, openAddBookSheet, pickBookCoverFromGallery, isOpen: isAddBookSheetOpen } =
+    useAddBookSheet();
+  const {
+    openBarcodeScanBookSheet,
+    closeBarcodeScanBookSheet,
+    isOpen: isBarcodeScanBookSheetOpen,
+  } = useBarcodeScanBookSheet();
   const navigation = useNavigation<NativeStackNavigationProp<LibraryStackParamList, "LibraryHome">>();
-  const [bookTitle, setBookTitle] = useState(activeBook?.title ?? "");
-  const [bookAuthor, setBookAuthor] = useState(activeBook?.author ?? "");
-  const [bookCoverUri, setBookCoverUri] = useState<string | null>(activeBook?.coverUri ?? null);
-  const [extracting, setExtracting] = useState(false);
-  const [extractError, setExtractError] = useState<string | null>(null);
-  const [showBookCapture, setShowBookCapture] = useState(false);
   const [showGalleryDropTarget, setShowGalleryDropTarget] = useState(false);
   const [isDraggingTowardGallery, setIsDraggingTowardGallery] = useState(false);
   const [isGalleryDropArmed, setIsGalleryDropArmed] = useState(false);
@@ -90,37 +91,27 @@ export function LibraryScreen() {
   const shimmerX = useRef(new Animated.Value(-1)).current;
 
   useEffect(() => {
-    if (showBookCapture) return;
-    setBookTitle(activeBook?.title ?? "");
-    setBookAuthor(activeBook?.author ?? "");
-    setBookCoverUri(activeBook?.coverUri ?? null);
-  }, [activeBook, books.length, showBookCapture]);
-
-  useEffect(() => {
-    const unsub = navigation.addListener("blur", () => {
-      if (Date.now() - bookCaptureOpenedAtRef.current < 450) return;
-      setShowBookCapture(false);
-    });
-    return unsub;
-  }, [navigation]);
-
-  useEffect(() => {
-    if (!showBookCapture || Platform.OS !== "android") return;
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (extracting || isCoverProcessing) return false;
-      setShowBookCapture(false);
-      return true;
-    });
-    return () => sub.remove();
-  }, [showBookCapture, extracting, isCoverProcessing]);
-
-  useEffect(() => {
     return () => {
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
       }
     };
   }, []);
+
+  useEffect(() => {
+    const unsub = navigation.addListener("blur", () => {
+      if (Date.now() - bookCaptureOpenedAtRef.current < 450) return;
+      if (isAddBookSheetOpen) closeAddBookSheet();
+      if (isBarcodeScanBookSheetOpen) closeBarcodeScanBookSheet();
+    });
+    return unsub;
+  }, [
+    navigation,
+    closeAddBookSheet,
+    closeBarcodeScanBookSheet,
+    isAddBookSheetOpen,
+    isBarcodeScanBookSheetOpen,
+  ]);
 
   useEffect(() => {
     if (!isCoverProcessing) {
@@ -184,68 +175,42 @@ export function LibraryScreen() {
     return rows;
   }, [booksWithMeta, books, searchQuery, filter]);
 
-  const processBookCover = async (coverUri: string) => {
-    setBookCoverUri(coverUri);
-    setExtractError(null);
-    setIsCoverProcessing(true);
-    setExtracting(true);
-    try {
-      const metadata = await extractBookMetadataFromImage(coverUri);
-      setBookTitle(metadata.title);
-      setBookAuthor(metadata.author);
-      addOrActivateBook({
-        title: metadata.title,
-        author: metadata.author,
-        coverUri,
-      });
-      setShowBookCapture(false);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to extract title and author.";
-      setExtractError(message);
-    } finally {
-      setIsCoverProcessing(false);
-      setExtracting(false);
-    }
-  };
-
-  const onCaptureBook = async () => {
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      quality: 0.9,
-    });
-    if (result.canceled) return;
-
-    await processBookCover(result.assets[0].uri);
-  };
-
-  const onPickBookFromGallery = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      quality: 0.9,
-    });
-    if (result.canceled) return;
-
-    await processBookCover(result.assets[0].uri);
-  };
-
   const onAddBookPress = () => {
     if (books.length === 0 && skipNextAddPress) {
       setSkipNextAddPress(false);
       return;
     }
-    setBookTitle("");
-    setBookAuthor("");
-    setBookCoverUri(null);
-    setExtractError(null);
     bookCaptureOpenedAtRef.current = Date.now();
-    setShowBookCapture(true);
+    openBarcodeScanBookSheet();
   };
+
+  const onTakePhotoFromEmpty = () => {
+    bookCaptureOpenedAtRef.current = Date.now();
+    openAddBookSheet();
+  };
+
+  const isLibraryEmpty = books.length === 0;
+
+  const captureCoverForBook = useCallback(
+    async (book: BookItem) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) return;
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 0.9,
+      });
+      if (result.canceled || !result.assets[0]?.uri) return;
+
+      navigation.navigate("CropPhoto", {
+        imageUri: result.assets[0].uri,
+        purpose: "libraryBookCover",
+        bookId: book.id,
+      });
+    },
+    [navigation]
+  );
 
   const onAddBookLongPress = () => {
     if (books.length !== 0) return;
@@ -293,20 +258,101 @@ export function LibraryScreen() {
     if (shouldOpenGallery) {
       galleryTriggerRef.current = true;
       setSkipNextAddPress(true);
-      void onPickBookFromGallery();
+      void pickBookCoverFromGallery();
     }
   };
 
   const t = darkMode ? theme.dark : theme.light;
 
-  const dismissBookCapture = () => {
-    if (extracting || isCoverProcessing) return;
-    setShowBookCapture(false);
-  };
-
   return (
     <View style={styles.libraryRoot}>
-    <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
+    <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark, isLibraryEmpty && styles.screenEmpty]}>
+      {isLibraryEmpty ? (
+        <View style={styles.emptyPage}>
+          <View style={styles.emptyTopBlock}>
+            <View style={styles.headerRow}>
+              <Text
+                style={[
+                  styles.libraryTitle,
+                  styles.libraryTitleEmpty,
+                  { color: darkMode ? "#ffffff" : lightColors.textPrimary },
+                ]}
+                numberOfLines={1}
+              >
+                Library
+              </Text>
+              <Pressable
+                style={[styles.headerAddButton, { backgroundColor: t.addButtonBg }]}
+                onPress={onAddBookPress}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Add book"
+              >
+                <Ionicons name="add" size={18} color="#111" />
+              </Pressable>
+            </View>
+
+            <View
+              style={[
+                styles.searchBar,
+                styles.searchBarInactive,
+                { backgroundColor: t.searchBg, borderColor: t.searchBorder },
+              ]}
+              pointerEvents="none"
+            >
+              <Ionicons name="search-outline" size={15} color={t.searchIcon} style={styles.searchIcon} />
+              <Text style={[styles.searchPlaceholderInactive, { color: t.searchPlaceholder }]}>
+                Search books...
+              </Text>
+            </View>
+          </View>
+
+          {isCoverProcessing && !isAddBookSheetOpen ? (
+            <View style={styles.loadingSkeletonBlock}>
+              <View style={[styles.loadingSkeletonCard, darkMode && styles.loadingSkeletonCardDark]}>
+                <View style={styles.loadingSkeletonCover} />
+                <View style={styles.loadingSkeletonMeta}>
+                  <View style={styles.loadingSkeletonLineLg} />
+                  <View style={styles.loadingSkeletonLineMd} />
+                  <View style={styles.loadingSkeletonLineSm} />
+                  <View style={styles.loadingSkeletonLineSm} />
+                </View>
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.loadingSkeletonShimmer,
+                    {
+                      transform: [
+                        {
+                          translateX: shimmerX.interpolate({
+                            inputRange: [-1, 1],
+                            outputRange: [-220, 220],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                >
+                  <LinearGradient
+                    colors={["transparent", "rgba(255,255,255,0.32)", "transparent"]}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={styles.loadingSkeletonShimmerInner}
+                  />
+                </Animated.View>
+              </View>
+              <Text style={[styles.loadingSkeletonCaption, darkMode && styles.loadingSkeletonCaptionDark]}>
+                Reading cover with AI…
+              </Text>
+            </View>
+          ) : (
+            <LibraryEmptyState
+              onScanBarcode={onAddBookPress}
+              onTakePhoto={onTakePhotoFromEmpty}
+            />
+          )}
+        </View>
+      ) : (
       <ScrollView
         style={styles.scrollView}
         keyboardShouldPersistTaps="handled"
@@ -409,11 +455,7 @@ export function LibraryScreen() {
           </View>
         </View>
 
-        {extractError ? (
-          <Text style={[styles.errorText, darkMode && styles.errorTextDark]}>{extractError}</Text>
-        ) : null}
-
-        {isCoverProcessing && !showBookCapture ? (
+        {isCoverProcessing && !isAddBookSheetOpen ? (
           <View style={styles.loadingSkeletonBlock}>
             <View style={[styles.loadingSkeletonCard, darkMode && styles.loadingSkeletonCardDark]}>
               <View style={styles.loadingSkeletonCover} />
@@ -453,22 +495,7 @@ export function LibraryScreen() {
           </View>
         ) : null}
 
-        {books.length === 0 ? (
-          <View
-            style={[
-              styles.emptyStateFill,
-              { minHeight: Math.max(200, windowHeight * 0.32) },
-            ]}
-          >
-            <View style={styles.emptyStateInner}>
-              <Ionicons name="library-outline" size={42} color={accentColor} />
-              <Text style={[styles.emptyTitle, darkMode && styles.emptyTitleDark]}>Add your first book</Text>
-              <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>
-                Tap + in the header, then scan a cover to extract the title and author. Long-press + for gallery.
-              </Text>
-            </View>
-          </View>
-        ) : filteredBooks.length === 0 ? (
+        {books.length === 0 ? null : filteredBooks.length === 0 ? (
           <View style={[styles.emptyStateFill, { minHeight: 160 }]}>
             <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>No matching books.</Text>
           </View>
@@ -494,10 +521,17 @@ export function LibraryScreen() {
                 >
                   <View style={styles.bookCardTop}>
                     <View style={[styles.coverFrame, { backgroundColor: t.coverPlaceholderBg }]}>
-                      {book.coverUri ? (
+                      {hasBookCover(book) ? (
                         <Image source={{ uri: book.coverUri }} style={styles.coverImage} />
                       ) : (
-                        <Ionicons name="book-outline" size={20} color={t.coverIconMuted} />
+                        <Pressable
+                          style={styles.coverPlaceholderPress}
+                          onPress={() => void captureCoverForBook(book)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Add cover photo for ${book.title}`}
+                        >
+                          <Ionicons name="camera-outline" size={20} color={t.coverIconMuted} />
+                        </Pressable>
                       )}
                     </View>
                     <View style={styles.bookInfo}>
@@ -556,123 +590,8 @@ export function LibraryScreen() {
           </View>
         )}
       </ScrollView>
+      )}
     </SafeAreaView>
-
-      <Modal
-        visible={showBookCapture}
-        transparent
-        animationType="slide"
-        onRequestClose={dismissBookCapture}
-      >
-        <View style={styles.bookCaptureModalRoot}>
-          <Pressable
-            style={styles.bookCaptureDismissHit}
-            onPress={dismissBookCapture}
-            accessibilityRole="button"
-            accessibilityLabel="Close add book"
-          />
-          <View
-            style={[
-              styles.bookCaptureSheet,
-              darkMode && styles.bookCaptureSheetDark,
-              { paddingBottom: Math.max(insets.bottom, 12) + 16 },
-            ]}
-          >
-            <View style={[styles.bookCaptureHandle, darkMode && styles.bookCaptureHandleDark]} />
-            <View style={styles.bookCaptureSheetHeader}>
-              <Text style={[styles.bookCaptureSheetTitle, darkMode && styles.bookCaptureSheetTitleDark]}>
-                Add book
-              </Text>
-              <View style={styles.bookCaptureSheetHeaderActions}>
-                <Pressable
-                  onPress={() => {
-                    setBookTitle("");
-                    setBookAuthor("");
-                    setBookCoverUri(null);
-                    setExtractError(null);
-                  }}
-                  hitSlop={10}
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear draft"
-                >
-                  <Ionicons name="trash-outline" size={20} color="#dc2626" />
-                </Pressable>
-                <Pressable onPress={dismissBookCapture} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
-                  <Ionicons name="close" size={26} color={darkMode ? darkColors.textSecondary : "#64748b"} />
-                </Pressable>
-              </View>
-            </View>
-
-            {extractError ? (
-              <Text style={[styles.sheetErrorText, darkMode && styles.sheetErrorTextDark]}>{extractError}</Text>
-            ) : null}
-
-            <TouchableOpacity
-              style={[styles.sheetCoverCard, darkMode && styles.sheetCoverCardDark]}
-              onPress={onCaptureBook}
-              activeOpacity={0.85}
-              disabled={extracting}
-            >
-              {bookCoverUri ? (
-                <Image source={{ uri: bookCoverUri }} style={styles.sheetCoverImage} resizeMode="cover" />
-              ) : (
-                <View style={styles.sheetCoverPlaceholder}>
-                  <Ionicons name="camera-outline" size={40} color={darkMode ? "rgba(255,255,255,0.35)" : "#94a3b8"} />
-                  <Text style={[styles.sheetCoverPlaceholderTitle, darkMode && styles.sheetCoverPlaceholderTitleDark]}>
-                    Book cover
-                  </Text>
-                  <Text style={[styles.sheetCoverPlaceholderHint, darkMode && styles.sheetCoverPlaceholderHintDark]}>
-                    Tap to take a photo
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.sheetPrimaryButton, { backgroundColor: accentColor }]}
-              onPress={onCaptureBook}
-              activeOpacity={0.88}
-              disabled={extracting}
-            >
-              {extracting ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <>
-                  <Ionicons name="camera" size={20} color="#ffffff" />
-                  <Text style={styles.sheetPrimaryButtonLabel}>Take photo</Text>
-                </>
-              )}
-            </TouchableOpacity>
-
-            <Pressable
-              onPress={() => void onPickBookFromGallery()}
-              disabled={extracting}
-              style={({ pressed }) => [styles.sheetSecondaryPress, pressed && styles.sheetSecondaryPressPressed]}
-            >
-              <Text style={[styles.sheetSecondaryLabel, darkMode && styles.sheetSecondaryLabelDark]}>
-                Choose from gallery
-              </Text>
-            </Pressable>
-
-            {!extracting ? (
-              <View style={styles.sheetMetaBlock}>
-                <Text style={[styles.aiLabel, darkMode && styles.aiLabelDark]}>Title</Text>
-                <Text style={[styles.aiValue, darkMode && styles.aiValueDark]} numberOfLines={2}>
-                  {bookTitle || "—"}
-                </Text>
-                <Text style={[styles.aiLabel, darkMode && styles.aiLabelDark, styles.sheetMetaGap]}>Author</Text>
-                <Text style={[styles.aiValue, darkMode && styles.aiValueDark]} numberOfLines={2}>
-                  {bookAuthor || "—"}
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.sheetExtractingRow}>
-                <Text style={[styles.loadingText, darkMode && styles.loadingTextDark]}>Reading cover with AI…</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -747,6 +666,16 @@ const styles = StyleSheet.create({
   screenDark: {
     backgroundColor: darkColors.background,
   },
+  screenEmpty: {
+    paddingHorizontal: 20,
+  },
+  emptyPage: {
+    flex: 1,
+  },
+  emptyTopBlock: {
+    gap: 16,
+    paddingTop: 4,
+  },
   scrollView: {
     flex: 1,
   },
@@ -772,6 +701,11 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     fontFamily: FONT_CANELA_TEXT_BOLD,
     marginRight: 12,
+  },
+  libraryTitleEmpty: {
+    fontSize: 22,
+    fontWeight: "600",
+    fontFamily: undefined,
   },
   headerAddButton: {
     width: 32,
@@ -810,6 +744,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     padding: 0,
     margin: 0,
+  },
+  searchBarInactive: {
+    opacity: 0.4,
+  },
+  searchPlaceholderInactive: {
+    flex: 1,
+    fontSize: 13,
   },
   pillsRow: {
     flexDirection: "row",
@@ -853,6 +794,12 @@ const styles = StyleSheet.create({
   coverImage: {
     width: "100%",
     height: "100%",
+  },
+  coverPlaceholderPress: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
   },
   bookInfo: {
     flex: 1,
@@ -923,163 +870,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     minWidth: 0,
   },
-  bookCaptureModalRoot: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  bookCaptureDismissHit: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  bookCaptureSheet: {
-    width: "100%",
-    backgroundColor: "#ffffff",
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(0,0,0,0.06)",
-    elevation: 28,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-  },
-  bookCaptureSheetDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
-  },
-  bookCaptureHandle: {
-    alignSelf: "center",
-    width: 40,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: "rgba(148,163,184,0.55)",
-    marginBottom: 10,
-  },
-  bookCaptureHandleDark: {
-    backgroundColor: "rgba(255,255,255,0.2)",
-  },
-  bookCaptureSheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 4,
-  },
-  bookCaptureSheetTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#0f172a",
-    letterSpacing: -0.3,
-  },
-  bookCaptureSheetTitleDark: {
-    color: darkColors.textPrimary,
-  },
-  bookCaptureSheetHeaderActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-  sheetErrorText: {
-    marginBottom: 12,
-    color: "#991b1b",
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18,
-  },
-  sheetErrorTextDark: {
-    color: "#fecaca",
-  },
-  sheetCoverCard: {
-    width: "100%",
-    minHeight: 208,
-    maxHeight: 280,
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#f1f5f9",
-  },
-  sheetCoverCardDark: {
-    borderColor: darkColors.border,
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
-  sheetCoverImage: {
-    width: "100%",
-    height: 240,
-  },
-  sheetCoverPlaceholder: {
-    flexDirection: "column",
-    minHeight: 208,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 28,
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  sheetCoverPlaceholderTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#334155",
-    marginTop: 4,
-  },
-  sheetCoverPlaceholderTitleDark: {
-    color: darkColors.textPrimary,
-  },
-  sheetCoverPlaceholderHint: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#64748b",
-  },
-  sheetCoverPlaceholderHintDark: {
-    color: darkColors.textSecondary,
-  },
-  sheetPrimaryButton: {
-    marginTop: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingVertical: 15,
-    borderRadius: 14,
-  },
-  sheetPrimaryButtonLabel: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  sheetSecondaryPress: {
-    marginTop: 6,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  sheetSecondaryPressPressed: {
-    opacity: 0.65,
-  },
-  sheetSecondaryLabel: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#2563eb",
-  },
-  sheetSecondaryLabelDark: {
-    color: "#93c5fd",
-  },
-  sheetMetaBlock: {
-    marginTop: 18,
-    paddingTop: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(148,163,184,0.35)",
-  },
-  sheetMetaGap: {
-    marginTop: 10,
-  },
-  sheetExtractingRow: {
-    marginTop: 14,
-    alignItems: "center",
-  },
   loadingSkeletonBlock: {
     gap: 8,
     alignSelf: "stretch",
@@ -1145,44 +935,6 @@ const styles = StyleSheet.create({
   },
   loadingSkeletonShimmerInner: {
     flex: 1,
-  },
-  aiLabel: {
-    color: "#64748b",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  aiLabelDark: {
-    color: darkColors.textSecondary,
-  },
-  aiValue: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  aiValueDark: {
-    color: darkColors.textPrimary,
-  },
-  loadingText: {
-    color: "#334155",
-    fontWeight: "600",
-    fontSize: 13,
-  },
-  loadingTextDark: {
-    color: darkColors.textSecondary,
-  },
-  errorText: {
-    color: "#991b1b",
-    backgroundColor: "#fee2e2",
-    borderColor: "#fecaca",
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  errorTextDark: {
-    backgroundColor: "#7f1d1d",
-    borderColor: "#991b1b",
-    color: "#fee2e2",
   },
   emptyText: {
     color: "#64748b",

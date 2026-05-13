@@ -127,12 +127,20 @@ export async function loadScanLibrary(): Promise<ScanLibrarySnapshot> {
     const books = Array.isArray(p.books)
       ? p.books.filter(isBookLike).map((book) => {
           const b = book as Record<string, unknown>;
-          const { insightsSummary: rawInsights, ...rest } = b;
+          const { insightsSummary: rawInsights, totalPageCount: _rawTpc, ...rest } = b;
           const chapterRanges = sanitizeChapterRanges(b.chapterRanges);
+          const rawTpc = b.totalPageCount;
+          const totalPageCount =
+            typeof rawTpc === "number" && Number.isFinite(rawTpc) && rawTpc > 0
+              ? Math.round(rawTpc)
+              : undefined;
           const readAtRaw = b.readAt;
           const readAt = typeof readAtRaw === "string" ? readAtRaw : undefined;
           const isReadRaw = b.isRead;
           const isRead = typeof isReadRaw === "boolean" ? isReadRaw : Boolean(readAt);
+          const isbnRaw = b.isbn;
+          const isbn =
+            typeof isbnRaw === "string" && isbnRaw.trim().length > 0 ? isbnRaw.trim() : undefined;
           const insightsSummary = sanitizeInsightsSummary(rawInsights);
           return {
             ...rest,
@@ -140,6 +148,8 @@ export async function loadScanLibrary(): Promise<ScanLibrarySnapshot> {
             ...(readAt ? { readAt } : {}),
             ...(chapterRanges ? { chapterRanges } : {}),
             ...(insightsSummary ? { insightsSummary } : {}),
+            ...(totalPageCount !== undefined ? { totalPageCount } : {}),
+            ...(isbn ? { isbn } : {}),
           } as BookItem;
         })
       : [];

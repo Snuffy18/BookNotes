@@ -28,9 +28,16 @@ const SOUND_FILES = {
   summarizeAiSuccess: require("../../assets/sound-effects/summarize-ai-success.wav"),
   pdfExtracted: require("../../assets/sound-effects/pdf-extracted.wav"),
   aiExtractionCompleted: require("../../assets/sound-effects/ai-extraction-completed.wav"),
+  bookDeletedTrash: require("../../assets/sound-effects/trash.wav"),
 } as const;
 
 export type SoundEffectId = keyof typeof SOUND_FILES;
+
+const SOUND_VOLUMES: Partial<Record<SoundEffectId, number>> = {
+  bookAddedSuccessful: 0.1,
+  bookDeletedTrash: 0.1,
+  takePhoto: 0.1,
+};
 
 export function playSoundEffect(id: SoundEffectId): void {
   if (!soundEffectsPlaybackEnabled) return;
@@ -39,7 +46,7 @@ export function playSoundEffect(id: SoundEffectId): void {
       await ensureAudioMode();
       const { sound } = await Audio.Sound.createAsync(SOUND_FILES[id], {
         shouldPlay: true,
-        volume: 1,
+        volume: SOUND_VOLUMES[id] ?? 1,
       });
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {

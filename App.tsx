@@ -3,6 +3,8 @@ import { StatusBar } from "expo-status-bar";
 import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AddBookSheetProvider } from "./src/context/AddBookSheetContext";
+import { BarcodeScanBookSheetProvider } from "./src/context/BarcodeScanBookSheetContext";
 import { AppSettingsProvider, useAppSettings } from "./src/context/AppSettingsContext";
 import { ReadingSessionProvider } from "./src/context/ReadingSessionContext";
 import { ScanProvider } from "./src/context/ScanContext";
@@ -64,11 +66,15 @@ export default function App() {
           <ExportPreferencesProvider>
             <StudyPreferencesProvider>
               <ScanProvider>
-                <ReadingSessionProvider>
-                  <StreakProvider>
-                    <AppContent />
-                  </StreakProvider>
-                </ReadingSessionProvider>
+                <BarcodeScanBookSheetProvider>
+                  <AddBookSheetProvider>
+                    <ReadingSessionProvider>
+                      <StreakProvider>
+                        <AppContent />
+                      </StreakProvider>
+                    </ReadingSessionProvider>
+                  </AddBookSheetProvider>
+                </BarcodeScanBookSheetProvider>
               </ScanProvider>
             </StudyPreferencesProvider>
           </ExportPreferencesProvider>
