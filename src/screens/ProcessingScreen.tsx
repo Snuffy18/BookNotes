@@ -22,6 +22,7 @@ import { shareSingleReportPdf } from "../utils/bookReportsPdf";
 import type { ExistingEntitySeed } from "../study/buildEntityExtractionPrompt";
 import { detectReinforcedIdeas } from "../utils/detectReinforcedIdeas";
 import { playSoundEffect } from "../utils/soundEffects";
+import { toProcessingUserMessage } from "../utils/processingErrorMessage";
 
 type Props = NativeStackScreenProps<ScanStackParamList, "Processing">;
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
@@ -482,8 +483,7 @@ export function ProcessingScreen({ navigation, route }: Props) {
         setApiSuccess(true);
       } catch (e) {
         if (!mounted) return;
-        const message = e instanceof Error ? e.message : "Failed to generate notes.";
-        setError(message);
+        setError(toProcessingUserMessage(e));
       }
     };
 
@@ -592,6 +592,40 @@ export function ProcessingScreen({ navigation, route }: Props) {
 
   const stepIndexShown = activeIndex + 1;
 
+  const onRetryProcessing = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const p = route.params;
+    navigation.replace("Processing", {
+      imageUri: p.imageUri,
+      ...(p.page ? { page: p.page } : {}),
+      ...(p.chapter ? { chapter: p.chapter } : {}),
+      ...(p.extractionMode ? { extractionMode: p.extractionMode } : {}),
+      ...(p.extractionModes ? { extractionModes: p.extractionModes } : {}),
+      ...(p.rescanForScanId ? { rescanForScanId: p.rescanForScanId } : {}),
+      ...(p.studyPreferences ? { studyPreferences: p.studyPreferences } : {}),
+      ...(p.rescanReturnTab ? { rescanReturnTab: p.rescanReturnTab } : {}),
+    });
+  };
+
+  const onTakePhotoAgain = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: "ScanCamera" }],
+      })
+    );
+  };
+
+  const onCancelProcessing = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    if (route.params.rescanForScanId) {
+      navigation.goBack();
+      return;
+    }
+    onTakePhotoAgain();
+  };
+
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.screen}>
       <View style={styles.centered}>
@@ -633,25 +667,36 @@ export function ProcessingScreen({ navigation, route }: Props) {
       {error ? (
         <View style={styles.errorOverlay}>
           <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Couldn't analyze this page</Text>
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity
-              style={[styles.retryButton, { backgroundColor: accentColor }]}
-              onPress={() => {
-                const p = route.params;
-                navigation.replace("Processing", {
-                  imageUri: p.imageUri,
-                  ...(p.page ? { page: p.page } : {}),
-                  ...(p.chapter ? { chapter: p.chapter } : {}),
-                  ...(p.extractionMode ? { extractionMode: p.extractionMode } : {}),
-                  ...(p.extractionModes ? { extractionModes: p.extractionModes } : {}),
-                  ...(p.rescanForScanId ? { rescanForScanId: p.rescanForScanId } : {}),
-                  ...(p.studyPreferences ? { studyPreferences: p.studyPreferences } : {}),
-                  ...(p.rescanReturnTab ? { rescanReturnTab: p.rescanReturnTab } : {}),
-                });
-              }}
-            >
-              <Text style={styles.retryText}>Retry</Text>
-            </TouchableOpacity>
+            <View style={styles.errorActions}>
+              <TouchableOpacity
+                style={[styles.errorPrimaryBtn, { backgroundColor: accentColor }]}
+                onPress={onTakePhotoAgain}
+                accessibilityRole="button"
+                accessibilityLabel="Take photo again"
+              >
+                <Text style={styles.errorPrimaryBtnText}>Take photo again</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.errorSecondaryBtn}
+                onPress={onRetryProcessing}
+                accessibilityRole="button"
+                accessibilityLabel="Try again with same photo"
+              >
+                <Text style={styles.errorSecondaryBtnText}>Try again</Text>
+              </TouchableOpacity>
+              {route.params.rescanForScanId ? (
+                <TouchableOpacity
+                  style={styles.errorCancelLinkWrap}
+                  onPress={onCancelProcessing}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel"
+                >
+                  <Text style={styles.errorCancelLinkText}>Cancel</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
         </View>
       ) : null}
@@ -847,20 +892,56 @@ const styles = StyleSheet.create({
     borderColor: darkColors.dangerBorder,
     borderWidth: 1,
     borderRadius: 12,
-    padding: 12,
-    gap: 10,
+    padding: 16,
+    gap: 12,
+  },
+  errorTitle: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "600",
   },
   errorText: {
     color: darkColors.dangerText,
+    fontSize: 14,
+    lineHeight: 20,
   },
-  retryButton: {
-    alignSelf: "flex-start",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  errorActions: {
+    gap: 8,
+    marginTop: 4,
   },
-  retryText: {
-    color: "#fff",
+  errorPrimaryBtn: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: "center",
+  },
+  errorPrimaryBtnText: {
+    color: "#ffffff",
     fontWeight: "700",
+    fontSize: 15,
+  },
+  errorSecondaryBtn: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  errorSecondaryBtnText: {
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: "600",
+    fontSize: 15,
+  },
+  errorCancelLinkWrap: {
+    alignSelf: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  errorCancelLinkText: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 13,
+    fontWeight: "500",
   },
 });

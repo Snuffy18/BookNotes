@@ -40,6 +40,9 @@ export function CropPhotoScreen({ navigation, route }: Props) {
   const scanNavigation = navigation as NativeStackNavigationProp<ScanStackParamList, "CropPhoto">;
   const imageUri = route.params.imageUri;
   const purpose = route.params.purpose ?? "page";
+  const isCoverCrop = purpose === "bookCover" || purpose === "libraryBookCover";
+  const isStyledCrop =
+    isCoverCrop || purpose === "contents" || purpose === "page";
 
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [layout, setLayout] = useState<{ cw: number; ch: number }>({ cw: 0, ch: 0 });
@@ -191,6 +194,11 @@ export function CropPhotoScreen({ navigation, route }: Props) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     void continueAfterCrop(imageUri);
   }, [continueAfterCrop, imageUri]);
+
+  const onRetakePhoto = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    navigation.goBack();
+  }, [navigation]);
 
   const onApplyCrop = useCallback(async () => {
     if (!crop || !display) return;
@@ -351,9 +359,7 @@ export function CropPhotoScreen({ navigation, route }: Props) {
         <Text style={[styles.errorText, darkMode && styles.errorTextDark]}>{error}</Text>
         <TouchableOpacity style={[styles.secondaryBtn, darkMode && styles.secondaryBtnDark]} onPress={onUseFullPage}>
           <Text style={[styles.secondaryBtnText, darkMode && styles.secondaryBtnTextDark]}>
-            {purpose === "bookCover" || purpose === "libraryBookCover"
-              ? "Use full photo"
-              : "Skip cropping"}
+            Use full photo
           </Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -385,7 +391,7 @@ export function CropPhotoScreen({ navigation, route }: Props) {
               ? "Frame the title and author, or use the full photo. Then we read the cover with AI."
               : purpose === "contents"
                 ? "Frame the chapter list and page numbers, or use the full photo."
-                : "Drag the corners to keep only the text you want analyzed. Or use the full photo."
+                : "Frame the text you want analyzed, or use the full photo."
           }
           style={styles.titleHeaderText}
         />
@@ -458,7 +464,7 @@ export function CropPhotoScreen({ navigation, route }: Props) {
                       top: crop.top,
                       width: crop.right - crop.left,
                       height: crop.bottom - crop.top,
-                      borderColor: accentColor,
+                      borderColor: isStyledCrop ? "rgba(255,255,255,0.7)" : accentColor,
                       zIndex: 1,
                     },
                   ]}
@@ -475,7 +481,12 @@ export function CropPhotoScreen({ navigation, route }: Props) {
                     },
                   ]}
                 >
-                  <View style={[styles.handleDot, { borderColor: accentColor }]} />
+                  <View
+                    style={[
+                      styles.handleDot,
+                      { borderColor: isStyledCrop ? "rgba(255,255,255,0.85)" : accentColor },
+                    ]}
+                  />
                 </View>
                 <View
                   {...panTR.panHandlers}
@@ -488,7 +499,12 @@ export function CropPhotoScreen({ navigation, route }: Props) {
                     },
                   ]}
                 >
-                  <View style={[styles.handleDot, { borderColor: accentColor }]} />
+                  <View
+                    style={[
+                      styles.handleDot,
+                      { borderColor: isStyledCrop ? "rgba(255,255,255,0.85)" : accentColor },
+                    ]}
+                  />
                 </View>
                 <View
                   {...panBL.panHandlers}
@@ -501,7 +517,12 @@ export function CropPhotoScreen({ navigation, route }: Props) {
                     },
                   ]}
                 >
-                  <View style={[styles.handleDot, { borderColor: accentColor }]} />
+                  <View
+                    style={[
+                      styles.handleDot,
+                      { borderColor: isStyledCrop ? "rgba(255,255,255,0.85)" : accentColor },
+                    ]}
+                  />
                 </View>
                 <View
                   {...panBR.panHandlers}
@@ -514,7 +535,12 @@ export function CropPhotoScreen({ navigation, route }: Props) {
                     },
                   ]}
                 >
-                  <View style={[styles.handleDot, { borderColor: accentColor }]} />
+                  <View
+                    style={[
+                      styles.handleDot,
+                      { borderColor: isStyledCrop ? "rgba(255,255,255,0.85)" : accentColor },
+                    ]}
+                  />
                 </View>
               </View>
             </View>
@@ -524,16 +550,58 @@ export function CropPhotoScreen({ navigation, route }: Props) {
 
       {error ? <Text style={[styles.errorBanner, darkMode && styles.errorTextDark]}>{error}</Text> : null}
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, isStyledCrop && styles.footerCover]}>
         <TouchableOpacity
-          style={[styles.secondaryBtn, darkMode && styles.secondaryBtnDark]}
+          style={[
+            styles.secondaryBtn,
+            darkMode && styles.secondaryBtnDark,
+            isStyledCrop && styles.coverSecondaryBtn,
+          ]}
           onPress={onUseFullPage}
           disabled={busy}
           activeOpacity={0.85}
         >
-          <Text style={[styles.secondaryBtnText, darkMode && styles.secondaryBtnTextDark]}>Use full photo</Text>
+          <Text
+            style={[
+              styles.secondaryBtnText,
+              darkMode && styles.secondaryBtnTextDark,
+              isStyledCrop && styles.coverSecondaryBtnText,
+            ]}
+          >
+            Use full photo
+          </Text>
         </TouchableOpacity>
 
+        {isStyledCrop ? (
+          <TouchableOpacity
+            style={styles.retakeLinkWrap}
+            onPress={onRetakePhoto}
+            disabled={busy}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Retake photo"
+          >
+            <Text style={styles.retakeLinkText}>Retake photo</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {isStyledCrop ? (
+          <TouchableOpacity
+            style={[styles.coverPrimaryBtn, (busy || !crop) && styles.primaryBtnDisabled]}
+            onPress={onApplyCrop}
+            disabled={busy || !crop}
+            activeOpacity={0.9}
+          >
+            {busy ? (
+              <ActivityIndicator color="#111111" />
+            ) : (
+              <>
+                <Text style={styles.coverPrimaryBtnText}>Continue</Text>
+                <Ionicons name="arrow-forward" size={18} color="#111111" />
+              </>
+            )}
+          </TouchableOpacity>
+        ) : (
         <TouchableOpacity style={styles.primaryWrap} onPress={onApplyCrop} disabled={busy || !crop} activeOpacity={0.9}>
           <LinearGradient
             colors={accentGradient}
@@ -551,6 +619,7 @@ export function CropPhotoScreen({ navigation, route }: Props) {
             )}
           </LinearGradient>
         </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -600,6 +669,7 @@ const styles = StyleSheet.create({
   imageArea: {
     flex: 1,
     minHeight: 200,
+    marginBottom: 0,
   },
   imageCenter: {
     flex: 1,
@@ -661,6 +731,49 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingBottom: 18,
     paddingTop: 12,
+  },
+  footerCover: {
+    paddingTop: 16,
+    gap: 0,
+  },
+  coverSecondaryBtn: {
+    borderRadius: 16,
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.15)",
+    paddingVertical: 14,
+    backgroundColor: "transparent",
+  },
+  coverSecondaryBtnText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "rgba(255,255,255,0.55)",
+  },
+  retakeLinkWrap: {
+    marginVertical: 8,
+    alignSelf: "center",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  retakeLinkText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "rgba(255,255,255,0.25)",
+    textAlign: "center",
+  },
+  coverPrimaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  coverPrimaryBtnText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#111111",
   },
   secondaryBtn: {
     borderRadius: 12,

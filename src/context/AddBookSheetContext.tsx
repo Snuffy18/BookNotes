@@ -32,7 +32,6 @@ import { PageScanSheetFrameCorners } from "../components/PageScanSheetFrameCorne
 import { extractBookMetadataFromImage } from "../services/ai";
 import { addBookSheetActions } from "./addBookSheetActions";
 import { CAMERA_PICTURE_OPTIONS } from "../utils/cameraCapture";
-import { useBarcodeScanBookSheet } from "./BarcodeScanBookSheetContext";
 import { useScanContext } from "./ScanContext";
 
 type AddBookSheetContextValue = {
@@ -50,7 +49,6 @@ export function AddBookSheetProvider({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { addOrActivateBook, isCoverProcessing, setIsCoverProcessing } = useScanContext();
-  const { openBarcodeScanBookSheet } = useBarcodeScanBookSheet();
   const [permission, requestPermission] = useCameraPermissions();
 
   const addBookSheetHideY = useMemo(() => Math.round(windowHeight * 0.55) + 80, [windowHeight]);
@@ -381,20 +379,8 @@ export function AddBookSheetProvider({ children }: { children: ReactNode }) {
                   (isExtracting || isGalleryOpening) && styles.addBookGalleryLinkTextDisabled,
                 ]}
               >
-                {isGalleryOpening ? "Opening gallery…" : "or choose from gallery"}
+                {isGalleryOpening ? "Opening gallery…" : "Choose from gallery"}
               </Text>
-            </Pressable>
-            <Pressable
-              style={styles.addBookBarcodeLinkWrap}
-              onPress={() => {
-                closeAddBookSheetAnimated();
-                setTimeout(() => openBarcodeScanBookSheet(), 280);
-              }}
-              disabled={isExtracting || isGalleryOpening}
-              accessibilityRole="button"
-              accessibilityLabel="Scan barcode instead"
-            >
-              <Text style={styles.addBookBarcodeLinkText}>Scan barcode instead</Text>
             </Pressable>
             <Pressable
               style={styles.addBookCancelLinkWrap}
@@ -566,18 +552,6 @@ const styles = StyleSheet.create({
   },
   addBookGalleryLinkTextDisabled: {
     opacity: 0.4,
-  },
-  addBookBarcodeLinkWrap: {
-    alignSelf: "stretch",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 4,
-  },
-  addBookBarcodeLinkText: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "rgba(255,255,255,0.25)",
-    textAlign: "center",
   },
   addBookCancelLinkWrap: {
     marginTop: 10,

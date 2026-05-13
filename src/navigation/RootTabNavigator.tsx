@@ -86,6 +86,8 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
     activeNestedRouteName === "OutputLanguage" ||
     activeNestedRouteName === "ReadingReminders";
 
+  const wasHiddenRef = useRef(hidden);
+
   const applyHighlight = useCallback(
     (index: number, layouts: { x: number; width: number; height: number }[], animated: boolean) => {
       const cell = layouts[index];
@@ -135,6 +137,15 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   );
 
   useEffect(() => {
+    if (wasHiddenRef.current && !hidden) {
+      activeLabelOpacity.stopAnimation();
+      activeLabelOpacity.setValue(1);
+    }
+    wasHiddenRef.current = hidden;
+  }, [hidden, activeLabelOpacity]);
+
+  useEffect(() => {
+    if (hidden) return;
     if (skipLabelFadeOnMountRef.current) {
       skipLabelFadeOnMountRef.current = false;
       return;
@@ -146,7 +157,11 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       easing: Easing.inOut(Easing.ease),
       useNativeDriver: true,
     }).start();
-  }, [activeIndex, activeLabelOpacity]);
+  }, [activeIndex, activeLabelOpacity, hidden]);
+
+  useEffect(() => {
+    setActiveCluster(null);
+  }, [activeIndex]);
 
   useEffect(() => {
     if (!tabLayouts || tabLayouts.length !== TABS.length) return;
@@ -185,6 +200,10 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const navigateTo = useCallback(
     (routeName: keyof RootTabParamList) => {
       triggerNavHaptic();
+      if (routeName === "Library") {
+        navigation.navigate("Library", { screen: "LibraryHome" });
+        return;
+      }
       navigation.navigate(routeName);
     },
     [navigation, triggerNavHaptic]

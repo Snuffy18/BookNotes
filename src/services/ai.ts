@@ -22,13 +22,18 @@ const API_URL = "https://api.openai.com/v1/responses";
 /** Text-only and general tasks (entities, summaries, insights). */
 const DEFAULT_MODEL = "gpt-4.1-mini";
 /**
- * Vision / image understanding (page notes, cover metadata, contents scan).
+ * Vision / image understanding (cover metadata, contents scan).
  * Defaults to gpt-4o-mini for lower latency vs larger models; override with EXPO_PUBLIC_OPENAI_IMAGE_MODEL.
  */
 const IMAGE_MODEL =
   (typeof process.env.EXPO_PUBLIC_OPENAI_IMAGE_MODEL === "string"
     ? process.env.EXPO_PUBLIC_OPENAI_IMAGE_MODEL.trim()
     : "") || "gpt-4o-mini";
+/** Book page scan → notes extraction. */
+const PAGE_MODEL =
+  (typeof process.env.EXPO_PUBLIC_OPENAI_PAGE_MODEL === "string"
+    ? process.env.EXPO_PUBLIC_OPENAI_PAGE_MODEL.trim()
+    : "") || DEFAULT_MODEL;
 
 type NotesResponse = GeneratedNotes & {
   isBookPage?: boolean;
@@ -253,7 +258,7 @@ export async function generateNotesFromImage(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: IMAGE_MODEL,
+      model: PAGE_MODEL,
       input: [
         {
           role: "system",

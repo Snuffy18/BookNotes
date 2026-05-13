@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ReadingRunState } from "../context/ReadingSessionContext";
+import { useAppSettings } from "../context/AppSettingsContext";
 import {
   averageBookPacePerHour,
   formatSessionStartClock,
@@ -9,6 +10,7 @@ import {
 } from "../reading/readingTimerRunningStats";
 import { formatReadingTimerHMS, READING_TIMER_FONT_FAMILY } from "../reading/readingTimerDisplay";
 import type { ReadingSession, ScanItem } from "../types/note";
+import { hexWithAlpha } from "../theme/colorUtils";
 import { parseScanPageNumber } from "../utils/bookReadingProgress";
 import { stripMarkdownBoldMarkers } from "../utils/stripMarkdownBoldMarkers";
 
@@ -64,6 +66,7 @@ export function ReadingTimerRunningView({
   onStopSave,
   onOpenSavedSessions,
 }: Props) {
+  const { accentColor } = useAppSettings();
   const [paceTick, setPaceTick] = useState(0);
   const [finishEstimateHelpOpen, setFinishEstimateHelpOpen] = useState(false);
 
@@ -162,12 +165,24 @@ export function ReadingTimerRunningView({
               Book progress · currently p. {run.startPage}
             </Text>
             {progressPctLabel ? (
-              <Text style={styles.progressHeaderRight}>{progressPctLabel}</Text>
+              <Text style={[styles.progressHeaderRight, { color: accentColor }]}>
+                {progressPctLabel}
+              </Text>
             ) : null}
           </View>
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
-            <View style={[styles.progressDot, { left: `${progressPct}%` }]} />
+            <View
+              style={[
+                styles.progressDot,
+                {
+                  left: `${progressPct}%`,
+                  backgroundColor: accentColor,
+                  borderColor: hexWithAlpha(accentColor, 0.25),
+                  shadowColor: accentColor,
+                },
+              ]}
+            />
           </View>
         </View>
       ) : null}
@@ -310,7 +325,6 @@ const styles = StyleSheet.create({
   progressHeaderRight: {
     fontSize: 11,
     fontWeight: "500",
-    color: "#60a5fa",
   },
   progressTrack: {
     height: 4,
@@ -334,10 +348,7 @@ const styles = StyleSheet.create({
     height: 8,
     marginLeft: -4,
     borderRadius: 4,
-    backgroundColor: "#60a5fa",
     borderWidth: 2,
-    borderColor: "rgba(96,165,250,0.25)",
-    shadowColor: "#60a5fa",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.35,
     shadowRadius: 4,

@@ -446,7 +446,7 @@ export function BookReportsScreen() {
           style: "destructive",
           onPress: () => {
             removeBook(book.id);
-            navigation.goBack();
+            navigation.navigate("LibraryHome");
           },
         },
       ]
@@ -769,7 +769,7 @@ export function BookReportsScreen() {
             ]}
             onPress={() => {
               hapticLight();
-              navigation.goBack();
+              navigation.navigate("LibraryHome");
             }}
             activeOpacity={0.82}
             hitSlop={4}

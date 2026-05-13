@@ -34,6 +34,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
+import { useAddBookSheet } from "../context/AddBookSheetContext";
 import { useBarcodeScanBookSheet } from "../context/BarcodeScanBookSheetContext";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { openReportInLibraryTab } from "../navigation/openReportInLibraryTab";
@@ -43,11 +44,14 @@ import type { BookItem, ChapterRange, ReadingSession, ScanItem } from "../types/
 import { BookTotalPageNudgeList } from "../components/BookTotalPageNudgeList";
 import { ChapterMapEmptyState } from "../components/ChapterMapEmptyState";
 import { HeaderText } from "../components/HeaderText";
-import { PageScanSheetFrameCorners } from "../components/PageScanSheetFrameCorners";
+import { HandTapIcon } from "../components/HandTapIcon";
+import { HomeLockedContent, HOME_LOCKED_BG } from "../components/HomeLockedContent";
+import { PageScanSheetFrameCorners, CenteredViewfinderFrameCorners } from "../components/PageScanSheetFrameCorners";
 import { ReadingTimerActiveBanner } from "../components/ReadingTimerActiveBanner";
 import { ReadingTimerBottomSheet } from "../components/ReadingTimerBottomSheet";
 import { StreakBadge } from "../components/StreakBadge";
 import { useReadingSession } from "../context/ReadingSessionContext";
+import { useStreak } from "../context/StreakContext";
 import { useScanContext } from "../context/ScanContext";
 import { isEligibleReadingLogSession } from "../reading/readingHistoryStats";
 import { extractBookMetadataFromImage, extractChapterRangesFromContentsImage } from "../services/ai";
@@ -483,6 +487,8 @@ function ChapterMapShimmerRows({
 
 export function ScanCameraScreen({ navigation, route }: Props) {
   const { darkMode, accentColor, accentGradient } = useAppSettings();
+  const { streak } = useStreak();
+  const { openAddBookSheet } = useAddBookSheet();
   const { openBarcodeScanBookSheet } = useBarcodeScanBookSheet();
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
@@ -492,6 +498,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const libraryPromoCarouselHeight =
     FROM_LIBRARY_MODAL_CARD_MIN_HEIGHT + FROM_LIBRARY_CARD_TO_DOTS_GAP + 18;
   const libraryModalSheetMaxHeight = Math.round(windowHeight * FROM_LIBRARY_MODAL_SHEET_MAX_HEIGHT_RATIO);
+  const libraryModalSheetHideY = useMemo(() => Math.ceil(windowHeight * 0.45), [windowHeight]);
 
   /** Vertical gap between scan page sections (title, picker, camera, CTA, etc.). */
   const SCAN_PAGE_SECTION_GAP = 12;
@@ -529,6 +536,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const cameraRef = useRef<CameraView | null>(null);
   const pageScanPreviewLayoutRef = useRef<ViewfinderLayout | null>(null);
   const contentsPreviewLayoutRef = useRef<ViewfinderLayout | null>(null);
+  const [contentsViewfinderLayout, setContentsViewfinderLayout] = useState({ width: 0, height: 0 });
   const contentsCameraRef = useRef<CameraView | null>(null);
   const [isBookModalOpen, setIsBookModalOpen] = useState(false);
   /** Keeps Modal mounted until close animation finishes. */
@@ -539,6 +547,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   /** Lifts the book sheet above the keyboard (transparent Modal + bottom sheet). */
   const [bookPickerKeyboardPad, setBookPickerKeyboardPad] = useState(0);
   const [lastExtractPreviewExpanded, setLastExtractPreviewExpanded] = useState(false);
+  const lastExtractExpandAnim = useRef(new Animated.Value(0)).current;
   const [searchQuery, setSearchQuery] = useState("");
   const [flashEnabled, setFlashEnabled] = useState(false);
   const [tipIndex, setTipIndex] = useState(0);
@@ -574,6 +583,8 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const [contentsExtracting, setContentsExtracting] = useState(false);
   const [contentsExtractError, setContentsExtractError] = useState<string | null>(null);
   const chapterMapShimmerX = useRef(new Animated.Value(-1)).current;
+  const chapterMapProgress = useRef(new Animated.Value(0)).current;
+  const chapterMapProgressAnimRef = useRef<Animated.CompositeAnimation | null>(null);
   const [chapterEditVisible, setChapterEditVisible] = useState(false);
   const [chapterEditSortedIndex, setChapterEditSortedIndex] = useState<number | null>(null);
   const [chapterEditTitle, setChapterEditTitle] = useState("");
@@ -586,10 +597,13 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   /** `null` = All books with scans. */
   const [libraryPromoFilterBookId, setLibraryPromoFilterBookId] = useState<string | null>(null);
   const [libraryPromoModalVisible, setLibraryPromoModalVisible] = useState(false);
+  const [libraryPromoModalMounted, setLibraryPromoModalMounted] = useState(false);
   const [libraryPromoSwipeHintVisible, setLibraryPromoSwipeHintVisible] = useState(false);
   const [libraryWidgetHighlightTeaser, setLibraryWidgetHighlightTeaser] = useState<string | null>(null);
   const libraryPromoListRef = useRef<FlatList<LibraryPromoSlide> | null>(null);
   const libraryModalSheetTranslateY = useRef(new Animated.Value(0)).current;
+  const libraryModalBackdropOp = useRef(new Animated.Value(0)).current;
+  const libraryPromoModalWasOpenRef = useRef(false);
   const addGestureStartYRef = useRef(0);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -776,7 +790,38 @@ export function ScanCameraScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     setLastExtractPreviewExpanded(false);
-  }, [lastExtractedScan?.id]);
+    lastExtractExpandAnim.setValue(0);
+  }, [lastExtractedScan?.id, lastExtractExpandAnim]);
+
+  const runLastExtractLayoutAnimation = useCallback(() => {
+    LayoutAnimation.configureNext({
+      duration: 300,
+      update: { type: LayoutAnimation.Types.easeInEaseOut },
+      create: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+      delete: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+    });
+  }, []);
+
+  const toggleLastExtractPreviewExpanded = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    runLastExtractLayoutAnimation();
+    setLastExtractPreviewExpanded((v) => !v);
+  }, [runLastExtractLayoutAnimation]);
+
+  useEffect(() => {
+    Animated.timing(lastExtractExpandAnim, {
+      toValue: lastExtractPreviewExpanded ? 1 : 0,
+      duration: 300,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [lastExtractPreviewExpanded, lastExtractExpandAnim]);
 
   const recentScanSlots = useMemo((): ScanItem[] => {
     if (!activeBookId) return [];
@@ -800,6 +845,9 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const onRecentSeeAll = useCallback(() => {
     if (!activeBookId) return;
     Haptics.selectionAsync().catch(() => {});
+    navigation.getParent()?.navigate("Library", {
+      screen: "LibraryHome",
+    });
     navigation.getParent()?.navigate("Library", {
       screen: "BookReports",
       params: { bookId: activeBookId },
@@ -839,7 +887,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     (scan: ScanItem) => {
       Haptics.selectionAsync().catch(() => {});
       const tabNav = navigation.getParent() as NavigationProp<RootTabParamList> | undefined;
-      if (!openReportInLibraryTab(tabNav, scan)) {
+      if (!openReportInLibraryTab(tabNav, scan, { reportNavOrigin: "scan" })) {
         Alert.alert(
           "Can’t open full report",
           "This scan isn’t linked to a book yet. Save it to a book from the library, then open it there.",
@@ -954,8 +1002,65 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   }, [libraryPromoModalVisible, libraryPromoFilterBookId]);
 
   useEffect(() => {
+    if (libraryPromoModalVisible) {
+      libraryPromoModalWasOpenRef.current = true;
+      setLibraryPromoModalMounted(true);
+      libraryModalBackdropOp.stopAnimation();
+      libraryModalSheetTranslateY.stopAnimation();
+      libraryModalBackdropOp.setValue(0);
+      libraryModalSheetTranslateY.setValue(libraryModalSheetHideY);
+      const id = requestAnimationFrame(() => {
+        Animated.parallel([
+          Animated.timing(libraryModalBackdropOp, {
+            toValue: 1,
+            duration: 280,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.spring(libraryModalSheetTranslateY, {
+            toValue: 0,
+            friction: 9,
+            tension: 80,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    if (!libraryPromoModalWasOpenRef.current) return;
+    libraryPromoModalWasOpenRef.current = false;
+    libraryModalBackdropOp.stopAnimation();
+    libraryModalSheetTranslateY.stopAnimation((currentY) => {
+      const from = typeof currentY === "number" ? currentY : 0;
+      const toValue = Math.max(libraryModalSheetHideY, from);
+      Animated.parallel([
+        Animated.timing(libraryModalBackdropOp, {
+          toValue: 0,
+          duration: 220,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(libraryModalSheetTranslateY, {
+          toValue: toValue,
+          duration: 260,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          setLibraryPromoModalMounted(false);
+        }
+      });
+    });
+  }, [
+    libraryModalBackdropOp,
+    libraryModalSheetHideY,
+    libraryModalSheetTranslateY,
+    libraryPromoModalVisible,
+  ]);
+
+  useEffect(() => {
     if (!libraryPromoModalVisible) return;
-    libraryModalSheetTranslateY.setValue(0);
     let cancelled = false;
     AsyncStorage.getItem(FROM_LIBRARY_SWIPE_HINT_STORAGE_KEY).then((raw) => {
       if (!cancelled) setLibraryPromoSwipeHintVisible(raw !== "1");
@@ -963,7 +1068,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [libraryPromoModalVisible, libraryModalSheetTranslateY]);
+  }, [libraryPromoModalVisible]);
 
   const dismissLibraryPromoSwipeHint = useCallback(() => {
     setLibraryPromoSwipeHintVisible(false);
@@ -975,13 +1080,19 @@ export function ScanCameraScreen({ navigation, route }: Props) {
       PanResponder.create({
         onMoveShouldSetPanResponder: (_, g) =>
           g.dy > 8 && Math.abs(g.dy) > Math.abs(g.dx) * 1.1,
+        onPanResponderGrant: () => {
+          libraryModalSheetTranslateY.stopAnimation();
+        },
         onPanResponderMove: (_, g) => {
-          if (g.dy > 0) libraryModalSheetTranslateY.setValue(g.dy);
+          if (g.dy > 0) {
+            libraryModalSheetTranslateY.setValue(
+              Math.min(g.dy, libraryModalSheetHideY)
+            );
+          }
         },
         onPanResponderRelease: (_, g) => {
           if (g.dy > 64 || g.vy > 1.1) {
             setLibraryPromoModalVisible(false);
-            libraryModalSheetTranslateY.setValue(0);
             return;
           }
           Animated.spring(libraryModalSheetTranslateY, {
@@ -992,7 +1103,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
           }).start();
         },
       }),
-    [libraryModalSheetTranslateY]
+    [libraryModalSheetHideY, libraryModalSheetTranslateY]
   );
 
   const onLibraryPromoLongPressOpenReport = useCallback(
@@ -1371,6 +1482,30 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     [navigation]
   );
 
+  const startChapterMapProgress = useCallback(() => {
+    chapterMapProgressAnimRef.current?.stop();
+    chapterMapProgress.setValue(0);
+    chapterMapProgressAnimRef.current = Animated.timing(chapterMapProgress, {
+      toValue: 0.95,
+      duration: 36000,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+    chapterMapProgressAnimRef.current.start();
+  }, [chapterMapProgress]);
+
+  const finishChapterMapProgress = useCallback(() => {
+    return new Promise<void>((resolve) => {
+      chapterMapProgressAnimRef.current?.stop();
+      Animated.timing(chapterMapProgress, {
+        toValue: 1,
+        duration: 400,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start(() => resolve());
+    });
+  }, [chapterMapProgress]);
+
   const processContentsFromUri = useCallback(
     async (uri: string, append: boolean) => {
       if (!activeBook) return;
@@ -1379,6 +1514,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
       setIsContentsScannerOpen(false);
       setIsChapterOverviewOpen(true);
       setContentsExtracting(true);
+      startChapterMapProgress();
       try {
         const extracted = await extractChapterRangesFromContentsImage(uri);
         const existing = activeBook.chapterRanges ?? [];
@@ -1386,8 +1522,12 @@ export function ScanCameraScreen({ navigation, route }: Props) {
           append && existing.length > 0 ? mergeChapterRanges(existing, extracted) : extracted;
         updateBookChapterRanges(activeBook.id, next);
         setContentsScanAppend(false);
+        await finishChapterMapProgress();
+        await new Promise((resolve) => setTimeout(resolve, 280));
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       } catch (error) {
+        chapterMapProgressAnimRef.current?.stop();
+        chapterMapProgress.setValue(0);
         const message =
           error instanceof Error ? error.message : "Could not read the contents page.";
         setContentsExtractError(message);
@@ -1396,9 +1536,10 @@ export function ScanCameraScreen({ navigation, route }: Props) {
       } finally {
         setContentsExtracting(false);
         setContentsExtractAppending(false);
+        chapterMapProgress.setValue(0);
       }
     },
-    [activeBook, updateBookChapterRanges]
+    [activeBook, finishChapterMapProgress, startChapterMapProgress, updateBookChapterRanges]
   );
 
   useEffect(() => {
@@ -1576,7 +1717,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
 
     if (needsFirstBook) {
       if (coverExtracting) return;
-      openBarcodeScanBookSheet();
+      openAddBookSheet();
       return;
     }
 
@@ -1674,6 +1815,11 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     }
   };
 
+  const onLockedAddBook = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    openBarcodeScanBookSheet();
+  }, [openBarcodeScanBookSheet]);
+
   if (!permission) {
     return <View style={styles.screen} />;
   }
@@ -1714,35 +1860,40 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   }
 
   return (
-    <View style={[styles.screen, darkMode && styles.screenDark]}>
+    <View style={[styles.screen, needsFirstBook ? styles.screenLocked : darkMode && styles.screenDark]}>
       <View style={{ height: artificialTopSpacer }} />
       <View
         style={{
           flex: 1,
-          paddingLeft: 18 + insets.left,
-          paddingRight: 18 + insets.right,
+          paddingLeft: (needsFirstBook ? 20 : 18) + insets.left,
+          paddingRight: (needsFirstBook ? 20 : 18) + insets.right,
         }}
       >
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          styles.scrollContentFlex,
-          { gap: SCAN_PAGE_SECTION_GAP },
+          needsFirstBook && styles.scrollContentLocked,
+          !needsFirstBook && styles.scrollContentFlex,
+          { gap: needsFirstBook ? 16 : SCAN_PAGE_SECTION_GAP },
         ]}
         showsVerticalScrollIndicator={false}
         scrollEnabled={!showGalleryDropTarget && !lockScrollForAddGesture}
       >
         <View style={styles.scanPageTitleWrap}>
+          {needsFirstBook ? (
+            <View style={styles.lockedHeaderRow}>
+              <Text style={styles.lockedHeaderTitle}>Scan</Text>
+              {streak.currentStreak > 0 ? <StreakBadge variant="homeLocked" /> : null}
+            </View>
+          ) : (
           <HeaderText
             title={
-              needsFirstBook ? "Scan" : addingAnotherBookCover ? "Add another book" : "Home"
+              addingAnotherBookCover ? "Add another book" : "Home"
             }
             subtitle={
-              needsFirstBook
-                ? "Scan the barcode on the back cover to add your first book. Page scans and chapter tools unlock after that."
-                : addingAnotherBookCover
-                  ? "Photograph the front cover. You can crop before title and author are read."
-                  : undefined
+              addingAnotherBookCover
+                ? "Photograph the front cover. You can crop before title and author are read."
+                : undefined
             }
             style={styles.scanPageHeaderBlock}
             titleStyle={{ fontFamily: FONT_CANELA_TEXT_BOLD, fontWeight: "400" }}
@@ -1757,6 +1908,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
               ) : undefined
             }
           />
+          )}
         </View>
 
         {books.length > 0 ? (
@@ -1855,10 +2007,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
         (lastExtractMainIdeas.length > 0 || lastExtractSummaryFallback) ? (
           <View style={[styles.lastExtractCard, darkMode && styles.lastExtractCardDark]}>
             <Pressable
-              onPress={() => {
-                Haptics.selectionAsync().catch(() => {});
-                setLastExtractPreviewExpanded((v) => !v);
-              }}
+              onPress={toggleLastExtractPreviewExpanded}
               style={({ pressed }) => [
                 styles.lastExtractHeaderPressable,
                 pressed && styles.lastExtractHeaderPressed,
@@ -1897,23 +2046,35 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                   </Text>
                 ) : null}
               </View>
-              <Ionicons
-                name={lastExtractPreviewExpanded ? "chevron-up" : "chevron-down"}
-                size={18}
-                color={darkMode ? "rgba(255,255,255,0.35)" : "rgba(15,23,42,0.4)"}
-              />
+              <Animated.View
+                style={{
+                  transform: [
+                    {
+                      rotate: lastExtractExpandAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ["0deg", "180deg"],
+                      }),
+                    },
+                  ],
+                }}
+              >
+                <Ionicons
+                  name="chevron-down"
+                  size={18}
+                  color={darkMode ? "rgba(255,255,255,0.35)" : "rgba(15,23,42,0.4)"}
+                />
+              </Animated.View>
             </Pressable>
 
             <Pressable
-              onPress={() => {
-                if (lastExtractPreviewExpanded) return;
-                Haptics.selectionAsync().catch(() => {});
-                setLastExtractPreviewExpanded(true);
-              }}
-              style={styles.lastExtractBody}
-              accessibilityRole={lastExtractPreviewExpanded ? undefined : "button"}
+              onPress={toggleLastExtractPreviewExpanded}
+              style={({ pressed }) => [
+                styles.lastExtractBody,
+                pressed && styles.lastExtractHeaderPressed,
+              ]}
+              accessibilityRole="button"
               accessibilityLabel={
-                lastExtractPreviewExpanded ? undefined : "Expand last extracted preview"
+                lastExtractPreviewExpanded ? "Collapse last extracted preview" : "Expand last extracted preview"
               }
             >
               {lastExtractMainIdeas.length > 0 ? (
@@ -1974,63 +2135,12 @@ export function ScanCameraScreen({ navigation, route }: Props) {
         ) : null}
 
         {needsFirstBook ? (
-          <View style={styles.sectionBlock}>
-            <View style={styles.primaryButtonGroup}>
-              <View style={styles.firstBookAddRow}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.firstBookAddPressable,
-                    darkMode ? styles.firstBookAddPressableDark : styles.firstBookAddPressableLight,
-                    pressed &&
-                      (darkMode ? styles.firstBookAddPressableDarkPressed : styles.firstBookAddPressableLightPressed),
-                    coverExtracting && styles.primaryButtonGradientDisabled,
-                  ]}
-                  onPress={onCapture}
-                  onTouchStart={onAddBookTouchStart}
-                  onTouchMove={onAddBookTouchMove}
-                  onTouchEnd={onAddBookTouchEnd}
-                  onTouchCancel={onAddBookTouchEnd}
-                  disabled={coverExtracting}
-                >
-                  <Ionicons
-                    name="barcode-outline"
-                    size={20}
-                    color={darkMode ? "#0f172a" : "#ffffff"}
-                  />
-                  <Text
-                    style={[
-                      styles.firstBookAddCoverLabel,
-                      darkMode ? styles.firstBookAddCoverLabelDark : styles.firstBookAddCoverLabelLight,
-                    ]}
-                  >
-                    {coverExtracting ? "Reading cover…" : "Scan barcode"}
-                  </Text>
-                </Pressable>
-                {showGalleryDropTarget ? (
-                  <View
-                    style={[
-                      styles.galleryDropTarget,
-                      darkMode && styles.galleryDropTargetDark,
-                      isDraggingTowardGallery && { borderColor: accentColor, backgroundColor: accentColor },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.galleryDropTargetText,
-                        darkMode && styles.galleryDropTargetTextDark,
-                        isDraggingTowardGallery && styles.galleryDropTargetTextActive,
-                      ]}
-                    >
-                      Gallery
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            </View>
-          </View>
+          <HomeLockedContent onAddBook={onLockedAddBook} />
         ) : null}
 
-        {savedChapterRangeCount > 0 && !needsFirstBook && activeBook ? (
+        {!needsFirstBook ? (
+          <>
+        {savedChapterRangeCount > 0 && activeBook ? (
           <TouchableOpacity
             style={[styles.chapterAssistCompact, darkMode && styles.chapterAssistCompactDark]}
             onPress={openChapterOverview}
@@ -2282,6 +2392,8 @@ export function ScanCameraScreen({ navigation, route }: Props) {
             </View>
           </Pressable>
         </View>
+          </>
+        ) : null}
 
       </ScrollView>
       </View>
@@ -2314,6 +2426,21 @@ export function ScanCameraScreen({ navigation, route }: Props) {
           <StatusBar barStyle="light-content" backgroundColor={CHAPTER_MAP_BG} />
           <View style={styles.chapterMapColumn}>
             <View style={[styles.chapterMapHeader, { paddingTop: Math.max(insets.top, 8) }]}>
+              {contentsExtracting ? (
+                <View style={styles.chapterMapProgressTrack}>
+                  <Animated.View
+                    style={[
+                      styles.chapterMapProgressFill,
+                      {
+                        width: chapterMapProgress.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ["0%", "100%"],
+                        }),
+                      },
+                    ]}
+                  />
+                </View>
+              ) : null}
               <View style={styles.chapterMapHeaderTopRow}>
                 <Pressable
                   onPress={() => {
@@ -2762,6 +2889,9 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 const { width, height } = e.nativeEvent.layout;
                 if (width > 0 && height > 0) {
                   contentsPreviewLayoutRef.current = { width, height };
+                  setContentsViewfinderLayout((prev) =>
+                    prev.width === width && prev.height === height ? prev : { width, height }
+                  );
                 }
               }}
             >
@@ -2778,7 +2908,10 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 />
               </View>
               <View style={styles.contentsViewfinderCornersOverlay} pointerEvents="none">
-                <PageScanSheetFrameCorners />
+                <CenteredViewfinderFrameCorners
+                  width={contentsViewfinderLayout.width}
+                  height={contentsViewfinderLayout.height}
+                />
               </View>
             </View>
 
@@ -2949,17 +3082,22 @@ export function ScanCameraScreen({ navigation, route }: Props) {
       </Modal>
 
       <Modal
-        visible={libraryPromoModalVisible}
+        visible={libraryPromoModalMounted}
         transparent
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => setLibraryPromoModalVisible(false)}
       >
         <View style={styles.fromLibraryModalRoot}>
-          <Pressable
-            style={styles.fromLibraryModalBackdrop}
-            onPress={() => setLibraryPromoModalVisible(false)}
-            accessibilityLabel="Dismiss"
-          />
+          <Animated.View
+            pointerEvents="box-none"
+            style={[StyleSheet.absoluteFillObject, { opacity: libraryModalBackdropOp }]}
+          >
+            <Pressable
+              style={styles.fromLibraryModalBackdrop}
+              onPress={() => setLibraryPromoModalVisible(false)}
+              accessibilityLabel="Dismiss"
+            />
+          </Animated.View>
           <Animated.View
             style={{ transform: [{ translateY: libraryModalSheetTranslateY }] }}
           >
@@ -3171,12 +3309,21 @@ export function ScanCameraScreen({ navigation, route }: Props) {
               />
             </View>
 
-            <Text
-              style={[styles.fromLibraryModalHoldHint, darkMode && styles.fromLibraryModalHoldHintDark]}
-            >
-              Hold a card for 1 second to open the full report. The bar at the top of the card fills as you
-              hold.
-            </Text>
+            <View style={styles.fromLibraryModalHoldHintRow}>
+              <HandTapIcon
+                size={15}
+                color={darkMode ? darkColors.textSecondary : lightColors.textMuted}
+                opacity={0.85}
+              />
+              <Text
+                style={[
+                  styles.fromLibraryModalHoldHint,
+                  darkMode && styles.fromLibraryModalHoldHintDark,
+                ]}
+              >
+                Hold a card for 1 second to open the full report.
+              </Text>
+            </View>
             </View>
           </Animated.View>
         </View>
@@ -3198,6 +3345,20 @@ const styles = StyleSheet.create({
   screenDark: {
     backgroundColor: darkColors.background,
   },
+  screenLocked: {
+    backgroundColor: HOME_LOCKED_BG,
+  },
+  lockedHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 34,
+  },
+  lockedHeaderTitle: {
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#ffffff",
+  },
   topContentFade: {
     position: "absolute",
     top: 0,
@@ -3213,6 +3374,10 @@ const styles = StyleSheet.create({
   /** Scroll content fills at least the viewport height when content is short. */
   scrollContentFlex: {
     flexGrow: 1,
+  },
+  scrollContentLocked: {
+    flexGrow: 1,
+    paddingBottom: 100,
   },
   scanPageTitleWrap: {
     marginTop: 0,
@@ -3663,13 +3828,19 @@ const styles = StyleSheet.create({
   fromLibraryCardPressed: {
     opacity: 0.92,
   },
+  fromLibraryModalHoldHintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 10,
+    paddingHorizontal: 8,
+  },
   fromLibraryModalHoldHint: {
     fontSize: 12,
     fontWeight: "500",
     textAlign: "center",
     color: lightColors.textMuted,
-    marginTop: 10,
-    paddingHorizontal: 8,
     lineHeight: 17,
   },
   fromLibraryModalHoldHintDark: {
@@ -4026,6 +4197,19 @@ const styles = StyleSheet.create({
   },
   chapterMapHeader: {
     paddingHorizontal: 0,
+  },
+  chapterMapProgressTrack: {
+    height: 3,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  chapterMapProgressFill: {
+    height: "100%",
+    borderRadius: 2,
+    backgroundColor: "#60a5fa",
   },
   chapterMapHeaderTopRow: {
     flexDirection: "row",

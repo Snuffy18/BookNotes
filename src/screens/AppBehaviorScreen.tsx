@@ -13,10 +13,12 @@ type Nav = NativeStackNavigationProp<ProfileStackParamList, "AppBehavior">;
 
 export function AppBehaviorScreen() {
   const navigation = useNavigation<Nav>();
-  const { darkMode } = useAppSettings();
+  const { darkMode, accentColor } = useAppSettings();
   const [autoSave, setAutoSave] = useState(true);
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [offlineQueue, setOfflineQueue] = useState(true);
+
+  const switchTrackOff = darkMode ? "#3f3f3f" : "#d1d5db";
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
@@ -52,6 +54,8 @@ export function AppBehaviorScreen() {
             value={autoSave}
             onValueChange={setAutoSave}
             darkMode={darkMode}
+            accentColor={accentColor}
+            switchTrackOff={switchTrackOff}
           />
           <SettingToggle
             label="Haptic feedback"
@@ -59,6 +63,8 @@ export function AppBehaviorScreen() {
             value={hapticsEnabled}
             onValueChange={setHapticsEnabled}
             darkMode={darkMode}
+            accentColor={accentColor}
+            switchTrackOff={switchTrackOff}
           />
           <SettingToggle
             label="Offline queue"
@@ -66,6 +72,8 @@ export function AppBehaviorScreen() {
             value={offlineQueue}
             onValueChange={setOfflineQueue}
             darkMode={darkMode}
+            accentColor={accentColor}
+            switchTrackOff={switchTrackOff}
           />
         </View>
       </ScrollView>
@@ -79,12 +87,16 @@ function SettingToggle({
   value,
   onValueChange,
   darkMode,
+  accentColor,
+  switchTrackOff,
 }: {
   label: string;
   description: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
   darkMode: boolean;
+  accentColor: string;
+  switchTrackOff: string;
 }) {
   return (
     <View style={styles.row}>
@@ -92,7 +104,13 @@ function SettingToggle({
         <Text style={[styles.label, darkMode && styles.textDark]}>{label}</Text>
         <Text style={[styles.description, darkMode && styles.descriptionDark]}>{description}</Text>
       </View>
-      <Switch value={value} onValueChange={onValueChange} />
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: switchTrackOff, true: accentColor }}
+        thumbColor="#ffffff"
+        ios_backgroundColor={switchTrackOff}
+      />
     </View>
   );
 }

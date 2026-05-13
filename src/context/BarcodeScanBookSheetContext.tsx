@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -74,14 +75,34 @@ export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode
 
   const lookupAbortRef = useRef<AbortController | null>(null);
   const phaseRef = useRef<BarcodeSheetPhase>("scanning");
+  const manualIsbnOpenRef = useRef(false);
+
+  const resetKeyboardLift = useCallback(
+    (animated = false, duration = 200) => {
+      keyboardLift.stopAnimation();
+      if (animated) {
+        Animated.timing(keyboardLift, {
+          toValue: 0,
+          duration,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start();
+      } else {
+        keyboardLift.setValue(0);
+      }
+    },
+    [keyboardLift]
+  );
 
   const chromeHeight = 8 + 14 + 16 + 28 + insets.bottom;
   const contentHeight = useBarcodeSheetContentHeight(renderPhase, manualIsbnOpen);
-  const targetSheetHeight = chromeHeight + contentHeight;
+  const maxSheetHeight = Math.round(windowHeight * 0.55);
+  const targetSheetHeight = Math.min(chromeHeight + contentHeight, maxSheetHeight);
 
   const resetScannerState = useCallback(() => {
     lookupAbortRef.current?.abort();
     lookupAbortRef.current = null;
+    manualIsbnOpenRef.current = false;
     setPhase("scanning");
     setRenderPhase("scanning");
     setDetectedIsbn(null);
@@ -212,16 +233,23 @@ export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode
     ]).start();
   }, [isOpen, backdropOp, sheetHideY, sheetY]);
 
+  useLayoutEffect(() => {
+    manualIsbnOpenRef.current = manualIsbnOpen;
+    if (!manualIsbnOpen) {
+      resetKeyboardLift(false);
+    }
+  }, [manualIsbnOpen, resetKeyboardLift]);
+
   useEffect(() => {
     if (!isOpen) return;
     LayoutAnimation.configureNext(
       LayoutAnimation.create(220, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity)
     );
-  }, [isOpen, renderPhase, manualIsbnOpen, targetSheetHeight]);
+  }, [isOpen, renderPhase, targetSheetHeight]);
 
   useEffect(() => {
-    if (!isOpen || !manualIsbnOpen) {
-      keyboardLift.setValue(0);
+    if (!isOpen) {
+      resetKeyboardLift(false);
       return;
     }
 
@@ -229,7 +257,9 @@ export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
     const onShow = (event: { endCoordinates: { height: number }; duration?: number }) => {
+      if (!manualIsbnOpenRef.current) return;
       const lift = Math.max(0, event.endCoordinates.height - insets.bottom + 12);
+      keyboardLift.stopAnimation();
       Animated.timing(keyboardLift, {
         toValue: -lift,
         duration: event.duration ?? 250,
@@ -239,12 +269,7 @@ export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode
     };
 
     const onHide = (event: { duration?: number }) => {
-      Animated.timing(keyboardLift, {
-        toValue: 0,
-        duration: event.duration ?? 200,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
+      resetKeyboardLift(true, event.duration ?? 200);
     };
 
     const showSub = Keyboard.addListener(showEvent, onShow);
@@ -252,9 +277,9 @@ export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode
     return () => {
       showSub.remove();
       hideSub.remove();
-      keyboardLift.setValue(0);
+      resetKeyboardLift(false);
     };
-  }, [insets.bottom, isOpen, keyboardLift, manualIsbnOpen]);
+  }, [insets.bottom, isOpen, keyboardLift, resetKeyboardLift]);
 
   useEffect(() => {
     if (!isOpen || Platform.OS !== "android") return;
@@ -317,10 +342,16 @@ export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode
 
   const onOpenManualIsbn = useCallback(() => {
     setManualIsbnOpen((open) => {
-      if (open) Keyboard.dismiss();
+      if (open) {
+        manualIsbnOpenRef.current = false;
+        resetKeyboardLift(false);
+        Keyboard.dismiss();
+      } else {
+        manualIsbnOpenRef.current = true;
+      }
       return !open;
     });
-  }, []);
+  }, [resetKeyboardLift]);
 
   const onSubmitManualIsbn = useCallback(() => {
     void startLookup(manualIsbnDraft);
@@ -396,7 +427,7 @@ export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode
                 styles.panel,
                 {
                   paddingBottom: 28 + insets.bottom,
-                  minHeight: targetSheetHeight,
+                  height: targetSheetHeight,
                 },
               ]}
             >
@@ -417,6 +448,7 @@ export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode
                   onScanAgain={onScanAgain}
                   onTryAgain={onTryAgain}
                   onEnterManually={onEnterManually}
+                  onClose={closeBarcodeScanBookSheet}
                 />
               </Animated.View>
             </View>

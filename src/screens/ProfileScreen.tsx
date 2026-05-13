@@ -14,7 +14,8 @@ import { SparkleIcon } from "../components/SparkleDecor";
 import { ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING } from "../navigation/rootTabLayout";
 import type { ProfileStackParamList } from "../navigation/types";
 import { useAppSettings } from "../context/AppSettingsContext";
-import { mixHex } from "../theme/colorUtils";
+import { useReadingReminders } from "../context/ReadingRemindersContext";
+import { mixHex, hexWithAlpha } from "../theme/colorUtils";
 import { darkColors, lightColors } from "../theme/colors";
 
 type ProfileHomeNav = NativeStackNavigationProp<ProfileStackParamList, "ProfileHome">;
@@ -62,6 +63,7 @@ export function ProfileScreen() {
   const navigation = useNavigation<ProfileHomeNav>();
   const { darkMode, accentColor, accentGradient, soundEffectsEnabled, setSoundEffectsEnabled } =
     useAppSettings();
+  const { anyEnabled, enabledCount } = useReadingReminders();
   const [offerModalVisible, setOfferModalVisible] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
@@ -169,8 +171,8 @@ export function ProfileScreen() {
     darkMode ? styles.rowDividerSupportDark : styles.rowDividerSupportLight,
   ];
   const chevronMainColor = darkMode ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.35)";
-  const neutralIconBubble = darkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
-  const neutralIconColor = darkMode ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.45)";
+  const switchTrackOff = darkMode ? "#3f3f3f" : "#d1d5db";
+  const accentIconBubble = hexWithAlpha(accentColor, 0.15);
 
   return (
     <SafeAreaView
@@ -227,8 +229,8 @@ export function ProfileScreen() {
             >
               <IconBubble
                 name="color-palette-outline"
-                bubbleBg="rgba(168,85,247,0.15)"
-                iconColor="#a855f7"
+                bubbleBg={hexWithAlpha(accentColor, 0.15)}
+                iconColor={accentColor}
               />
               <View style={styles.prefRowText}>
                 <Text style={[styles.prefTitle, darkMode && styles.prefTitleDark]}>Appearance</Text>
@@ -246,8 +248,8 @@ export function ProfileScreen() {
             >
               <IconBubble
                 name="book-outline"
-                bubbleBg="rgba(59,130,246,0.15)"
-                iconColor="#60a5fa"
+                bubbleBg={hexWithAlpha(accentColor, 0.15)}
+                iconColor={accentColor}
               />
               <View style={styles.prefRowText}>
                 <Text style={[styles.prefTitle, darkMode && styles.prefTitleDark]}>
@@ -265,7 +267,7 @@ export function ProfileScreen() {
               onPress={() => navigation.navigate("AppBehavior")}
               activeOpacity={0.82}
             >
-              <IconBubble name="options-outline" bubbleBg={neutralIconBubble} iconColor={neutralIconColor} />
+              <IconBubble name="options-outline" bubbleBg={accentIconBubble} iconColor={accentColor} />
               <View style={styles.prefRowText}>
                 <Text style={[styles.prefTitle, darkMode && styles.prefTitleDark]}>App behaviour</Text>
                 <Text style={[styles.prefSubtitle, darkMode && styles.prefSubtitleDark]}>
@@ -276,14 +278,20 @@ export function ProfileScreen() {
             </TouchableOpacity>
             <View style={dividerMain} />
             <View style={styles.prefRow}>
-              <IconBubble name="volume-high-outline" bubbleBg={neutralIconBubble} iconColor={neutralIconColor} />
+              <IconBubble name="volume-high-outline" bubbleBg={accentIconBubble} iconColor={accentColor} />
               <View style={styles.prefRowText}>
                 <Text style={[styles.prefTitle, darkMode && styles.prefTitleDark]}>Sound effects</Text>
                 <Text style={[styles.prefSubtitle, darkMode && styles.prefSubtitleDark]}>
                   Chimes for scans & AI steps
                 </Text>
               </View>
-              <Switch value={soundEffectsEnabled} onValueChange={setSoundEffectsEnabled} />
+              <Switch
+                value={soundEffectsEnabled}
+                onValueChange={setSoundEffectsEnabled}
+                trackColor={{ false: switchTrackOff, true: accentColor }}
+                thumbColor="#ffffff"
+                ios_backgroundColor={switchTrackOff}
+              />
             </View>
           </View>
         </View>
@@ -326,12 +334,14 @@ export function ProfileScreen() {
                   Daily nudges
                 </Text>
               </View>
-              <Text style={[styles.rowTrailingMuted, darkMode && styles.rowTrailingMutedDark]}>Off</Text>
+              <Text style={[styles.rowTrailingMuted, darkMode && styles.rowTrailingMutedDark]}>
+                {anyEnabled ? `${enabledCount} on` : "Off"}
+              </Text>
               <Ionicons name="chevron-forward" size={18} color={chevronMainColor} />
             </TouchableOpacity>
             <View style={dividerMain} />
             <TouchableOpacity style={styles.prefRow} onPress={onSyncData} activeOpacity={0.82}>
-              <IconBubble name="refresh-outline" bubbleBg={neutralIconBubble} iconColor={neutralIconColor} />
+              <IconBubble name="refresh-outline" bubbleBg={accentIconBubble} iconColor={accentColor} />
               <View style={styles.prefRowText}>
                 <Text style={[styles.prefTitle, darkMode && styles.prefTitleDark]}>Sync data</Text>
                 <Text style={[styles.prefSubtitle, darkMode && styles.prefSubtitleDark]}>{syncSubtitle}</Text>

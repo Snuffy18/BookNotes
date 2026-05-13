@@ -10,8 +10,12 @@ import { darkColors, lightColors } from "../theme/colors";
 
 type Nav = NativeStackNavigationProp<ScanStackParamList, "ScanCamera">;
 
+type Props = {
+  variant?: "default" | "homeLocked";
+};
+
 /** Cal AI–style pill: flame + streak count; opens Streak details screen. */
-export function StreakBadge() {
+export function StreakBadge({ variant = "default" }: Props) {
   const navigation = useNavigation<Nav>();
   const { darkMode } = useAppSettings();
   const { streak } = useStreak();
@@ -27,6 +31,7 @@ export function StreakBadge() {
       style={({ pressed }) => [
         styles.pill,
         darkMode && styles.pillDark,
+        variant === "homeLocked" && styles.pillHomeLocked,
         pressed && styles.pillPressed,
       ]}
       accessibilityRole="button"
@@ -34,7 +39,13 @@ export function StreakBadge() {
       hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
     >
       <FireIcon size={16} />
-      <Text style={[styles.count, darkMode && styles.countDark]}>
+      <Text
+        style={[
+          styles.count,
+          darkMode && styles.countDark,
+          variant === "homeLocked" && styles.countHomeLocked,
+        ]}
+      >
         {streak.currentStreak} {streak.currentStreak === 1 ? "day" : "days"}
       </Text>
     </Pressable>
@@ -57,6 +68,13 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.08)",
     borderColor: "rgba(255,255,255,0.12)",
   },
+  pillHomeLocked: {
+    backgroundColor: "rgba(255,255,255,0.07)",
+    borderColor: "transparent",
+    borderRadius: 20,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+  },
   pillPressed: {
     opacity: 0.75,
   },
@@ -68,5 +86,9 @@ const styles = StyleSheet.create({
   countDark: {
     fontSize: 13,
     color: darkColors.textPrimary,
+  },
+  countHomeLocked: {
+    fontWeight: "500",
+    color: "#ffffff",
   },
 });

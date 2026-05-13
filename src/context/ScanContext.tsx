@@ -75,6 +75,7 @@ type ScanContextValue = {
   ) => void;
   clearBookInsightsSummary: (bookId: string) => void;
   reports: BookReport[];
+  libraryReady: boolean;
 };
 
 const ScanContext = createContext<ScanContextValue | undefined>(undefined);
@@ -274,8 +275,9 @@ export function ScanProvider({ children }: { children: ReactNode }) {
       setBookInsightsSummary,
       clearBookInsightsSummary,
       reports,
+      libraryReady: restoredFromStorage,
     }),
-    [scans, books, activeBookId, activeBook, isCoverProcessing, reports, updateBookTotalPageCount, updateBookCoverUri]
+    [scans, books, activeBookId, activeBook, isCoverProcessing, reports, updateBookTotalPageCount, updateBookCoverUri, restoredFromStorage]
   );
 
   return (

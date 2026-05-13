@@ -157,6 +157,18 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
   const showKeywords = showEverything || extractionModes.includes("words");
   const showVocabularyDefinitions = !showEverything && extractionModes.includes("words");
 
+  const onBackFromReport = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    if (item.bookId) {
+      navigation.navigate("BookReports", { bookId: item.bookId });
+      return;
+    }
+    navigation.navigate("LibraryHome");
+  }, [item.bookId, navigation]);
+
   const onDeleteReport = useCallback(() => {
     Alert.alert(
       "Delete report",
@@ -168,12 +180,12 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
           style: "destructive",
           onPress: () => {
             removeScan(item.id);
-            navigation.goBack();
+            onBackFromReport();
           },
         },
       ]
     );
-  }, [item.id, navigation, removeScan]);
+  }, [item.id, onBackFromReport, removeScan]);
 
   const createdAt = new Date(item.createdAt);
   const createdLabel = createdAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -915,7 +927,7 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, { backgroundColor: sheet.screenBg }]}>
       <View style={styles.rptTopNav}>
         <Pressable
-          onPress={() => navigation.goBack()}
+          onPress={onBackFromReport}
           style={({ pressed }) => [
             styles.rptNavIconBtn,
             { backgroundColor: sheet.navCircle },

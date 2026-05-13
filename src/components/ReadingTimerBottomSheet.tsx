@@ -97,7 +97,9 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
   const [endPageDraft, setEndPageDraft] = useState("");
   const [bookPickerOpen, setBookPickerOpen] = useState(false);
   const [tick, setTick] = useState(0);
+  const [mounted, setMounted] = useState(false);
   const translateY = useRef(new Animated.Value(winH)).current;
+  const backdropOp = useRef(new Animated.Value(0)).current;
   const animatingOut = useRef(false);
   const prevVisible = useRef(visible);
   const prevTimerBookForStartDraftRef = useRef<string | null | undefined>(undefined);
@@ -216,33 +218,56 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
   const handleDismiss = useCallback(() => {
     if (animatingOut.current) return;
     animatingOut.current = true;
-    Animated.timing(translateY, {
-      toValue: winH,
-      duration: 260,
-      easing: Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
+    backdropOp.stopAnimation();
+    translateY.stopAnimation();
+    Animated.parallel([
+      Animated.timing(backdropOp, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: winH,
+        duration: 260,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
       animatingOut.current = false;
       if (finished) {
         clearLastCompletedSession();
+        setMounted(false);
         onDismiss();
       }
     });
-  }, [winH, translateY, onDismiss, clearLastCompletedSession]);
+  }, [backdropOp, winH, translateY, onDismiss, clearLastCompletedSession]);
 
   useEffect(() => {
-    if (visible) {
-      translateY.setValue(winH);
-      Animated.spring(translateY, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 68,
-        friction: 12,
-      }).start();
-    } else {
-      translateY.setValue(winH);
-    }
-  }, [visible, winH, translateY]);
+    if (!visible) return;
+    backdropOp.stopAnimation();
+    translateY.stopAnimation();
+    setMounted(true);
+    backdropOp.setValue(0);
+    translateY.setValue(winH);
+    const id = requestAnimationFrame(() => {
+      Animated.parallel([
+        Animated.timing(backdropOp, {
+          toValue: 1,
+          duration: 280,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 68,
+          friction: 12,
+        }),
+      ]).start();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [visible, winH, backdropOp, translateY]);
 
   const elapsedSeconds = useMemo(() => getActiveElapsedSeconds(run), [run, tick]);
 
@@ -485,7 +510,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
 
   return (
     <Modal
-      visible={visible}
+      visible={mounted}
       transparent
       animationType="none"
       onRequestClose={handleDismiss}
@@ -497,7 +522,17 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
         keyboardVerticalOffset={0}
       >
         <View style={styles.sheetRoot}>
-          <Pressable style={[styles.overlay, StyleSheet.absoluteFill]} onPress={handleDismiss} accessibilityRole="button" accessibilityLabel="Dismiss reading timer" />
+          <Animated.View
+            pointerEvents="box-none"
+            style={[StyleSheet.absoluteFillObject, { opacity: backdropOp }]}
+          >
+            <Pressable
+              style={[styles.overlay, StyleSheet.absoluteFill]}
+              onPress={handleDismiss}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss reading timer"
+            />
+          </Animated.View>
           <Animated.View
             style={[
               styles.sheet,

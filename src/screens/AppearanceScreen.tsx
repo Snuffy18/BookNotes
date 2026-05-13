@@ -13,18 +13,16 @@ import { darkColors, lightColors } from "../theme/colors";
 
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "Appearance">;
 
-const ROW_ICON_BLUE = "#60a5fa";
-const SWITCH_ON_BLUE = "#2563eb";
 const CHEVRON_SIZE = 15;
 const ROW_ICON_SIZE = 18;
 
 export function AppearanceScreen() {
   const navigation = useNavigation<Nav>();
-  const { darkMode, themeMode, setThemeMode, accentTheme } = useAppSettings();
+  const { darkMode, themeMode, setThemeMode, accentTheme, accentColor } = useAppSettings();
 
   const switchTrack = {
     false: darkMode ? "#3f3f3f" : "#d1d5db",
-    true: SWITCH_ON_BLUE,
+    true: accentColor,
   } as const;
 
   const chevronColor = darkMode ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.35)";
@@ -62,7 +60,7 @@ export function AppearanceScreen() {
         <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
-              <MoonIcon size={ROW_ICON_SIZE} color={ROW_ICON_BLUE} />
+              <MoonIcon size={ROW_ICON_SIZE} color={accentColor} />
               <View style={styles.rowTextWrap}>
                 <Text style={[styles.label, darkMode && styles.labelDark]}>Dark mode</Text>
                 <Text style={[styles.subtitle, { color: subtitleColor }]}>Use dark app appearance.</Text>
@@ -85,7 +83,7 @@ export function AppearanceScreen() {
             activeOpacity={0.85}
           >
             <View style={styles.rowLeft}>
-              <PaintbrushIcon size={ROW_ICON_SIZE} color={ROW_ICON_BLUE} />
+              <PaintbrushIcon size={ROW_ICON_SIZE} color={accentColor} />
               <View style={styles.rowTextWrap}>
                 <Text style={[styles.label, darkMode && styles.labelDark]} numberOfLines={1}>
                   Themes

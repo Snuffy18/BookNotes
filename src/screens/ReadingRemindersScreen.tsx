@@ -19,19 +19,12 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { SettingsOptionHeroCard } from "../components/SettingsOptionHeroCard";
 import { useAppSettings } from "../context/AppSettingsContext";
+import { useReadingReminders } from "../context/ReadingRemindersContext";
 import type { ProfileStackParamList } from "../navigation/types";
+import type { ReminderSlotKey, ReminderSlotSnapshot } from "../types/readingReminders";
 import { darkColors, lightColors } from "../theme/colors";
 
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "ReadingReminders">;
-
-type ReminderSlotKey = "morning" | "afternoon" | "night" | "endOfDay";
-
-type ReminderSlot = {
-  enabled: boolean;
-  at: Date;
-};
-
-const SWITCH_ON = "#2563eb";
 
 function makeTime(hour: number, minute: number): Date {
   const d = new Date();
@@ -40,22 +33,19 @@ function makeTime(hour: number, minute: number): Date {
   return d;
 }
 
+function slotAtDate(slot: ReminderSlotSnapshot): Date {
+  return makeTime(slot.hour, slot.minute);
+}
+
 function formatTimeLabel(d: Date): string {
   return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-const initialSlots: Record<ReminderSlotKey, ReminderSlot> = {
-  morning: { enabled: true, at: makeTime(8, 30) },
-  afternoon: { enabled: true, at: makeTime(13, 0) },
-  night: { enabled: false, at: makeTime(20, 0) },
-  endOfDay: { enabled: true, at: makeTime(21, 0) },
-};
-
 export function ReadingRemindersScreen() {
   const navigation = useNavigation<Nav>();
-  const { darkMode } = useAppSettings();
+  const { darkMode, accentColor } = useAppSettings();
+  const { slots, setReminderSlot } = useReadingReminders();
   const insets = useSafeAreaInsets();
-  const [slots, setSlots] = useState<Record<ReminderSlotKey, ReminderSlot>>(initialSlots);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerSlot, setPickerSlot] = useState<ReminderSlotKey | null>(null);
@@ -63,16 +53,15 @@ export function ReadingRemindersScreen() {
 
   const switchTrackOff = darkMode ? "#3f3f3f" : "#d1d5db";
 
-  const setSlot = useCallback((key: ReminderSlotKey, patch: Partial<ReminderSlot>) => {
-    setSlots((s) => ({ ...s, [key]: { ...s[key], ...patch } }));
-  }, []);
-
-  const openTimePicker = useCallback((key: ReminderSlotKey) => {
-    const base = slots[key].at;
-    setPickerDraft(new Date(base.getTime()));
-    setPickerSlot(key);
-    setPickerOpen(true);
-  }, [slots]);
+  const openTimePicker = useCallback(
+    (key: ReminderSlotKey) => {
+      const base = slotAtDate(slots[key]);
+      setPickerDraft(new Date(base.getTime()));
+      setPickerSlot(key);
+      setPickerOpen(true);
+    },
+    [slots]
+  );
 
   const closePicker = useCallback(() => {
     setPickerOpen(false);
@@ -81,10 +70,13 @@ export function ReadingRemindersScreen() {
 
   const commitPicker = useCallback(() => {
     if (pickerSlot) {
-      setSlot(pickerSlot, { at: new Date(pickerDraft.getTime()) });
+      setReminderSlot(pickerSlot, {
+        hour: pickerDraft.getHours(),
+        minute: pickerDraft.getMinutes(),
+      });
     }
     closePicker();
-  }, [pickerSlot, pickerDraft, setSlot, closePicker]);
+  }, [pickerSlot, pickerDraft, setReminderSlot, closePicker]);
 
   const onPickerChange = useCallback(
     (event: DateTimePickerEvent, date?: Date) => {
@@ -94,7 +86,10 @@ export function ReadingRemindersScreen() {
           return;
         }
         if (date && pickerSlot) {
-          setSlot(pickerSlot, { at: date });
+          setReminderSlot(pickerSlot, {
+            hour: date.getHours(),
+            minute: date.getMinutes(),
+          });
         }
         closePicker();
         return;
@@ -103,7 +98,7 @@ export function ReadingRemindersScreen() {
         setPickerDraft(date);
       }
     },
-    [pickerSlot, setSlot, closePicker],
+    [pickerSlot, setReminderSlot, closePicker]
   );
 
   const androidPickerVisible = pickerOpen && Platform.OS === "android" && pickerSlot !== null;
@@ -143,8 +138,9 @@ export function ReadingRemindersScreen() {
             label="Morning"
             slot={slots.morning}
             darkMode={darkMode}
+            accentColor={accentColor}
             switchTrackOff={switchTrackOff}
-            onToggle={(v) => setSlot("morning", { enabled: v })}
+            onToggle={(v) => setReminderSlot("morning", { enabled: v })}
             onTimePress={() => openTimePicker("morning")}
           />
           <View style={[styles.rowDividerThin, darkMode && styles.rowDividerThinDark]} />
@@ -152,8 +148,9 @@ export function ReadingRemindersScreen() {
             label="Afternoon"
             slot={slots.afternoon}
             darkMode={darkMode}
+            accentColor={accentColor}
             switchTrackOff={switchTrackOff}
-            onToggle={(v) => setSlot("afternoon", { enabled: v })}
+            onToggle={(v) => setReminderSlot("afternoon", { enabled: v })}
             onTimePress={() => openTimePicker("afternoon")}
           />
           <View style={[styles.rowDividerThin, darkMode && styles.rowDividerThinDark]} />
@@ -161,8 +158,9 @@ export function ReadingRemindersScreen() {
             label="Night"
             slot={slots.night}
             darkMode={darkMode}
+            accentColor={accentColor}
             switchTrackOff={switchTrackOff}
-            onToggle={(v) => setSlot("night", { enabled: v })}
+            onToggle={(v) => setReminderSlot("night", { enabled: v })}
             onTimePress={() => openTimePicker("night")}
           />
 
@@ -176,8 +174,9 @@ export function ReadingRemindersScreen() {
               label="End of Day"
               slot={slots.endOfDay}
               darkMode={darkMode}
+              accentColor={accentColor}
               switchTrackOff={switchTrackOff}
-              onToggle={(v) => setSlot("endOfDay", { enabled: v })}
+              onToggle={(v) => setReminderSlot("endOfDay", { enabled: v })}
               onTimePress={() => openTimePicker("endOfDay")}
             />
           </View>
@@ -213,7 +212,7 @@ export function ReadingRemindersScreen() {
                 </Pressable>
                 <Text style={[styles.iosToolbarTitle, darkMode && styles.rowLabelDark]}>Time</Text>
                 <Pressable onPress={commitPicker} hitSlop={12}>
-                  <Text style={[styles.iosToolbarBtn, styles.iosToolbarDone]}>Done</Text>
+                  <Text style={[styles.iosToolbarBtn, styles.iosToolbarDone, { color: accentColor }]}>Done</Text>
                 </Pressable>
               </View>
               <View style={styles.iosPickerWrap}>
@@ -239,13 +238,15 @@ function ReminderRow({
   label,
   slot,
   darkMode,
+  accentColor,
   switchTrackOff,
   onToggle,
   onTimePress,
 }: {
   label: string;
-  slot: ReminderSlot;
+  slot: ReminderSlotSnapshot;
   darkMode: boolean;
+  accentColor: string;
   switchTrackOff: string;
   onToggle: (v: boolean) => void;
   onTimePress: () => void;
@@ -265,14 +266,14 @@ function ReminderRow({
           activeOpacity={0.85}
         >
           <Text style={[styles.timePillText, darkMode && styles.timePillTextDark]}>
-            {formatTimeLabel(slot.at)}
+            {formatTimeLabel(slotAtDate(slot))}
           </Text>
         </TouchableOpacity>
       </View>
       <Switch
         value={slot.enabled}
         onValueChange={onToggle}
-        trackColor={{ false: switchTrackOff, true: SWITCH_ON }}
+        trackColor={{ false: switchTrackOff, true: accentColor }}
         thumbColor="#ffffff"
         ios_backgroundColor={switchTrackOff}
       />

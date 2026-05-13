@@ -29,7 +29,6 @@ type Nav = NativeStackNavigationProp<ProfileStackParamList, "StudyPreferences">;
 
 type Choice<T extends string> = { id: T; title: string; subtitle: string };
 
-const BLUE = "#60a5fa";
 const SECTION_LABEL_TO_CARD = 6;
 const ROW_ICON_GAP = 12;
 const ROW_ICON_W = 18;
@@ -65,7 +64,7 @@ function SectionLabel({ darkMode }: { darkMode: boolean }) {
 
 export function StudyPreferencesScreen() {
   const navigation = useNavigation<Nav>();
-  const { darkMode } = useAppSettings();
+  const { darkMode, accentColor } = useAppSettings();
   const insets = useSafeAreaInsets();
   const {
     tone,
@@ -130,7 +129,7 @@ export function StudyPreferencesScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={[styles.heroCard, darkMode && styles.heroCardDark]}>
           <View style={styles.heroIconWrap}>
-            <Ionicons name="school" size={22} color={BLUE} />
+            <Ionicons name="school" size={22} color={accentColor} />
           </View>
           <Text style={[styles.heroTitle, darkMode && styles.heroTitleDark]}>Study preferences</Text>
           <Text
@@ -154,7 +153,7 @@ export function StudyPreferencesScreen() {
               activeOpacity={0.82}
             >
               <View style={styles.rowIconSlot}>
-                <Graph2DIcon size={ROW_ICON_W} color={BLUE} opacity={1} />
+                <Graph2DIcon size={ROW_ICON_W} color={accentColor} opacity={1} />
               </View>
               <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Tone / complexity</Text>
               <View style={styles.dropdownTrail}>
@@ -174,7 +173,7 @@ export function StudyPreferencesScreen() {
               activeOpacity={0.82}
             >
               <View style={styles.rowIconSlot}>
-                <RulerIcon size={ROW_ICON_W} color={BLUE} opacity={1} />
+                <RulerIcon size={ROW_ICON_W} color={accentColor} opacity={1} />
               </View>
               <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Length</Text>
               <View style={styles.dropdownTrail}>
@@ -194,7 +193,7 @@ export function StudyPreferencesScreen() {
               activeOpacity={0.82}
             >
               <View style={styles.rowIconSlot}>
-                <HighlighterIcon size={ROW_ICON_W} color={BLUE} opacity={1} />
+                <HighlighterIcon size={ROW_ICON_W} color={accentColor} opacity={1} />
               </View>
               <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Key elements</Text>
               <View style={styles.dropdownTrail}>
@@ -214,7 +213,7 @@ export function StudyPreferencesScreen() {
               activeOpacity={0.82}
             >
               <View style={styles.rowIconSlot}>
-                <Ionicons name="globe-outline" size={ROW_ICON_W} color={BLUE} />
+                <Ionicons name="globe-outline" size={ROW_ICON_W} color={accentColor} />
               </View>
               <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Output language</Text>
               <View style={styles.langTrail}>
@@ -276,11 +275,11 @@ export function StudyPreferencesScreen() {
             </View>
             <View style={styles.menuSheetTitleRow}>
               {openMenu === "tone" ? (
-                <Graph2DIcon size={20} color={BLUE} opacity={1} />
+                <Graph2DIcon size={20} color={accentColor} opacity={1} />
               ) : openMenu === "length" ? (
-                <RulerIcon size={20} color={BLUE} opacity={1} />
+                <RulerIcon size={20} color={accentColor} opacity={1} />
               ) : openMenu === "highlight" ? (
-                <HighlighterIcon size={20} color={BLUE} opacity={1} />
+                <HighlighterIcon size={20} color={accentColor} opacity={1} />
               ) : null}
               <Text style={[styles.menuSheetTitle, darkMode && styles.menuSheetTitleDark]}>
                 {openMenu === "tone"
@@ -379,7 +378,7 @@ export function StudyPreferencesScreen() {
                           <Text style={[styles.menuOptionSub, darkMode && styles.menuOptionSubDark]}>{opt.subtitle}</Text>
                         </View>
                         {tone === opt.id ? (
-                          <Ionicons name="checkmark" size={22} color={BLUE} />
+                          <Ionicons name="checkmark" size={22} color={accentColor} />
                         ) : (
                           <View style={styles.menuCheckPlaceholder} />
                         )}
@@ -407,7 +406,7 @@ export function StudyPreferencesScreen() {
                           ) : null}
                         </View>
                         {length === opt.id ? (
-                          <Ionicons name="checkmark" size={22} color={BLUE} />
+                          <Ionicons name="checkmark" size={22} color={accentColor} />
                         ) : (
                           <View style={styles.menuCheckPlaceholder} />
                         )}

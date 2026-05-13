@@ -1,58 +1,24 @@
 import { useFonts } from "expo-font";
-import { StatusBar } from "expo-status-bar";
-import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/native";
+import { DMSerifDisplay_400Regular } from "@expo-google-fonts/dm-serif-display";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AppRoot } from "./AppRoot";
 import { AddBookSheetProvider } from "./src/context/AddBookSheetContext";
 import { BarcodeScanBookSheetProvider } from "./src/context/BarcodeScanBookSheetContext";
-import { AppSettingsProvider, useAppSettings } from "./src/context/AppSettingsContext";
+import { AppSettingsProvider } from "./src/context/AppSettingsContext";
+import { ReadingRemindersProvider } from "./src/context/ReadingRemindersContext";
 import { ReadingSessionProvider } from "./src/context/ReadingSessionContext";
 import { ScanProvider } from "./src/context/ScanContext";
 import { StreakProvider } from "./src/context/StreakContext";
 import { ExportPreferencesProvider } from "./src/context/ExportPreferencesContext";
 import { StudyPreferencesProvider } from "./src/context/StudyPreferencesContext";
-import { RootTabNavigator } from "./src/navigation/RootTabNavigator";
-import { accentColors, darkColors, lightColors } from "./src/theme/colors";
-import { FONT_CANELA_TEXT_BOLD, FONT_CANELA_TEXT_REGULAR } from "./src/theme/fonts";
-
-function AppContent() {
-  const { darkMode, accentTheme } = useAppSettings();
-  const primaryColor = accentColors[accentTheme];
-  const appTheme = darkMode
-    ? {
-        ...DarkTheme,
-        colors: {
-          ...DarkTheme.colors,
-          background: darkColors.background,
-          primary: primaryColor,
-          card: darkColors.card,
-          text: darkColors.textPrimary,
-          border: darkColors.border,
-        },
-      }
-    : {
-        ...DefaultTheme,
-        colors: {
-          ...DefaultTheme.colors,
-          background: lightColors.background,
-          primary: primaryColor,
-          card: lightColors.card,
-          text: lightColors.textPrimary,
-          border: lightColors.border,
-        },
-      };
-  return (
-    <NavigationContainer theme={appTheme}>
-      <StatusBar style={darkMode ? "light" : "dark"} />
-      <RootTabNavigator />
-    </NavigationContainer>
-  );
-}
+import { FONT_CANELA_TEXT_BOLD, FONT_CANELA_TEXT_REGULAR, FONT_DM_SERIF_DISPLAY } from "./src/theme/fonts";
 
 export default function App() {
   const [fontsLoaded] = useFonts({
     [FONT_CANELA_TEXT_REGULAR]: require("./assets/CanelaText-Regular-Trial.otf"),
     [FONT_CANELA_TEXT_BOLD]: require("./assets/CanelaText-Bold-Trial.otf"),
+    [FONT_DM_SERIF_DISPLAY]: DMSerifDisplay_400Regular,
   });
 
   if (!fontsLoaded) {
@@ -65,17 +31,19 @@ export default function App() {
         <AppSettingsProvider>
           <ExportPreferencesProvider>
             <StudyPreferencesProvider>
+              <ReadingRemindersProvider>
               <ScanProvider>
                 <BarcodeScanBookSheetProvider>
                   <AddBookSheetProvider>
                     <ReadingSessionProvider>
                       <StreakProvider>
-                        <AppContent />
+                        <AppRoot />
                       </StreakProvider>
                     </ReadingSessionProvider>
                   </AddBookSheetProvider>
                 </BarcodeScanBookSheetProvider>
               </ScanProvider>
+              </ReadingRemindersProvider>
             </StudyPreferencesProvider>
           </ExportPreferencesProvider>
         </AppSettingsProvider>

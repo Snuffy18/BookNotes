@@ -70,11 +70,8 @@ export function LibraryScreen() {
   const { books, scans, isCoverProcessing } = useScanContext();
   const { closeAddBookSheet, openAddBookSheet, pickBookCoverFromGallery, isOpen: isAddBookSheetOpen } =
     useAddBookSheet();
-  const {
-    openBarcodeScanBookSheet,
-    closeBarcodeScanBookSheet,
-    isOpen: isBarcodeScanBookSheetOpen,
-  } = useBarcodeScanBookSheet();
+  const { closeBarcodeScanBookSheet, isOpen: isBarcodeScanBookSheetOpen, openBarcodeScanBookSheet } =
+    useBarcodeScanBookSheet();
   const navigation = useNavigation<NativeStackNavigationProp<LibraryStackParamList, "LibraryHome">>();
   const [showGalleryDropTarget, setShowGalleryDropTarget] = useState(false);
   const [isDraggingTowardGallery, setIsDraggingTowardGallery] = useState(false);
@@ -180,6 +177,11 @@ export function LibraryScreen() {
       setSkipNextAddPress(false);
       return;
     }
+    bookCaptureOpenedAtRef.current = Date.now();
+    openBarcodeScanBookSheet();
+  };
+
+  const onScanBarcodeFromEmpty = () => {
     bookCaptureOpenedAtRef.current = Date.now();
     openBarcodeScanBookSheet();
   };
@@ -347,7 +349,7 @@ export function LibraryScreen() {
             </View>
           ) : (
             <LibraryEmptyState
-              onScanBarcode={onAddBookPress}
+              onScanBarcode={onScanBarcodeFromEmpty}
               onTakePhoto={onTakePhotoFromEmpty}
             />
           )}
