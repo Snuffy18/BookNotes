@@ -525,7 +525,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   stepIconLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -591,7 +591,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   badgeLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "flex-end",
     justifyContent: "center",
   },
@@ -634,7 +634,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   progressFillInner: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "#60a5fa",
     borderRadius: 2,
   },
@@ -677,7 +677,7 @@ const styles = StyleSheet.create({
     color: "#ffffff",
   },
   errorOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: "center",
     paddingHorizontal: 24,
     backgroundColor: "rgba(0,0,0,0.55)",

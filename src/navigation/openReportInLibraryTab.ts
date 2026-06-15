@@ -41,6 +41,7 @@ export function openReportInLibraryTab(
 
   tabNav.dispatch(
     CommonActions.reset({
+      ...tabState,
       index: activeTabIndex,
       routes,
     })

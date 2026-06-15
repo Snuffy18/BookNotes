@@ -1,4 +1,4 @@
-import { Audio } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 
 let soundEffectsPlaybackEnabled = true;
 
@@ -11,12 +11,12 @@ let audioModeReady = false;
 
 async function ensureAudioMode(): Promise<void> {
   if (audioModeReady) return;
-  await Audio.setAudioModeAsync({
-    playsInSilentModeIOS: true,
-    allowsRecordingIOS: false,
-    staysActiveInBackground: false,
-    shouldDuckAndroid: true,
-    playThroughEarpieceAndroid: false,
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    allowsRecording: false,
+    shouldPlayInBackground: false,
+    shouldRouteThroughEarpiece: false,
+    interruptionMode: "mixWithOthers",
   });
   audioModeReady = true;
 }
@@ -44,15 +44,15 @@ export function playSoundEffect(id: SoundEffectId): void {
   void (async () => {
     try {
       await ensureAudioMode();
-      const { sound } = await Audio.Sound.createAsync(SOUND_FILES[id], {
-        shouldPlay: true,
-        volume: SOUND_VOLUMES[id] ?? 1,
-      });
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync().catch(() => {});
+      const player = createAudioPlayer(SOUND_FILES[id]);
+      player.volume = SOUND_VOLUMES[id] ?? 1;
+      const subscription = player.addListener("playbackStatusUpdate", (status) => {
+        if (status.didJustFinish) {
+          subscription.remove();
+          player.release();
         }
       });
+      player.play();
     } catch {
       // Missing asset or device limitation — fail silently.
     }

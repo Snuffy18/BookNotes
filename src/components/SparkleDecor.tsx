@@ -227,11 +227,11 @@ export function ButtonFloatingSparkles({ color = "rgba(255,255,255,0.92)" }: But
 
 const styles = StyleSheet.create({
   layer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 2,
   },
   buttonSparkleLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 0,
   },
   sparkleWrap: {

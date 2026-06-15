@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { isOpenAiConfigured } from "../services/openAiConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { reloadAppAsync } from "expo";
 import { LinearGradient } from "expo-linear-gradient";
@@ -438,7 +439,9 @@ export function ProfileScreen() {
 
         <View style={[styles.hintCard, darkMode && styles.hintCardDark]}>
           <Text style={[styles.hint, darkMode && styles.hintDark]}>
-            Set EXPO_PUBLIC_OPENAI_API_KEY in your environment to enable AI generation.
+            {isOpenAiConfigured()
+              ? "AI page analysis is configured."
+              : "Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in .env, then fully restart Expo (npx expo start -c) to enable AI generation."}
           </Text>
         </View>
       </ScrollView>

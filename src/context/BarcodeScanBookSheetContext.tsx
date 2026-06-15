@@ -412,7 +412,7 @@ export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode
         <View style={styles.root}>
           <Animated.View pointerEvents="box-none" style={[styles.dim, { opacity: backdropOp }]}>
             <Pressable
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
               onPress={closeBarcodeScanBookSheet}
               accessibilityRole="button"
               accessibilityLabel="Close barcode scanner"
@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   dim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.7)",
   },
   panel: {

@@ -600,7 +600,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
         <View style={styles.sheetRoot}>
           <Animated.View
             pointerEvents="box-none"
-            style={[StyleSheet.absoluteFillObject, { opacity: backdropOp }]}
+            style={[StyleSheet.absoluteFill, { opacity: backdropOp }]}
           >
             <Pressable
               style={[styles.overlay, StyleSheet.absoluteFill]}

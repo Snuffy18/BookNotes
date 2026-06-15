@@ -204,7 +204,7 @@ export function PdfExportToast({ mode, shareDialogTitle, onDismissComplete }: Pr
 
 const styles = StyleSheet.create({
   overlayRoot: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 50,
     pointerEvents: "box-none",
   },

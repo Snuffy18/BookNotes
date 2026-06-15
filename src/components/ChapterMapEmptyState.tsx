@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   bottomBarGradient: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   scanButton: {
     flexDirection: "row",

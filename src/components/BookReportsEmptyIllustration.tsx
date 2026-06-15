@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     overflow: "visible",
   },
   particlesLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: "visible",
     zIndex: 1,
   },

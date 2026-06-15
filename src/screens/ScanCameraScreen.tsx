@@ -2768,7 +2768,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 style={[styles.chapterMapBookPickerBackdrop, { opacity: chapterMapBookPickerBackdropOp }]}
               >
                 <Pressable
-                  style={StyleSheet.absoluteFillObject}
+                  style={StyleSheet.absoluteFill}
                   onPress={dismissChapterMapBookPicker}
                   accessibilityRole="button"
                   accessibilityLabel="Close book picker"
@@ -2841,7 +2841,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
             style={[styles.pageScanSheetDim, { opacity: pageScanBackdropOp }]}
           >
             <Pressable
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
               onPress={dismissPageScanSheet}
               accessibilityRole="button"
               accessibilityLabel="Close"
@@ -3267,7 +3267,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
         <View style={styles.fromLibraryModalRoot}>
           <Animated.View
             pointerEvents="box-none"
-            style={[StyleSheet.absoluteFillObject, { opacity: libraryModalBackdropOp }]}
+            style={[StyleSheet.absoluteFill, { opacity: libraryModalBackdropOp }]}
           >
             <Pressable
               style={styles.fromLibraryModalBackdrop}
@@ -3930,7 +3930,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   fromLibraryModalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.45)",
   },
   fromLibraryModalSheet: {
@@ -4581,12 +4581,12 @@ const styles = StyleSheet.create({
     color: "#111111",
   },
   chapterMapBookPickerOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 30,
     justifyContent: "flex-end",
   },
   chapterMapBookPickerBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 30,
     backgroundColor: "rgba(0,0,0,0.48)",
   },
@@ -4655,12 +4655,12 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.45)",
   },
   chapterEditOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 24,
     justifyContent: "flex-end",
   },
   chapterEditBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 20,
     backgroundColor: "rgba(0,0,0,0.52)",
   },
@@ -4775,7 +4775,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   pageScanSheetDim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.7)",
   },
   pageScanSheetPanel: {
@@ -4841,7 +4841,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   pageScanPreviewCornersOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 14,
   },
   pageScanPreviewCamera: {
@@ -4850,7 +4850,7 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   pageScanPreviewPlaceholder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
@@ -4966,7 +4966,7 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   contentsViewfinderCornersOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 14,
   },
   contentsViewfinderCamera: {
@@ -5213,7 +5213,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   coverExtractingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "center",
     alignItems: "center",

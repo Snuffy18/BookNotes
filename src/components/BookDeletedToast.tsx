@@ -115,7 +115,7 @@ export function BookDeletedToast({ showCount }: Props) {
 
 const styles = StyleSheet.create({
   overlayRoot: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 60,
   },
   floatingSlot: {

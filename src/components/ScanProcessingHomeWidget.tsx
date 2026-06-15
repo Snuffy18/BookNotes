@@ -123,7 +123,6 @@ export function ScanProcessingHomeWidget({ darkMode, navigation, onTakeAnotherPh
               autoPlay
               loop={false}
               speed={1}
-              pointerEvents="none"
               style={styles.cardConfettiLottie}
             />
           </View>
@@ -247,7 +246,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   cardConfettiLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 0,

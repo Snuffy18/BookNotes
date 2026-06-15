@@ -1,14 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/native";
-import { WelcomeScreen } from "./src/components/WelcomeScreen";
-import { useAddBookSheet } from "./src/context/AddBookSheetContext";
-import { useBarcodeScanBookSheet } from "./src/context/BarcodeScanBookSheetContext";
+import { OnboardingFlow } from "./src/onboarding/OnboardingFlow";
+import { DEFAULT_ONBOARDING_DATA } from "./src/onboarding/types";
 import { useAppSettings } from "./src/context/AppSettingsContext";
 import { useScanContext } from "./src/context/ScanContext";
 import { RootTabNavigator } from "./src/navigation/RootTabNavigator";
-import { loadOnboardingDismissed, saveOnboardingDismissed } from "./src/storage/onboardingStorage";
+import {
+  clearOnboardingProgress,
+  loadOnboardingDismissed,
+  loadOnboardingProgress,
+  saveOnboardingDismissed,
+  saveOnboardingProgress,
+} from "./src/storage/onboardingStorage";
+import { applyOnboardingReminders, saveOnboardingAnswers } from "./src/storage/onboardingAnswersStorage";
 import { accentColors, darkColors, lightColors } from "./src/theme/colors";
 
 const SPLASH_BG = "#111111";
@@ -16,9 +22,10 @@ const SPLASH_BG = "#111111";
 export function AppRoot() {
   const { darkMode, accentTheme } = useAppSettings();
   const { books, libraryReady } = useScanContext();
-  const { openBarcodeScanBookSheet } = useBarcodeScanBookSheet();
-  const { openAddBookSheet } = useAddBookSheet();
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean | null>(null);
+  const [onboardingIdx, setOnboardingIdx] = useState(0);
+  const [onboardingData, setOnboardingData] = useState(DEFAULT_ONBOARDING_DATA);
+  const [onboardingReady, setOnboardingReady] = useState(false);
 
   const primaryColor = accentColors[accentTheme];
   const appTheme = useMemo(
@@ -50,7 +57,16 @@ export function AppRoot() {
   );
 
   useEffect(() => {
-    loadOnboardingDismissed().then(setOnboardingDismissed);
+    Promise.all([loadOnboardingDismissed(), loadOnboardingProgress()]).then(
+      ([dismissed, progress]) => {
+        setOnboardingDismissed(dismissed);
+        if (progress) {
+          setOnboardingIdx(progress.idx);
+          setOnboardingData(progress.data);
+        }
+        setOnboardingReady(true);
+      }
+    );
   }, []);
 
   useEffect(() => {
@@ -59,25 +75,40 @@ export function AppRoot() {
     }
   }, [books.length, onboardingDismissed]);
 
-  const showWelcome =
-    libraryReady && onboardingDismissed === false && books.length === 0;
+  const showOnboarding =
+    libraryReady && onboardingReady && onboardingDismissed === false && books.length === 0;
 
-  const handleSkip = () => {
-    void saveOnboardingDismissed().then(() => setOnboardingDismissed(true));
-  };
+  const handleOnboardingProgress = useCallback((idx: number, data: typeof onboardingData) => {
+    setOnboardingIdx(idx);
+    setOnboardingData(data);
+    void saveOnboardingProgress(idx, data);
+  }, []);
 
-  if (!libraryReady || onboardingDismissed === null) {
+  const handleOnboardingComplete = useCallback((data: typeof onboardingData) => {
+    void (async () => {
+      await Promise.all([
+        saveOnboardingDismissed(),
+        clearOnboardingProgress(),
+        saveOnboardingAnswers(data),
+        applyOnboardingReminders(data),
+      ]);
+      setOnboardingDismissed(true);
+    })();
+  }, []);
+
+  if (!libraryReady || onboardingDismissed === null || !onboardingReady) {
     return <View style={{ flex: 1, backgroundColor: SPLASH_BG }} />;
   }
 
-  if (showWelcome) {
+  if (showOnboarding) {
     return (
       <>
         <StatusBar style="light" />
-        <WelcomeScreen
-          onAddFirstBook={() => openBarcodeScanBookSheet()}
-          onTakePhoto={() => openAddBookSheet()}
-          onSkip={handleSkip}
+        <OnboardingFlow
+          initialIdx={onboardingIdx}
+          initialData={onboardingData}
+          onProgressChange={handleOnboardingProgress}
+          onComplete={handleOnboardingComplete}
         />
       </>
     );

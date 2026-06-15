@@ -476,7 +476,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   desaturateOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(220, 222, 230, 0.52)",
   },
   radioWrap: {
@@ -532,7 +532,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   themeToastBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: darkColors.overlay,
   },
   themeToastWrap: {

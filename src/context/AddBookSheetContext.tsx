@@ -280,7 +280,7 @@ export function AddBookSheetProvider({ children }: { children: ReactNode }) {
             style={[styles.addBookSheetDim, { opacity: addBookBackdropOp }]}
           >
             <Pressable
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
               onPress={closeAddBookSheet}
               accessibilityRole="button"
               accessibilityLabel="Close add book"
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   addBookSheetDim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.7)",
   },
   addBookSheetPanel: {
@@ -472,7 +472,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   addBookPreviewCornersOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 14,
   },
   addBookPreviewCamera: {
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   addBookPreviewPlaceholder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     gap: 8,

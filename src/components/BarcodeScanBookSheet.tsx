@@ -114,7 +114,7 @@ function AnimatedScanLine({
   const trailOnTop = useRef(new Animated.Value(1)).current;
   const lineHeight = 2;
   const travel = Math.max(0, viewfinderHeight - lineHeight);
-  const trailColors = useMemo(
+  const trailColors = useMemo<readonly [string, string, ...string[]]>(
     () => [
       hexWithAlpha(accentColor, 0),
       hexWithAlpha(accentColor, 0.04),
@@ -123,7 +123,10 @@ function AnimatedScanLine({
     ],
     [accentColor]
   );
-  const trailColorsReversed = useMemo(() => [...trailColors].reverse(), [trailColors]);
+  const trailColorsReversed = useMemo<readonly [string, string, ...string[]]>(
+    () => [...trailColors].reverse() as [string, string, ...string[]],
+    [trailColors]
+  );
   const trailBelowOpacity = useMemo(
     () =>
       trailOnTop.interpolate({
@@ -630,7 +633,7 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   viewfinderOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: "hidden",
   },
   scanLineAnchor: {
@@ -672,7 +675,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   cameraPlaceholder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(10,10,10,0.92)",

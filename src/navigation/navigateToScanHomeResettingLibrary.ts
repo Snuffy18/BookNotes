@@ -24,6 +24,7 @@ export function navigateToScanHomeResettingLibrary(
 
   tabNav.dispatch(
     CommonActions.reset({
+      ...tabState,
       index: activeIndex,
       routes,
     })

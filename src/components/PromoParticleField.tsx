@@ -119,7 +119,7 @@ export function PromoParticleStarsLayer() {
 
 const styles = StyleSheet.create({
   layer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   dot: {
     position: "absolute",

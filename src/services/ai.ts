@@ -1,4 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
+import { callOpenAiResponses, isOpenAiConfigured } from "./openAiConfig";
 import { buildStudyPreferencesInstructions } from "../study/buildStudyPrompt";
 import {
   buildEntityExtractionPrompt,
@@ -18,7 +19,6 @@ import type {
 import type { StudyPreferencesSnapshot } from "../types/studyPreferences";
 import { DEFAULT_STUDY_PREFERENCES } from "../types/studyPreferences";
 
-const API_URL = "https://api.openai.com/v1/responses";
 /** Text-only and general tasks (entities, summaries, insights). */
 const DEFAULT_MODEL = "gpt-4.1-mini";
 /**
@@ -232,11 +232,6 @@ export async function generateNotesFromImage(
   studyPreferences: StudyPreferencesSnapshot = DEFAULT_STUDY_PREFERENCES,
   extractionModes: ExtractionMode[] = ["everything"]
 ): Promise<GeneratedNotes> {
-  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing EXPO_PUBLIC_OPENAI_API_KEY in your Expo environment.");
-  }
-
   const base64Image = await FileSystem.readAsStringAsync(imageUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
@@ -251,13 +246,7 @@ export async function generateNotesFromImage(
       ? " Reminder: include literal ** markers inside summary, detailedNotes, and mainIdeas strings for every applicable term, number, date, and definition from the page."
       : "";
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
+  const response = await callOpenAiResponses({
       model: PAGE_MODEL,
       input: [
         {
@@ -295,7 +284,6 @@ export async function generateNotesFromImage(
           ],
         },
       ],
-    }),
   });
 
   if (!response.ok) {
@@ -369,22 +357,11 @@ export async function generateNotesFromImage(
 export async function extractBookMetadataFromImage(
   imageUri: string
 ): Promise<{ title: string; author: string }> {
-  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing EXPO_PUBLIC_OPENAI_API_KEY in your Expo environment.");
-  }
-
   const base64Image = await FileSystem.readAsStringAsync(imageUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
+  const response = await callOpenAiResponses({
       model: IMAGE_MODEL,
       input: [
         {
@@ -409,7 +386,6 @@ export async function extractBookMetadataFromImage(
           ],
         },
       ],
-    }),
   });
 
   if (!response.ok) {
@@ -445,17 +421,10 @@ export async function polishBookTitleFromCatalogMetadata(
   author: string,
   signal?: AbortSignal
 ): Promise<string | null> {
-  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey) return null;
+  if (!isOpenAiConfigured()) return null;
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    signal,
-    body: JSON.stringify({
+  const response = await callOpenAiResponses(
+    {
       model: DEFAULT_MODEL,
       input: [
         {
@@ -474,8 +443,9 @@ export async function polishBookTitleFromCatalogMetadata(
             "Do not invent words. Preserve numbers, colons, ampersands, and intentional punctuation in the title.",
         },
       ],
-    }),
-  });
+    },
+    signal,
+  );
 
   if (!response.ok) return null;
 
@@ -495,22 +465,11 @@ export async function polishBookTitleFromCatalogMetadata(
 export async function extractChapterRangesFromContentsImage(
   imageUri: string
 ): Promise<ChapterRange[]> {
-  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing EXPO_PUBLIC_OPENAI_API_KEY in your Expo environment.");
-  }
-
   const base64Image = await FileSystem.readAsStringAsync(imageUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
+  const response = await callOpenAiResponses({
       model: IMAGE_MODEL,
       input: [
         {
@@ -539,7 +498,6 @@ export async function extractChapterRangesFromContentsImage(
           ],
         },
       ],
-    }),
   });
 
   if (!response.ok) {
@@ -596,10 +554,6 @@ export async function extractEntitiesFromPageText(input: {
   pageNumber: number;
   existingEntities?: ExistingEntitySeed[];
 }): Promise<EntityGraphExtractionResult> {
-  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing EXPO_PUBLIC_OPENAI_API_KEY in your Expo environment.");
-  }
   if (!input.pageText?.trim()) {
     throw new Error("Page text is empty. Cannot extract entities.");
   }
@@ -611,13 +565,7 @@ export async function extractEntitiesFromPageText(input: {
     existing_entities: input.existingEntities ?? [],
   });
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
+  const response = await callOpenAiResponses({
       model: DEFAULT_MODEL,
       input: [
         {
@@ -630,7 +578,6 @@ export async function extractEntitiesFromPageText(input: {
           content: [{ type: "input_text", text: prompt }],
         },
       ],
-    }),
   });
 
   if (!response.ok) {
@@ -667,11 +614,6 @@ export async function generateReadingHistorySummary(sessions: ReadingSession[]):
     throw new Error("No reading sessions to summarize.");
   }
 
-  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing EXPO_PUBLIC_OPENAI_API_KEY in your Expo environment.");
-  }
-
   const capped = sessions.length > 120 ? sessions.slice(0, 120) : sessions;
   const omitted = sessions.length - capped.length;
 
@@ -696,13 +638,7 @@ export async function generateReadingHistorySummary(sessions: ReadingSession[]):
     "Do not invent titles, page numbers, or durations that are not supported by the data. " +
     "Use short paragraphs. Stay under 400 words.";
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
+  const response = await callOpenAiResponses({
       model: DEFAULT_MODEL,
       input: [
         {
@@ -715,7 +651,6 @@ export async function generateReadingHistorySummary(sessions: ReadingSession[]):
           content: [{ type: "input_text", text: userText }],
         },
       ],
-    }),
   });
 
   if (!response.ok) {
@@ -881,11 +816,6 @@ export async function generateBookReportsInsights(
     throw new Error("No reports to summarize yet.");
   }
 
-  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing EXPO_PUBLIC_OPENAI_API_KEY in your Expo environment.");
-  }
-
   const chronological = [...scans].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   );
@@ -934,13 +864,7 @@ export async function generateBookReportsInsights(
     `- kicker: ONE short closing line, max 14 words, still impersonal (e.g. what the notes suggest next or what remains thin in the data).\n` +
     `- Scannable in under one minute. No extra keys.`;
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
+  const response = await callOpenAiResponses({
       model: DEFAULT_MODEL,
       input: [
         {
@@ -953,7 +877,6 @@ export async function generateBookReportsInsights(
           content: [{ type: "input_text", text: userText }],
         },
       ],
-    }),
   });
 
   if (!response.ok) {
