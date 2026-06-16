@@ -48,6 +48,8 @@ import { PageScanSheetFrameCorners } from "../components/PageScanSheetFrameCorne
 import { ScanProcessingHomeWidget } from "../components/ScanProcessingHomeWidget";
 import { ReadingTimerActiveBanner } from "../components/ReadingTimerActiveBanner";
 import { ReadingTimerBottomSheet } from "../components/ReadingTimerBottomSheet";
+import { ReadingPlanHomeWidget } from "../components/ReadingPlanHomeWidget";
+import { ReadingPlanBottomSheet } from "../components/ReadingPlanBottomSheet";
 import { StreakBadge } from "../components/StreakBadge";
 import { takePendingOpenReadingTimerModal } from "../reading/pendingReadingTimerModal";
 import { takePendingOpenPageScanModal } from "../scan/pendingPageScanModal";
@@ -277,6 +279,11 @@ const FROM_LIBRARY_MODAL_CARD_MIN_HEIGHT = 312;
 const FROM_LIBRARY_PILLS_TO_CAROUSEL_GAP = 16;
 const FROM_LIBRARY_CARD_TO_DOTS_GAP = 8;
 const FROM_LIBRARY_MODAL_SHEET_MAX_HEIGHT_RATIO = 0.78;
+
+function bookPickerSheetHeightRatio(bookCount: number): number {
+  if (bookCount <= 4) return 0.45;
+  return 0.55;
+}
 const FROM_LIBRARY_OPEN_REPORT_HOLD_MS = 1000;
 const FROM_LIBRARY_SWIPE_HINT_STORAGE_KEY = "@booknotes/fromLibrarySwipeHintDismissed";
 
@@ -566,6 +573,8 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const bookPickerBackdropOp = useRef(new Animated.Value(0)).current;
   const bookPickerSheetTranslate = useRef(new Animated.Value(0)).current;
   const bookPickerWasOpenRef = useRef(false);
+  /** Opens barcode sheet after book picker modal fully dismisses (iOS cannot stack modals). */
+  const pendingOpenBarcodeAfterBookPickerRef = useRef(false);
   /** Lifts the book sheet above the keyboard (transparent Modal + bottom sheet). */
   const [bookPickerKeyboardPad, setBookPickerKeyboardPad] = useState(0);
   const [lastExtractPreviewExpanded, setLastExtractPreviewExpanded] = useState(false);
@@ -619,6 +628,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   const [chapterMapBookPickerVisible, setChapterMapBookPickerVisible] = useState(false);
   const [chapterMapBookPickerMounted, setChapterMapBookPickerMounted] = useState(false);
   const [readingTimerModalVisible, setReadingTimerModalVisible] = useState(false);
+  const [readingPlanModalVisible, setReadingPlanModalVisible] = useState(false);
   /** `null` = All books with scans. */
   const [libraryPromoFilterBookId, setLibraryPromoFilterBookId] = useState<string | null>(null);
   const [libraryPromoModalVisible, setLibraryPromoModalVisible] = useState(false);
@@ -657,7 +667,14 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     [eligibleReadingTimerSessions, books]
   );
 
-  const bookPickerHideShift = useMemo(() => Math.ceil(windowHeight * 0.65), [windowHeight]);
+  const bookPickerSheetHeight = useMemo(
+    () => Math.round(windowHeight * bookPickerSheetHeightRatio(books.length)),
+    [windowHeight, books.length]
+  );
+  const bookPickerHideShift = useMemo(
+    () => bookPickerSheetHeight + 80,
+    [bookPickerSheetHeight]
+  );
 
   useEffect(() => {
     if (isBookModalOpen) {
@@ -703,9 +720,15 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     ]).start(({ finished }) => {
       if (finished) {
         setBookPickerMounted(false);
+        if (pendingOpenBarcodeAfterBookPickerRef.current) {
+          pendingOpenBarcodeAfterBookPickerRef.current = false;
+          setTimeout(() => {
+            openBarcodeScanBookSheet();
+          }, 350);
+        }
       }
     });
-  }, [isBookModalOpen, bookPickerHideShift, bookPickerBackdropOp, bookPickerSheetTranslate]);
+  }, [isBookModalOpen, bookPickerHideShift, bookPickerBackdropOp, bookPickerSheetTranslate, openBarcodeScanBookSheet]);
 
   useEffect(() => {
     if (!bookPickerMounted) {
@@ -1022,6 +1045,18 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     Haptics.selectionAsync().catch(() => {});
     setReadingTimerModalVisible(true);
   }, []);
+
+  const onPressReadingPlanWidget = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    if (needsFirstBook) {
+      Alert.alert(
+        "Reading goal",
+        "Add a book to your library first. Scan a book cover or barcode from this screen, then set a goal to finish it by a date.",
+      );
+      return;
+    }
+    setReadingPlanModalVisible(true);
+  }, [needsFirstBook]);
 
   const onPressLibraryWidget = useCallback(() => {
     Haptics.selectionAsync().catch(() => {});
@@ -1431,24 +1466,15 @@ export function ScanCameraScreen({ navigation, route }: Props) {
     setSearchQuery("");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
-    // iOS cannot present a second Modal while the book picker is still mounted.
-    bookPickerBackdropOp.stopAnimation();
-    bookPickerSheetTranslate.stopAnimation();
-    bookPickerWasOpenRef.current = false;
-    setBookPickerMounted(false);
-    setIsBookModalOpen(false);
-    bookPickerBackdropOp.setValue(0);
-    bookPickerSheetTranslate.setValue(bookPickerHideShift);
-
-    requestAnimationFrame(() => {
+    if (!bookPickerMounted) {
       openBarcodeScanBookSheet();
-    });
-  }, [
-    bookPickerBackdropOp,
-    bookPickerHideShift,
-    bookPickerSheetTranslate,
-    openBarcodeScanBookSheet,
-  ]);
+      return;
+    }
+
+    // Let the picker close animation finish before presenting the barcode modal (iOS).
+    pendingOpenBarcodeAfterBookPickerRef.current = true;
+    setIsBookModalOpen(false);
+  }, [bookPickerMounted, openBarcodeScanBookSheet]);
 
   useEffect(() => {
     if (!pageScanSheetVisible) {
@@ -2082,7 +2108,10 @@ export function ScanCameraScreen({ navigation, route }: Props) {
         <View style={[styles.sectionBlock, darkMode && styles.sectionBlockDark]}>
           <View style={styles.primaryButtonGroup}>
             <Pressable
-              style={styles.primaryButtonWrap}
+              style={[
+                styles.primaryButtonWrap,
+                !darkMode && !(addingAnotherBookCover || coverExtracting) && styles.primaryButtonWrapLight,
+              ]}
               onPress={onCapture}
               onTouchStart={onAddBookTouchStart}
               onTouchMove={onAddBookTouchMove}
@@ -2102,28 +2131,19 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                     {coverExtracting ? "Reading cover…" : "Open camera"}
                   </Text>
                 </LinearGradient>
-              ) : darkMode ? (
-                <View
-                  style={[
-                    styles.primaryButtonGradient,
-                    styles.primaryButtonScanWhite,
-                    coverExtracting && styles.primaryButtonGradientDisabled,
-                  ]}
-                >
-                  <Ionicons name="camera" size={22} color="#0f172a" />
-                  <Text style={styles.primaryButtonTextOnWhite}>Scan Page</Text>
-                </View>
               ) : (
-                <View
+                <LinearGradient
+                  colors={accentGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
                   style={[
                     styles.primaryButtonGradient,
-                    styles.primaryButtonScanLight,
-                    coverExtracting && styles.primaryButtonGradientDisabled,
+                    !darkMode && styles.primaryButtonScanGradientLight,
                   ]}
                 >
-                  <Ionicons name="camera" size={22} color="#0f172a" />
-                  <Text style={styles.primaryButtonTextOnWhite}>Scan Page</Text>
-                </View>
+                  <Ionicons name="camera" size={22} color="#fff" />
+                  <Text style={styles.primaryButtonText}>Scan Page</Text>
+                </LinearGradient>
               )}
             </Pressable>
           </View>
@@ -2550,6 +2570,12 @@ export function ScanCameraScreen({ navigation, route }: Props) {
             </View>
           </Pressable>
         </View>
+
+        <ReadingPlanHomeWidget
+          darkMode={darkMode}
+          accentColor={accentColor}
+          onPress={onPressReadingPlanWidget}
+        />
           </>
         ) : null}
 
@@ -3220,6 +3246,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
         visible={bookPickerMounted}
         transparent
         animationType="none"
+        statusBarTranslucent
         onRequestClose={() => {
           Keyboard.dismiss();
           setIsBookModalOpen(false);
@@ -3248,7 +3275,8 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 styles.bookPickerSheet,
                 !darkMode && styles.bookPickerSheetLight,
                 {
-                  paddingBottom: 28 + insets.bottom,
+                  height: bookPickerSheetHeight,
+                  paddingBottom: 28,
                   marginBottom: bookPickerKeyboardPad,
                 },
                 { transform: [{ translateY: bookPickerSheetTranslate }] },
@@ -3281,8 +3309,11 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 data={filteredBooks}
                 keyExtractor={(item) => item.id}
                 keyboardShouldPersistTaps="handled"
-                style={[styles.bookPickerList, { maxHeight: windowHeight * 0.58 }]}
-                contentContainerStyle={styles.bookPickerListContent}
+                style={styles.bookPickerList}
+                contentContainerStyle={[
+                  styles.bookPickerListContent,
+                  !darkMode && styles.bookPickerListContentLight,
+                ]}
                 renderItem={({ item, index }) => {
                   const isActive = item.id === activeBookId;
                   const hasCover = Boolean(item.coverUri?.trim());
@@ -3638,6 +3669,11 @@ export function ScanCameraScreen({ navigation, route }: Props) {
         visible={readingTimerModalVisible}
         onDismiss={() => setReadingTimerModalVisible(false)}
       />
+
+      <ReadingPlanBottomSheet
+        visible={readingPlanModalVisible}
+        onDismiss={() => setReadingPlanModalVisible(false)}
+      />
     </View>
   );
 }
@@ -3774,13 +3810,13 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 0.5,
     backgroundColor: "#ffffff",
-    borderColor: "transparent",
+    borderColor: "rgba(15,23,42,0.06)",
     overflow: "visible",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   scanIntoBookRowDark: {
     backgroundColor: "rgba(255,255,255,0.05)",
@@ -3867,12 +3903,12 @@ const styles = StyleSheet.create({
   },
   recentScanCardLight: {
     backgroundColor: "#ffffff",
-    borderColor: "transparent",
+    borderColor: "rgba(15,23,42,0.06)",
     overflow: "visible",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowRadius: 8,
     elevation: 3,
   },
   recentScanCardPressed: {
@@ -3999,12 +4035,12 @@ const styles = StyleSheet.create({
   },
   scanWidgetTileLight: {
     backgroundColor: "#ffffff",
-    borderColor: "transparent",
+    borderColor: "rgba(15,23,42,0.06)",
     overflow: "visible",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowRadius: 8,
     elevation: 3,
   },
   scanWidgetTileHalf: {
@@ -4355,13 +4391,13 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 0.5,
     backgroundColor: "#ffffff",
-    borderColor: "transparent",
+    borderColor: "rgba(15,23,42,0.06)",
     overflow: "visible",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   lastExtractCardDark: {
     backgroundColor: "rgba(255,255,255,0.06)",
@@ -4484,7 +4520,7 @@ const styles = StyleSheet.create({
   chapterAssistCard: {
     backgroundColor: "#ffffff",
     borderWidth: 1,
-    borderColor: "transparent",
+    borderColor: "rgba(15,23,42,0.06)",
     borderRadius: 14,
     padding: 12,
     flexDirection: "row",
@@ -4494,7 +4530,7 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowRadius: 8,
     elevation: 3,
   },
   chapterAssistCardDark: {
@@ -4540,12 +4576,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 0.5,
     backgroundColor: "#ffffff",
-    borderColor: "transparent",
+    borderColor: "rgba(15,23,42,0.06)",
     overflow: "visible",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowRadius: 8,
     elevation: 3,
   },
   chapterAssistCompactDark: {
@@ -5405,7 +5441,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingTop: 10,
-    maxHeight: "90%",
     width: "100%",
   },
   bookPickerDragHandle: {
@@ -5451,10 +5486,16 @@ const styles = StyleSheet.create({
     margin: 0,
   },
   bookPickerList: {
-    flexGrow: 1,
+    flex: 1,
+    minHeight: 0,
   },
   bookPickerListContent: {
-    paddingBottom: 4,
+    paddingTop: 12,
+    paddingBottom: 16,
+  },
+  bookPickerListContentLight: {
+    paddingHorizontal: 6,
+    overflow: "visible",
   },
   bookPickerRow: {
     flexDirection: "row",
@@ -5573,13 +5614,14 @@ const styles = StyleSheet.create({
   },
   bookPickerSearchInnerLight: {
     backgroundColor: "#ffffff",
-    borderColor: "transparent",
+    borderWidth: 0.5,
+    borderColor: "rgba(15,23,42,0.07)",
     overflow: "visible",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   bookPickerSearchInputLight: {
     color: "#0f172a",
@@ -5588,8 +5630,15 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(15,23,42,0.08)",
   },
   bookPickerRowSelectedLight: {
-    backgroundColor: "rgba(15,23,42,0.05)",
-    borderColor: "rgba(15,23,42,0.12)",
+    backgroundColor: "#ffffff",
+    borderWidth: 0.5,
+    borderColor: "rgba(15,23,42,0.07)",
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   bookPickerCoverPlaceholderLight: {
     backgroundColor: "rgba(15,23,42,0.06)",
@@ -5751,6 +5800,9 @@ const styles = StyleSheet.create({
     width: "100%",
     alignSelf: "stretch",
   },
+  primaryButtonWrapLight: {
+    overflow: "visible",
+  },
   primaryButtonGroup: {
     width: "100%",
     gap: 6,
@@ -5818,20 +5870,28 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
+  /** Scan page (light): accent gradient CTA with a soft shadow on the light home surface. */
+  primaryButtonScanGradientLight: {
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 4,
+  },
   /** Scan page (dark): dominant white CTA — no accent gradient. */
   primaryButtonScanWhite: {
     backgroundColor: "#ffffff",
   },
-  /** Scan page (light): white CTA with shadow/border so it reads on the light home surface. */
+  /** Scan page (light): white CTA with subtle shadow on the light home surface. */
   primaryButtonScanLight: {
     backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "rgba(15, 23, 42, 0.16)",
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.14,
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 2,
   },
   primaryButtonTextOnWhite: {
     color: "#0f172a",

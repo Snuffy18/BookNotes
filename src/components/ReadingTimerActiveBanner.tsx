@@ -177,11 +177,10 @@ export function ReadingTimerActiveBanner({ darkMode, onPress }: Props) {
     <Animated.View
       style={{
         maxHeight: heightAnim,
-        opacity,
         overflow: "hidden",
       }}
     >
-      <Animated.View style={{ transform: [{ translateY }] }}>
+      <Animated.View style={{ opacity, transform: [{ translateY }] }}>
         <View onLayout={onContentLayout}>
           <Pressable
             onPress={onPress}

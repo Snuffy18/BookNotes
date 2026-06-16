@@ -604,24 +604,24 @@ export function BookReportsScreen() {
             circleBg: "rgba(0,0,0,0.06)",
             circleBorder: "rgba(0,0,0,0.1)",
             circleIcon: "rgba(0,0,0,0.6)",
-            chipBg: "rgba(0,0,0,0.04)",
-            chipBorder: "rgba(0,0,0,0.08)",
+            chipBg: "#ffffff",
+            chipBorder: "rgba(15,23,42,0.06)",
             progressLabel: "rgba(0,0,0,0.3)",
             progressTrack: "rgba(0,0,0,0.08)",
-            searchBg: "rgba(0,0,0,0.05)",
-            searchBorder: "rgba(0,0,0,0.1)",
+            searchBg: "#ffffff",
+            searchBorder: "rgba(15,23,42,0.06)",
             searchIcon: "rgba(0,0,0,0.3)",
             searchPh: "rgba(0,0,0,0.25)",
             searchText: lightColors.textPrimary,
             pillSelBg: "rgba(0,0,0,0.08)",
             pillSelBorder: "rgba(0,0,0,0.2)",
-            pillUnBg: "rgba(0,0,0,0.04)",
-            pillUnBorder: "rgba(0,0,0,0.08)",
+            pillUnBg: "#ffffff",
+            pillUnBorder: "rgba(15,23,42,0.06)",
             pillTxtSel: lightColors.textPrimary,
             pillTxtUn: "rgba(0,0,0,0.35)",
             sectionLabel: "rgba(0,0,0,0.3)",
             cardBg: "rgba(0,0,0,0.03)",
-            cardBorder: "rgba(0,0,0,0.08)",
+            cardBorder: "rgba(15,23,42,0.06)",
             reportTitle: lightColors.textPrimary,
             pagePillBg: "rgba(0,0,0,0.05)",
             pagePillBorder: "rgba(0,0,0,0.1)",
@@ -674,6 +674,7 @@ export function BookReportsScreen() {
       <TouchableOpacity
         style={[
           styles.newReportCard,
+          !darkMode && styles.cardShadowLight,
           {
             backgroundColor: darkMode ? darkColors.card : lightColors.card,
             borderColor: bd.cardBorder,
@@ -854,15 +855,15 @@ export function BookReportsScreen() {
         </View>
 
         <View style={styles.statChipsRow}>
-          <View style={[styles.statChip, { backgroundColor: bd.chipBg, borderColor: bd.chipBorder }]}>
+          <View style={[styles.statChip, !darkMode && styles.cardShadowLight, { backgroundColor: bd.chipBg, borderColor: bd.chipBorder }]}>
             <Text style={[styles.statChipValue, { color: accentColor }]}>{reports.length}</Text>
             <Text style={[styles.statChipLabel, { color: bd.metaMuted }]}>Reports</Text>
           </View>
-          <View style={[styles.statChip, { backgroundColor: bd.chipBg, borderColor: bd.chipBorder }]}>
+          <View style={[styles.statChip, !darkMode && styles.cardShadowLight, { backgroundColor: bd.chipBg, borderColor: bd.chipBorder }]}>
             <Text style={[styles.statChipValue, { color: CHIP_PAGES_GREEN }]}>{pagesReadCount}</Text>
             <Text style={[styles.statChipLabel, { color: bd.metaMuted }]}>Pages read</Text>
           </View>
-          <View style={[styles.statChip, { backgroundColor: bd.chipBg, borderColor: bd.chipBorder }]}>
+          <View style={[styles.statChip, !darkMode && styles.cardShadowLight, { backgroundColor: bd.chipBg, borderColor: bd.chipBorder }]}>
             <Text style={[styles.statChipValue, { color: CHIP_CHAPTERS_AMBER }]}>{chaptersCount}</Text>
             <Text style={[styles.statChipLabel, { color: bd.metaMuted }]}>Chapters</Text>
           </View>
@@ -880,7 +881,7 @@ export function BookReportsScreen() {
           </View>
         </View>
 
-        <View style={[styles.detailSearchBar, { backgroundColor: bd.searchBg, borderColor: bd.searchBorder }]}>
+        <View style={[styles.detailSearchBar, !darkMode && styles.cardShadowLight, { backgroundColor: bd.searchBg, borderColor: bd.searchBorder }]}>
           <Ionicons name="search-outline" size={16} color={bd.searchIcon} style={styles.detailSearchIcon} />
           <TextInput
             value={searchQuery}
@@ -911,6 +912,7 @@ export function BookReportsScreen() {
                 }}
                 style={[
                   styles.listFilterPill,
+                  !darkMode && !selected && styles.cardShadowLight,
                   {
                     backgroundColor: selected ? bd.pillSelBg : bd.pillUnBg,
                     borderColor: selected ? bd.pillSelBorder : bd.pillUnBorder,
@@ -1292,6 +1294,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     alignItems: "center",
+  },
+  cardShadowLight: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   statChipValue: {
     fontSize: 20,

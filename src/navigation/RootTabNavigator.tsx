@@ -247,14 +247,21 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       pointerEvents="box-none"
       style={[styles.screenOverlay, { paddingBottom: 24 + insets.bottom }]}
     >
-      <View style={styles.pillOuter}>
+      <View
+        style={[
+          styles.pillOuter,
+          {
+            backgroundColor: palette.pillBg,
+            shadowOpacity: palette.shadowOpacity,
+          },
+        ]}
+      >
         <View
           style={[
             styles.pill,
             {
               backgroundColor: palette.pillBg,
               borderColor: palette.pillBorder,
-              shadowOpacity: palette.shadowOpacity,
             },
           ]}
         >
@@ -368,6 +375,11 @@ const styles = StyleSheet.create({
   },
   pillOuter: {
     alignItems: "center",
+    borderRadius: PILL_RADIUS,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 8,
+    elevation: 12,
   },
   pill: {
     alignSelf: "center",
@@ -376,10 +388,6 @@ const styles = StyleSheet.create({
     borderRadius: PILL_RADIUS,
     paddingVertical: PILL_PAD_V,
     paddingHorizontal: PILL_PAD_H,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 20,
-    elevation: 16,
   },
   pillTrack: {
     position: "relative",

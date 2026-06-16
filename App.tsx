@@ -6,6 +6,7 @@ import { AppRoot } from "./AppRoot";
 import { AddBookSheetProvider } from "./src/context/AddBookSheetContext";
 import { BarcodeScanBookSheetProvider } from "./src/context/BarcodeScanBookSheetContext";
 import { AppSettingsProvider } from "./src/context/AppSettingsContext";
+import { ReadingPlanProvider } from "./src/context/ReadingPlanContext";
 import { ReadingRemindersProvider } from "./src/context/ReadingRemindersContext";
 import { ReadingSessionProvider } from "./src/context/ReadingSessionContext";
 import { ScanProcessingProvider } from "./src/context/ScanProcessingContext";
@@ -37,11 +38,13 @@ export default function App() {
                   <BarcodeScanBookSheetProvider>
                     <AddBookSheetProvider>
                       <ReadingSessionProvider>
-                        <StreakProvider>
-                          <ScanProcessingProvider>
-                            <AppRoot />
-                          </ScanProcessingProvider>
-                        </StreakProvider>
+                        <ReadingPlanProvider>
+                          <StreakProvider>
+                            <ScanProcessingProvider>
+                              <AppRoot />
+                            </ScanProcessingProvider>
+                          </StreakProvider>
+                        </ReadingPlanProvider>
                       </ReadingSessionProvider>
                     </AddBookSheetProvider>
                   </BarcodeScanBookSheetProvider>
