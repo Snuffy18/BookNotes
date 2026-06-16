@@ -3,6 +3,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 const BG = "#111";
+const BG_LIGHT = "#ffffff";
+const BOTTOM_FADE_DARK: readonly [string, string] = ["transparent", BG];
+const BOTTOM_FADE_LIGHT: readonly [string, string] = ["transparent", BG_LIGHT];
 
 const GHOST_TITLE_WIDTHS = ["58%", "42%", "66%", "38%"] as const;
 const GHOST_ROW_OPACITIES = [0.5, 0.35, 0.22, 0.12] as const;
@@ -35,48 +38,53 @@ type Props = {
   onScanPress: () => void;
   disabled?: boolean;
   bottomInset: number;
+  darkMode?: boolean;
 };
 
-export function ChapterMapEmptyState({ onScanPress, disabled, bottomInset }: Props) {
+export function ChapterMapEmptyState({ onScanPress, disabled, bottomInset, darkMode = true }: Props) {
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, !darkMode && styles.rootLight]}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + bottomInset }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.ghostSection}>
-          <Text style={styles.ghostLabel}>Chapters</Text>
+          <Text style={[styles.ghostLabel, !darkMode && styles.ghostLabelLight]}>Chapters</Text>
           {GHOST_TITLE_WIDTHS.map((titleWidth, index) => (
             <View
               key={titleWidth}
               style={[
                 styles.ghostRow,
                 index > 0 && styles.ghostRowDivider,
+                index > 0 && !darkMode && styles.ghostRowDividerLight,
                 { opacity: GHOST_ROW_OPACITIES[index] },
               ]}
             >
-              <View style={[styles.ghostTitleBar, { width: titleWidth }]} />
-              <View style={styles.ghostPageBar} />
+              <View style={[styles.ghostTitleBar, !darkMode && styles.ghostTitleBarLight, { width: titleWidth }]} />
+              <View style={[styles.ghostPageBar, !darkMode && styles.ghostPageBarLight]} />
             </View>
           ))}
         </View>
 
         <View style={styles.howDivider}>
-          <View style={styles.howDividerLine} />
-          <Text style={styles.howDividerLabel}>How it works</Text>
-          <View style={styles.howDividerLine} />
+          <View style={[styles.howDividerLine, !darkMode && styles.howDividerLineLight]} />
+          <Text style={[styles.howDividerLabel, !darkMode && styles.howDividerLabelLight]}>How it works</Text>
+          <View style={[styles.howDividerLine, !darkMode && styles.howDividerLineLight]} />
         </View>
 
-        <View style={styles.stepsCard}>
+        <View style={[styles.stepsCard, !darkMode && styles.stepsCardLight]}>
           {STEPS.map((step, index) => (
-            <View key={step.title} style={[styles.stepRow, index > 0 && styles.stepRowDivider]}>
+            <View
+              key={step.title}
+              style={[styles.stepRow, index > 0 && styles.stepRowDivider, index > 0 && !darkMode && styles.stepRowDividerLight]}
+            >
               <View style={[styles.stepIconWrap, { backgroundColor: step.iconBg }]}>
                 <Ionicons name={step.icon} size={17} color={step.iconColor} />
               </View>
               <View style={styles.stepTextCol}>
-                <Text style={styles.stepTitle}>{step.title}</Text>
-                <Text style={styles.stepDescription}>{step.description}</Text>
+                <Text style={[styles.stepTitle, !darkMode && styles.stepTitleLight]}>{step.title}</Text>
+                <Text style={[styles.stepDescription, !darkMode && styles.stepDescriptionLight]}>{step.description}</Text>
               </View>
             </View>
           ))}
@@ -85,7 +93,7 @@ export function ChapterMapEmptyState({ onScanPress, disabled, bottomInset }: Pro
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(bottomInset, 12) }]} pointerEvents="box-none">
         <LinearGradient
-          colors={["transparent", BG]}
+          colors={darkMode ? BOTTOM_FADE_DARK : BOTTOM_FADE_LIGHT}
           locations={[0, 0.65]}
           style={styles.bottomBarGradient}
           pointerEvents="none"
@@ -95,14 +103,15 @@ export function ChapterMapEmptyState({ onScanPress, disabled, bottomInset }: Pro
           disabled={disabled}
           style={({ pressed }) => [
             styles.scanButton,
+            !darkMode && styles.scanButtonLight,
             disabled && styles.scanButtonDisabled,
             pressed && !disabled && styles.scanButtonPressed,
           ]}
           accessibilityRole="button"
           accessibilityLabel="Scan contents page"
         >
-          <Ionicons name="camera" size={18} color="#111111" />
-          <Text style={styles.scanButtonText}>Scan contents page</Text>
+          <Ionicons name="camera" size={18} color={darkMode ? "#111111" : "#ffffff"} />
+          <Text style={[styles.scanButtonText, !darkMode && styles.scanButtonTextLight]}>Scan contents page</Text>
         </Pressable>
       </View>
     </View>
@@ -250,5 +259,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#111111",
+  },
+  rootLight: {
+    backgroundColor: BG_LIGHT,
+  },
+  ghostLabelLight: {
+    color: "rgba(15,23,42,0.3)",
+  },
+  ghostRowDividerLight: {
+    borderTopColor: "rgba(15,23,42,0.06)",
+  },
+  ghostTitleBarLight: {
+    backgroundColor: "rgba(15,23,42,0.18)",
+  },
+  ghostPageBarLight: {
+    backgroundColor: "rgba(15,23,42,0.1)",
+  },
+  howDividerLineLight: {
+    backgroundColor: "rgba(15,23,42,0.08)",
+  },
+  howDividerLabelLight: {
+    color: "rgba(15,23,42,0.4)",
+  },
+  stepsCardLight: {
+    backgroundColor: "rgba(15,23,42,0.03)",
+    borderColor: "rgba(15,23,42,0.08)",
+  },
+  stepRowDividerLight: {
+    borderTopColor: "rgba(15,23,42,0.07)",
+  },
+  stepTitleLight: {
+    color: "#0f172a",
+  },
+  stepDescriptionLight: {
+    color: "rgba(15,23,42,0.5)",
+  },
+  scanButtonLight: {
+    backgroundColor: "#111111",
+  },
+  scanButtonTextLight: {
+    color: "#ffffff",
   },
 });

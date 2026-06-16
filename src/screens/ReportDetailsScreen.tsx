@@ -982,64 +982,87 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
       >
         <View style={styles.scrollInner}>
         {missingPage ? (
-          <View style={[styles.addPageCard, darkMode && styles.cardDark]}>
-            {!pageEditorOpen ? (
-              <TouchableOpacity
-                style={[styles.addPageButton, { borderColor: accentColor }]}
-                onPress={() => {
-                  setPageEditorOpen(true);
-                  setPageDraft("");
-                }}
-                activeOpacity={0.85}
+          !pageEditorOpen ? (
+            <TouchableOpacity
+              style={[
+                styles.addPageButton,
+                {
+                  backgroundColor: `rgba(${accentRgb.r},${accentRgb.g},${accentRgb.b},${darkMode ? 0.14 : 0.08})`,
+                  borderColor: `rgba(${accentRgb.r},${accentRgb.g},${accentRgb.b},${darkMode ? 0.32 : 0.22})`,
+                },
+              ]}
+              onPress={() => {
+                setPageEditorOpen(true);
+                setPageDraft("");
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              }}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Add page number"
+            >
+              <View
+                style={[
+                  styles.addPageIconBadge,
+                  { backgroundColor: `rgba(${accentRgb.r},${accentRgb.g},${accentRgb.b},${darkMode ? 0.24 : 0.16})` },
+                ]}
               >
-                <Text style={[styles.addPageButtonText, { color: accentColor }]}>Add the page</Text>
-              </TouchableOpacity>
-            ) : (
-              <>
-                <TextInput
-                  value={pageDraft}
-                  onChangeText={setPageDraft}
-                  placeholder="e.g. 42 or 120–125"
-                  placeholderTextColor={darkMode ? darkColors.textMuted : lightColors.textMuted}
-                  style={[
-                    styles.addPageInput,
-                    darkMode && styles.addPageInputDark,
-                    darkMode && styles.textPrimaryDark,
-                  ]}
-                  autoFocus
-                  returnKeyType="done"
-                  onSubmitEditing={onSaveManualPage}
-                />
-                <View style={styles.addPageActions}>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setPageEditorOpen(false);
-                      setPageDraft("");
-                    }}
-                    hitSlop={8}
+                <Ionicons name="reader-outline" size={18} color={accentColor} />
+              </View>
+              <View style={styles.addPageTextCol}>
+                <Text style={[styles.addPageTitle, darkMode && styles.textPrimaryDark]}>Add page number</Text>
+                <Text style={[styles.addPageSubtitle, darkMode && styles.textMutedDark]}>
+                  We couldn’t detect it on this scan
+                </Text>
+              </View>
+              <View style={[styles.addPagePlusCircle, { backgroundColor: accentColor }]}>
+                <Ionicons name="add" size={18} color="#ffffff" />
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.addPageCard, darkMode && styles.cardDark]}>
+              <TextInput
+                value={pageDraft}
+                onChangeText={setPageDraft}
+                placeholder="e.g. 42 or 120–125"
+                placeholderTextColor={darkMode ? darkColors.textMuted : lightColors.textMuted}
+                style={[
+                  styles.addPageInput,
+                  darkMode && styles.addPageInputDark,
+                  darkMode && styles.textPrimaryDark,
+                ]}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={onSaveManualPage}
+              />
+              <View style={styles.addPageActions}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setPageEditorOpen(false);
+                    setPageDraft("");
+                  }}
+                  hitSlop={8}
+                >
+                  <Text style={[styles.addPageActionSecondary, darkMode && styles.textMutedDark]}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={onSaveManualPage}
+                  disabled={!pageDraft.trim()}
+                  hitSlop={8}
+                >
+                  <Text
+                    style={[
+                      styles.addPageActionPrimary,
+                      { color: accentColor, opacity: pageDraft.trim() ? 1 : 0.45 },
+                    ]}
                   >
-                    <Text style={[styles.addPageActionSecondary, darkMode && styles.textMutedDark]}>
-                      Cancel
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={onSaveManualPage}
-                    disabled={!pageDraft.trim()}
-                    hitSlop={8}
-                  >
-                    <Text
-                      style={[
-                        styles.addPageActionPrimary,
-                        { color: accentColor, opacity: pageDraft.trim() ? 1 : 0.45 },
-                      ]}
-                    >
-                      Save
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </View>
+                    Save
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )
         ) : null}
         {keywordNeedle.length > 0 ? (
           <Pressable
@@ -1471,17 +1494,44 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   addPageButton: {
-    alignSelf: "stretch",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  addPageIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1.5,
+    flexShrink: 0,
   },
-  addPageButtonText: {
-    fontSize: 16,
+  addPageTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  addPageTitle: {
+    fontSize: 15,
     fontWeight: "700",
+    color: lightColors.textPrimary,
+  },
+  addPageSubtitle: {
+    fontSize: 12.5,
+    fontWeight: "500",
+    color: lightColors.textMuted,
+  },
+  addPagePlusCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
   addPageInput: {
     borderWidth: 1,

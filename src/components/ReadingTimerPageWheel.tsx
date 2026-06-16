@@ -9,6 +9,12 @@ import {
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useAppSettings } from "../context/AppSettingsContext";
+
+const FADE_TOP_DARK: readonly [string, string] = ["#1a1a1a", "rgba(26,26,26,0)"];
+const FADE_BOTTOM_DARK: readonly [string, string] = ["rgba(26,26,26,0)", "#1a1a1a"];
+const FADE_TOP_LIGHT: readonly [string, string] = ["#ffffff", "rgba(255,255,255,0)"];
+const FADE_BOTTOM_LIGHT: readonly [string, string] = ["rgba(255,255,255,0)", "#ffffff"];
 
 export const READING_TIMER_WHEEL_ITEM_HEIGHT = 44;
 export const READING_TIMER_WHEEL_VISIBLE_HEIGHT = 220;
@@ -41,6 +47,7 @@ type Props = {
 };
 
 export function ReadingTimerPageWheel({ pages, value, onValueChange, totalPages }: Props) {
+  const { darkMode } = useAppSettings();
   const scrollRef = useRef<ScrollView>(null);
   const lastSnapIdxRef = useRef<number>(-1);
   const minPage = pages[0] ?? 1;
@@ -98,8 +105,8 @@ export function ReadingTimerPageWheel({ pages, value, onValueChange, totalPages 
   );
 
   return (
-    <View style={styles.wrap}>
-      <View style={styles.highlightStrip} pointerEvents="none" />
+    <View style={[styles.wrap, !darkMode && styles.wrapLight]}>
+      <View style={[styles.highlightStrip, !darkMode && styles.highlightStripLight]} pointerEvents="none" />
       <ScrollView
         ref={scrollRef}
         style={styles.list}
@@ -132,6 +139,7 @@ export function ReadingTimerPageWheel({ pages, value, onValueChange, totalPages 
               <Text
                 style={[
                   styles.pageText,
+                  !darkMode && styles.pageTextLight,
                   {
                     fontSize: t.pageSize,
                     opacity: t.pageOpacity,
@@ -142,19 +150,19 @@ export function ReadingTimerPageWheel({ pages, value, onValueChange, totalPages 
                 {item}
               </Text>
               {pct != null ? (
-                <Text style={[styles.pctText, { fontSize: t.pctSize, opacity: t.pctOpacity }]}>{pct}</Text>
+                <Text style={[styles.pctText, !darkMode && styles.pctTextLight, { fontSize: t.pctSize, opacity: t.pctOpacity }]}>{pct}</Text>
               ) : null}
             </View>
           );
         })}
       </ScrollView>
       <LinearGradient
-        colors={["#1a1a1a", "rgba(26,26,26,0)"]}
+        colors={darkMode ? FADE_TOP_DARK : FADE_TOP_LIGHT}
         style={styles.fadeTop}
         pointerEvents="none"
       />
       <LinearGradient
-        colors={["rgba(26,26,26,0)", "#1a1a1a"]}
+        colors={darkMode ? FADE_BOTTOM_DARK : FADE_BOTTOM_LIGHT}
         style={styles.fadeBottom}
         pointerEvents="none"
       />
@@ -218,5 +226,18 @@ const styles = StyleSheet.create({
   pctText: {
     color: "#ffffff",
     fontWeight: "400",
+  },
+  wrapLight: {
+    backgroundColor: "rgba(15,23,42,0.04)",
+  },
+  highlightStripLight: {
+    backgroundColor: "rgba(15,23,42,0.06)",
+    borderColor: "rgba(15,23,42,0.1)",
+  },
+  pageTextLight: {
+    color: "#0f172a",
+  },
+  pctTextLight: {
+    color: "#0f172a",
   },
 });

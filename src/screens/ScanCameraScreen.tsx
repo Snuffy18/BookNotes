@@ -93,6 +93,7 @@ function resolveIosLensRoles(names: string[]): {
 }
 
 const CHAPTER_MAP_BG = "#111";
+const CHAPTER_MAP_BG_LIGHT = "#ffffff";
 
 function mergeChapterRanges(existing: ChapterRange[], incoming: ChapterRange[]): ChapterRange[] {
   return [...existing, ...incoming].sort((a, b) => a.startPage - b.startPage);
@@ -429,10 +430,12 @@ function ChapterMapShimmerRows({
   shimmerX,
   count,
   rowOffset = 0,
+  darkMode = true,
 }: {
   shimmerX: Animated.Value;
   count: number;
   rowOffset?: number;
+  darkMode?: boolean;
 }) {
   return (
     <>
@@ -444,19 +447,20 @@ function ChapterMapShimmerRows({
             key={`chapter-map-shimmer-${index}`}
             style={[
               styles.chapterMapRow,
+              !darkMode && styles.chapterMapRowLight,
               styles.chapterMapShimmerRow,
             ]}
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
           >
-            <View style={[styles.chapterMapShimmerBar, styles.chapterMapShimmerBarChapter]} />
+            <View style={[styles.chapterMapShimmerBar, !darkMode && styles.chapterMapShimmerBarLight, styles.chapterMapShimmerBarChapter]} />
             <View style={styles.chapterMapRowContent}>
-              <View style={[styles.chapterMapShimmerBar, { width: titleWidth }]} />
+              <View style={[styles.chapterMapShimmerBar, !darkMode && styles.chapterMapShimmerBarLight, { width: titleWidth }]} />
               {index % 2 === 0 ? (
-                <View style={[styles.chapterMapShimmerBar, styles.chapterMapShimmerBarShort]} />
+                <View style={[styles.chapterMapShimmerBar, !darkMode && styles.chapterMapShimmerBarLight, styles.chapterMapShimmerBarShort]} />
               ) : null}
             </View>
-            <View style={[styles.chapterMapShimmerBar, styles.chapterMapShimmerBarPages]} />
+            <View style={[styles.chapterMapShimmerBar, !darkMode && styles.chapterMapShimmerBarLight, styles.chapterMapShimmerBarPages]} />
             <Animated.View
               pointerEvents="none"
               style={[
@@ -474,7 +478,7 @@ function ChapterMapShimmerRows({
               ]}
             >
               <LinearGradient
-                colors={["transparent", "rgba(255,255,255,0.14)", "transparent"]}
+                colors={darkMode ? ["transparent", "rgba(255,255,255,0.14)", "transparent"] : ["transparent", "rgba(15,23,42,0.06)", "transparent"]}
                 start={{ x: 0, y: 0.5 }}
                 end={{ x: 1, y: 0.5 }}
                 style={styles.chapterMapShimmerSweepInner}
@@ -2322,6 +2326,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                   key={scan.id}
                   style={({ pressed }) => [
                     styles.recentScanCard,
+                    !darkMode && styles.recentScanCardLight,
                     pressed && styles.recentScanCardPressed,
                   ]}
                   onPress={() => onRecentScanCardPress(scan)}
@@ -2329,14 +2334,23 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                   <View style={styles.recentScanCardInner}>
                     <View style={styles.recentScanCardForeground}>
                       <View style={styles.recentScanCardTop}>
-                        <Text style={styles.recentScanPage} numberOfLines={1}>
+                        <Text
+                          style={[styles.recentScanPage, !darkMode && styles.recentScanPageLight]}
+                          numberOfLines={1}
+                        >
                           {formatRecentScanPageLine(scan)}
                         </Text>
-                        <Text style={styles.recentScanSnippet} numberOfLines={2}>
+                        <Text
+                          style={[styles.recentScanSnippet, !darkMode && styles.recentScanSnippetLight]}
+                          numberOfLines={2}
+                        >
                           {formatRecentScanSnippet(scan)}
                         </Text>
                       </View>
-                      <Text style={styles.recentScanTime} numberOfLines={1}>
+                      <Text
+                        style={[styles.recentScanTime, !darkMode && styles.recentScanTimeLight]}
+                        numberOfLines={1}
+                      >
                         {formatRecentScanTimestamp(scan.createdAt)}
                       </Text>
                     </View>
@@ -2528,12 +2542,15 @@ export function ScanCameraScreen({ navigation, route }: Props) {
           setIsChapterOverviewOpen(false);
         }}
       >
-        <View style={styles.chapterMapRoot}>
-          <StatusBar barStyle="light-content" backgroundColor={CHAPTER_MAP_BG} />
-          <View style={styles.chapterMapColumn}>
+        <View style={[styles.chapterMapRoot, !darkMode && styles.chapterMapRootLight]}>
+          <StatusBar
+            barStyle={darkMode ? "light-content" : "dark-content"}
+            backgroundColor={darkMode ? CHAPTER_MAP_BG : CHAPTER_MAP_BG_LIGHT}
+          />
+          <View style={[styles.chapterMapColumn, !darkMode && styles.chapterMapRootLight]}>
             <View style={[styles.chapterMapHeader, { paddingTop: Math.max(insets.top, 8) }]}>
               {contentsExtracting ? (
-                <View style={styles.chapterMapProgressTrack}>
+                <View style={[styles.chapterMapProgressTrack, !darkMode && styles.chapterMapProgressTrackLight]}>
                   <Animated.View
                     style={[
                       styles.chapterMapProgressFill,
@@ -2568,17 +2585,17 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                   accessibilityRole="button"
                   accessibilityLabel="Close chapter map"
                 >
-                  <View style={styles.chapterMapCloseCircle}>
-                    <Text style={styles.chapterMapCloseGlyph}>×</Text>
+                  <View style={[styles.chapterMapCloseCircle, !darkMode && styles.chapterMapCloseCircleLight]}>
+                    <Text style={[styles.chapterMapCloseGlyph, !darkMode && styles.chapterMapCloseGlyphLight]}>×</Text>
                   </View>
                 </Pressable>
-                <Text style={styles.chapterMapHeaderLabel} pointerEvents="none">
+                <Text style={[styles.chapterMapHeaderLabel, !darkMode && styles.chapterMapHeaderLabelLight]} pointerEvents="none">
                   Chapter map
                 </Text>
                 <View style={styles.chapterMapHeaderBalance} />
               </View>
               {activeBook ? (
-                <View style={styles.chapterMapBookHeaderBlock}>
+                <View style={[styles.chapterMapBookHeaderBlock, !darkMode && styles.chapterMapBookHeaderBlockLight]}>
                   {books.length > 1 ? (
                     <Pressable
                       onPress={openChapterMapBookPicker}
@@ -2591,23 +2608,23 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                     >
                       <View style={styles.chapterMapBookTitleRow}>
                         <Text
-                          style={[styles.chapterMapBookTitle, styles.chapterMapBookTitleWithChevron]}
+                          style={[styles.chapterMapBookTitle, !darkMode && styles.chapterMapBookTitleLight, styles.chapterMapBookTitleWithChevron]}
                           numberOfLines={2}
                         >
                           {activeBook.title}
                         </Text>
-                        <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.4)" />
+                        <Ionicons name="chevron-down" size={14} color={darkMode ? "rgba(255,255,255,0.4)" : "rgba(15,23,42,0.4)"} />
                       </View>
-                      <Text style={styles.chapterMapBookAuthor} numberOfLines={1}>
+                      <Text style={[styles.chapterMapBookAuthor, !darkMode && styles.chapterMapBookAuthorLight]} numberOfLines={1}>
                         {activeBook.author}
                       </Text>
                     </Pressable>
                   ) : (
                     <>
-                      <Text style={styles.chapterMapBookTitle} numberOfLines={2}>
+                      <Text style={[styles.chapterMapBookTitle, !darkMode && styles.chapterMapBookTitleLight]} numberOfLines={2}>
                         {activeBook.title}
                       </Text>
-                      <Text style={styles.chapterMapBookAuthor} numberOfLines={1}>
+                      <Text style={[styles.chapterMapBookAuthor, !darkMode && styles.chapterMapBookAuthorLight]} numberOfLines={1}>
                         {activeBook.author}
                       </Text>
                     </>
@@ -2620,11 +2637,12 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 onScanPress={onOpenContentsScannerFromOverview}
                 disabled={!activeBook}
                 bottomInset={insets.bottom}
+                darkMode={darkMode}
               />
             ) : (
               <>
             <ScrollView
-              style={styles.chapterMapList}
+              style={[styles.chapterMapList, !darkMode && styles.chapterMapRootLight]}
               contentContainerStyle={styles.chapterMapListContent}
               showsVerticalScrollIndicator={false}
             >
@@ -2638,25 +2656,26 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                         key={`${range.startPage}-${range.title}-${index}`}
                         onPress={() => openChapterEditSheet(index, range)}
                         disabled={contentsExtracting}
-                        android_ripple={{ color: "rgba(255,255,255,0.08)" }}
+                        android_ripple={{ color: darkMode ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)" }}
                         style={({ pressed }) => [
                           styles.chapterMapRow,
-                          Platform.OS === "ios" && pressed && !contentsExtracting && styles.chapterMapRowPressed,
+                          !darkMode && styles.chapterMapRowLight,
+                          Platform.OS === "ios" && pressed && !contentsExtracting && (darkMode ? styles.chapterMapRowPressed : styles.chapterMapRowPressedLight),
                           contentsExtracting && styles.chapterMapRowDisabled,
                         ]}
                       >
-                        <Text style={styles.chapterMapRowNumber}>Ch {index + 1}</Text>
+                        <Text style={[styles.chapterMapRowNumber, !darkMode && styles.chapterMapRowNumberLight]}>Ch {index + 1}</Text>
                         <View style={styles.chapterMapRowContent}>
-                          <Text style={styles.chapterMapRowTitle} numberOfLines={2}>
+                          <Text style={[styles.chapterMapRowTitle, !darkMode && styles.chapterMapRowTitleLight]} numberOfLines={2}>
                             {(range.title || "Untitled").trim()}
                           </Text>
                           {showOverlapWarn ? (
-                            <Text style={styles.chapterMapRowWarn}>
+                            <Text style={[styles.chapterMapRowWarn, !darkMode && styles.chapterMapRowWarnLight]}>
                               Previous chapter ends on or after this start page — adjust pages.
                             </Text>
                           ) : null}
                         </View>
-                        <Text style={styles.chapterMapRowPages}>{pageLabel}</Text>
+                        <Text style={[styles.chapterMapRowPages, !darkMode && styles.chapterMapRowPagesLight]}>{pageLabel}</Text>
                       </Pressable>
                     );
                   })
@@ -2664,6 +2683,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
               {contentsExtracting ? (
                 <ChapterMapShimmerRows
                   shimmerX={chapterMapShimmerX}
+                  darkMode={darkMode}
                   count={
                     contentsExtractAppending && chapterMapRows.length > 0
                       ? CHAPTER_MAP_SHIMMER_APPEND_COUNT
@@ -2673,17 +2693,18 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 />
               ) : null}
             </ScrollView>
-            <View style={[styles.chapterMapFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <View style={[styles.chapterMapFooter, !darkMode && styles.chapterMapFooterLight, { paddingBottom: Math.max(insets.bottom, 16) }]}>
               <Pressable
                 onPress={onOpenContentsScannerFromOverview}
                 disabled={!activeBook || contentsExtracting}
                 style={({ pressed }) => [
                   styles.chapterMapFooterButton,
+                  !darkMode && styles.chapterMapFooterButtonLight,
                   (!activeBook || contentsExtracting) && styles.chapterMapFooterButtonDisabled,
                   pressed && activeBook && !contentsExtracting && styles.chapterMapFooterButtonPressed,
                 ]}
               >
-                <Text style={styles.chapterMapFooterButtonText}>
+                <Text style={[styles.chapterMapFooterButtonText, !darkMode && styles.chapterMapFooterButtonTextLight]}>
                   {contentsExtracting
                     ? "Reading contents…"
                     : chapterMapRows.length > 0
@@ -2707,55 +2728,57 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 <Animated.View
                   style={[
                     styles.chapterEditSheet,
+                    !darkMode && styles.chapterMapSheetLight,
                     {
                       paddingBottom: Math.max(insets.bottom, 16),
                       transform: [{ translateY: chapterEditSheetY }],
                     },
                   ]}
                 >
-                  <View style={styles.chapterEditGrabber} />
-                  <Text style={styles.chapterEditSheetTitle}>Edit chapter</Text>
-                  <Text style={styles.chapterEditLabel}>Name</Text>
+                  <View style={[styles.chapterEditGrabber, !darkMode && styles.chapterMapGrabberLight]} />
+                  <Text style={[styles.chapterEditSheetTitle, !darkMode && styles.chapterMapSheetTitleLight]}>Edit chapter</Text>
+                  <Text style={[styles.chapterEditLabel, !darkMode && styles.chapterEditLabelLight]}>Name</Text>
                   <TextInput
                     value={chapterEditTitle}
                     onChangeText={setChapterEditTitle}
                     placeholder="Chapter title"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    style={styles.chapterEditInput}
+                    placeholderTextColor={darkMode ? "rgba(255,255,255,0.35)" : "rgba(15,23,42,0.35)"}
+                    style={[styles.chapterEditInput, !darkMode && styles.chapterEditInputLight]}
                     multiline
                   />
-                  <Text style={styles.chapterEditLabel}>Pages</Text>
+                  <Text style={[styles.chapterEditLabel, !darkMode && styles.chapterEditLabelLight]}>Pages</Text>
                   <View style={styles.chapterEditPagesRow}>
                     <TextInput
                       value={chapterEditStart}
                       onChangeText={setChapterEditStart}
                       keyboardType="number-pad"
                       placeholder="Start"
-                      placeholderTextColor="rgba(255,255,255,0.35)"
-                      style={styles.chapterEditPageInput}
+                      placeholderTextColor={darkMode ? "rgba(255,255,255,0.35)" : "rgba(15,23,42,0.35)"}
+                      style={[styles.chapterEditPageInput, !darkMode && styles.chapterEditInputLight]}
                     />
-                    <Text style={styles.chapterEditPageDash}>–</Text>
+                    <Text style={[styles.chapterEditPageDash, !darkMode && styles.chapterEditPageDashLight]}>–</Text>
                     <TextInput
                       value={chapterEditEnd}
                       onChangeText={setChapterEditEnd}
                       keyboardType="number-pad"
                       placeholder="End"
-                      placeholderTextColor="rgba(255,255,255,0.35)"
-                      style={styles.chapterEditPageInput}
+                      placeholderTextColor={darkMode ? "rgba(255,255,255,0.35)" : "rgba(15,23,42,0.35)"}
+                      style={[styles.chapterEditPageInput, !darkMode && styles.chapterEditInputLight]}
                     />
                   </View>
-                  <Text style={styles.chapterEditHint}>Leave end empty to infer from the next chapter.</Text>
+                  <Text style={[styles.chapterEditHint, !darkMode && styles.chapterEditHintLight]}>Leave end empty to infer from the next chapter.</Text>
                   <Pressable
                     onPress={saveChapterEdit}
                     style={({ pressed }) => [
                       styles.chapterEditSave,
-                      pressed && styles.chapterEditSavePressed,
+                      !darkMode && styles.chapterEditSaveLight,
+                      pressed && (darkMode ? styles.chapterEditSavePressed : styles.chapterEditSavePressedLight),
                     ]}
                   >
-                    <Text style={styles.chapterEditSaveText}>Save</Text>
+                    <Text style={[styles.chapterEditSaveText, !darkMode && styles.chapterEditSaveTextLight]}>Save</Text>
                   </Pressable>
                   <Pressable onPress={dismissChapterEditSheet} style={styles.chapterEditCancelWrap}>
-                    <Text style={styles.chapterEditCancel}>Cancel</Text>
+                    <Text style={[styles.chapterEditCancel, !darkMode && styles.chapterEditCancelLight]}>Cancel</Text>
                   </Pressable>
                 </Animated.View>
               </KeyboardAvoidingView>
@@ -2778,20 +2801,21 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 <Animated.View
                   style={[
                     styles.chapterMapBookPickerSheet,
+                    !darkMode && styles.chapterMapSheetLight,
                     {
                       paddingBottom: Math.max(insets.bottom, 16),
                       transform: [{ translateY: chapterMapBookPickerY }],
                     },
                   ]}
                 >
-                  <View style={styles.chapterMapBookPickerGrabber} />
-                  <Text style={styles.chapterMapBookPickerSheetTitle}>Choose book</Text>
+                  <View style={[styles.chapterMapBookPickerGrabber, !darkMode && styles.chapterMapGrabberLight]} />
+                  <Text style={[styles.chapterMapBookPickerSheetTitle, !darkMode && styles.chapterMapSheetTitleLight]}>Choose book</Text>
                   <FlatList
                     data={books}
                     keyExtractor={(item) => item.id}
                     style={styles.chapterMapBookPickerList}
                     keyboardShouldPersistTaps="handled"
-                    ItemSeparatorComponent={() => <View style={styles.chapterMapBookPickerSeparator} />}
+                    ItemSeparatorComponent={() => <View style={[styles.chapterMapBookPickerSeparator, !darkMode && styles.chapterMapBookPickerSeparatorLight]} />}
                     renderItem={({ item }) => {
                       const isActive = item.id === activeBookId;
                       return (
@@ -2807,15 +2831,15 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                           ]}
                         >
                           <View style={styles.chapterMapBookPickerRowText}>
-                            <Text style={styles.chapterMapBookPickerRowTitle} numberOfLines={2}>
+                            <Text style={[styles.chapterMapBookPickerRowTitle, !darkMode && styles.chapterMapBookPickerRowTitleLight]} numberOfLines={2}>
                               {item.title}
                             </Text>
-                            <Text style={styles.chapterMapBookPickerRowAuthor} numberOfLines={1}>
+                            <Text style={[styles.chapterMapBookPickerRowAuthor, !darkMode && styles.chapterMapBookPickerRowAuthorLight]} numberOfLines={1}>
                               {item.author}
                             </Text>
                           </View>
                           {isActive ? (
-                            <Ionicons name="checkmark-circle" size={20} color="rgba(255,255,255,0.88)" />
+                            <Ionicons name="checkmark-circle" size={20} color={darkMode ? "rgba(255,255,255,0.88)" : "rgba(15,23,42,0.8)"} />
                           ) : null}
                         </Pressable>
                       );
@@ -3147,6 +3171,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
             <Animated.View
               style={[
                 styles.bookPickerSheet,
+                !darkMode && styles.bookPickerSheetLight,
                 {
                   paddingBottom: 28 + insets.bottom,
                   marginBottom: bookPickerKeyboardPad,
@@ -3154,17 +3179,23 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 { transform: [{ translateY: bookPickerSheetTranslate }] },
               ]}
             >
-              <View style={styles.bookPickerDragHandle} />
-              <Text style={styles.bookPickerSheetTitle}>Select book</Text>
+              <View style={[styles.bookPickerDragHandle, !darkMode && styles.bookPickerDragHandleLight]} />
+              <Text style={[styles.bookPickerSheetTitle, !darkMode && styles.bookPickerSheetTitleLight]}>
+                Select book
+              </Text>
               <View style={styles.bookPickerSearchOuter}>
-                <View style={styles.bookPickerSearchInner}>
-                  <Ionicons name="search-outline" size={15} color="rgba(255,255,255,0.3)" />
+                <View style={[styles.bookPickerSearchInner, !darkMode && styles.bookPickerSearchInnerLight]}>
+                  <Ionicons
+                    name="search-outline"
+                    size={15}
+                    color={darkMode ? "rgba(255,255,255,0.3)" : "rgba(15,23,42,0.35)"}
+                  />
                   <TextInput
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                     placeholder="Search by title or author"
-                    placeholderTextColor="rgba(255,255,255,0.25)"
-                    style={styles.bookPickerSearchInput}
+                    placeholderTextColor={darkMode ? "rgba(255,255,255,0.25)" : "rgba(15,23,42,0.35)"}
+                    style={[styles.bookPickerSearchInput, !darkMode && styles.bookPickerSearchInputLight]}
                     selectionColor={accentColor}
                     underlineColorAndroid="transparent"
                   />
@@ -3186,7 +3217,9 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                       style={[
                         styles.bookPickerRow,
                         isActive ? styles.bookPickerRowSelected : styles.bookPickerRowPlain,
+                        isActive && !darkMode ? styles.bookPickerRowSelectedLight : null,
                         !isActive && !isLast ? styles.bookPickerRowDivider : null,
+                        !isActive && !isLast && !darkMode ? styles.bookPickerRowDividerLight : null,
                       ]}
                       onPress={() => {
                         Keyboard.dismiss();
@@ -3206,15 +3239,25 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                           accessibilityIgnoresInvertColors
                         />
                       ) : (
-                        <View style={styles.bookPickerCoverPlaceholder}>
-                          <Ionicons name="book-outline" size={16} color="rgba(255,255,255,0.15)" />
+                        <View style={[styles.bookPickerCoverPlaceholder, !darkMode && styles.bookPickerCoverPlaceholderLight]}>
+                          <Ionicons
+                            name="book-outline"
+                            size={16}
+                            color={darkMode ? "rgba(255,255,255,0.15)" : "rgba(15,23,42,0.25)"}
+                          />
                         </View>
                       )}
                       <View style={styles.bookPickerRowTextCol}>
-                        <Text style={styles.bookPickerRowTitle} numberOfLines={2}>
+                        <Text
+                          style={[styles.bookPickerRowTitle, !darkMode && styles.bookPickerRowTitleLight]}
+                          numberOfLines={2}
+                        >
                           {item.title}
                         </Text>
-                        <Text style={styles.bookPickerRowAuthor} numberOfLines={1}>
+                        <Text
+                          style={[styles.bookPickerRowAuthor, !darkMode && styles.bookPickerRowAuthorLight]}
+                          numberOfLines={1}
+                        >
                           {item.author}
                         </Text>
                       </View>
@@ -3229,11 +3272,13 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                   );
                 }}
                 ListEmptyComponent={
-                  <Text style={styles.bookPickerEmptyText}>{bookPickerEmptyMessage}</Text>
+                  <Text style={[styles.bookPickerEmptyText, !darkMode && styles.bookPickerEmptyTextLight]}>
+                    {bookPickerEmptyMessage}
+                  </Text>
                 }
                 ListFooterComponent={
                   <View>
-                    <View style={styles.bookPickerFooterDivider} />
+                    <View style={[styles.bookPickerFooterDivider, !darkMode && styles.bookPickerFooterDividerLight]} />
                     <TouchableOpacity
                       style={styles.bookPickerAddRow}
                       onPress={openAddBookFromPicker}
@@ -3241,14 +3286,22 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                       accessibilityRole="button"
                       accessibilityLabel="Add new book"
                     >
-                      <View style={styles.bookPickerAddIconWrap}>
+                      <View style={[styles.bookPickerAddIconWrap, !darkMode && styles.bookPickerAddIconWrapLight]}>
                         <Ionicons name="barcode-outline" size={16} color={accentColor} />
                       </View>
                       <View style={styles.bookPickerAddTextCol}>
-                        <Text style={styles.bookPickerAddTitle}>Add new book</Text>
-                        <Text style={styles.bookPickerAddSubtitle}>Scan barcode to add</Text>
+                        <Text style={[styles.bookPickerAddTitle, !darkMode && styles.bookPickerAddTitleLight]}>
+                          Add new book
+                        </Text>
+                        <Text style={[styles.bookPickerAddSubtitle, !darkMode && styles.bookPickerAddSubtitleLight]}>
+                          Scan barcode to add
+                        </Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.2)" />
+                      <Ionicons
+                        name="chevron-forward"
+                        size={14}
+                        color={darkMode ? "rgba(255,255,255,0.2)" : "rgba(15,23,42,0.3)"}
+                      />
                     </TouchableOpacity>
                   </View>
                 }
@@ -3724,6 +3777,10 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.08)",
     overflow: "hidden",
   },
+  recentScanCardLight: {
+    backgroundColor: "rgba(15,23,42,0.04)",
+    borderColor: "rgba(15,23,42,0.1)",
+  },
   recentScanCardPressed: {
     opacity: 0.92,
   },
@@ -3744,17 +3801,26 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#ffffff",
   },
+  recentScanPageLight: {
+    color: "#0f172a",
+  },
   recentScanSnippet: {
     fontSize: 11,
     fontWeight: "400",
     lineHeight: 15,
     color: "rgba(255,255,255,0.45)",
   },
+  recentScanSnippetLight: {
+    color: "rgba(15,23,42,0.55)",
+  },
   recentScanTime: {
     fontSize: 10,
     fontWeight: "400",
     color: "rgba(255,255,255,0.3)",
     marginTop: 8,
+  },
+  recentScanTimeLight: {
+    color: "rgba(15,23,42,0.4)",
   },
   recentScansEmptyHint: {
     fontSize: 12,
@@ -4769,6 +4835,104 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "rgba(255,255,255,0.55)",
   },
+  chapterMapRootLight: {
+    backgroundColor: CHAPTER_MAP_BG_LIGHT,
+  },
+  chapterMapProgressTrackLight: {
+    backgroundColor: "rgba(15,23,42,0.08)",
+  },
+  chapterMapCloseCircleLight: {
+    backgroundColor: "rgba(15,23,42,0.06)",
+  },
+  chapterMapCloseGlyphLight: {
+    color: "#0f172a",
+  },
+  chapterMapHeaderLabelLight: {
+    color: "#0f172a",
+  },
+  chapterMapBookHeaderBlockLight: {
+    borderBottomColor: "rgba(15,23,42,0.08)",
+  },
+  chapterMapBookTitleLight: {
+    color: "#0f172a",
+  },
+  chapterMapBookAuthorLight: {
+    color: "rgba(15,23,42,0.45)",
+  },
+  chapterMapRowLight: {
+    borderBottomColor: "rgba(15,23,42,0.08)",
+  },
+  chapterMapRowNumberLight: {
+    color: "rgba(15,23,42,0.4)",
+  },
+  chapterMapRowPressedLight: {
+    backgroundColor: "rgba(15,23,42,0.05)",
+  },
+  chapterMapShimmerBarLight: {
+    backgroundColor: "rgba(15,23,42,0.08)",
+  },
+  chapterMapRowTitleLight: {
+    color: "#0f172a",
+  },
+  chapterMapRowWarnLight: {
+    color: "rgba(180,83,9,0.95)",
+  },
+  chapterMapRowPagesLight: {
+    color: "rgba(15,23,42,0.45)",
+  },
+  chapterMapFooterLight: {
+    borderTopColor: "rgba(15,23,42,0.08)",
+  },
+  chapterMapFooterButtonLight: {
+    backgroundColor: "#111111",
+  },
+  chapterMapFooterButtonTextLight: {
+    color: "#ffffff",
+  },
+  chapterMapSheetLight: {
+    backgroundColor: "#ffffff",
+  },
+  chapterMapGrabberLight: {
+    backgroundColor: "rgba(15,23,42,0.2)",
+  },
+  chapterMapSheetTitleLight: {
+    color: "#0f172a",
+  },
+  chapterMapBookPickerSeparatorLight: {
+    backgroundColor: "rgba(15,23,42,0.1)",
+  },
+  chapterMapBookPickerRowTitleLight: {
+    color: "#0f172a",
+  },
+  chapterMapBookPickerRowAuthorLight: {
+    color: "rgba(15,23,42,0.5)",
+  },
+  chapterEditLabelLight: {
+    color: "rgba(15,23,42,0.5)",
+  },
+  chapterEditInputLight: {
+    borderColor: "rgba(15,23,42,0.18)",
+    color: "#0f172a",
+  },
+  chapterEditPageDashLight: {
+    color: "rgba(15,23,42,0.4)",
+  },
+  chapterEditHintLight: {
+    color: "rgba(15,23,42,0.45)",
+  },
+  chapterEditSaveLight: {
+    backgroundColor: "rgba(15,23,42,0.06)",
+    borderColor: "rgba(15,23,42,0.15)",
+  },
+  chapterEditSavePressedLight: {
+    backgroundColor: "rgba(15,23,42,0.12)",
+  },
+  chapterEditSaveTextLight: {
+    color: "#0f172a",
+  },
+  chapterEditCancelLight: {
+    color: "rgba(15,23,42,0.55)",
+  },
   pageScanSheetRoot: {
     flex: 1,
     justifyContent: "flex-end",
@@ -5190,6 +5354,53 @@ const styles = StyleSheet.create({
   bookPickerAddSubtitle: {
     fontSize: 12,
     color: "rgba(255,255,255,0.4)",
+  },
+  bookPickerSheetLight: {
+    backgroundColor: "#ffffff",
+  },
+  bookPickerDragHandleLight: {
+    backgroundColor: "rgba(15,23,42,0.15)",
+  },
+  bookPickerSheetTitleLight: {
+    color: "#0f172a",
+  },
+  bookPickerSearchInnerLight: {
+    backgroundColor: "rgba(15,23,42,0.04)",
+    borderColor: "rgba(15,23,42,0.1)",
+  },
+  bookPickerSearchInputLight: {
+    color: "#0f172a",
+  },
+  bookPickerRowDividerLight: {
+    borderBottomColor: "rgba(15,23,42,0.08)",
+  },
+  bookPickerRowSelectedLight: {
+    backgroundColor: "rgba(15,23,42,0.05)",
+    borderColor: "rgba(15,23,42,0.12)",
+  },
+  bookPickerCoverPlaceholderLight: {
+    backgroundColor: "rgba(15,23,42,0.06)",
+  },
+  bookPickerRowTitleLight: {
+    color: "#0f172a",
+  },
+  bookPickerRowAuthorLight: {
+    color: "rgba(15,23,42,0.5)",
+  },
+  bookPickerEmptyTextLight: {
+    color: "rgba(15,23,42,0.5)",
+  },
+  bookPickerFooterDividerLight: {
+    backgroundColor: "rgba(15,23,42,0.1)",
+  },
+  bookPickerAddIconWrapLight: {
+    backgroundColor: "rgba(15,23,42,0.05)",
+  },
+  bookPickerAddTitleLight: {
+    color: "#0f172a",
+  },
+  bookPickerAddSubtitleLight: {
+    color: "rgba(15,23,42,0.5)",
   },
   cameraView: {
     flex: 1,

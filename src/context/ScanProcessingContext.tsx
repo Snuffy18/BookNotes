@@ -60,6 +60,29 @@ export function ScanProcessingProvider({ children }: { children: ReactNode }) {
 
   const jobGenerationRef = useRef(0);
 
+  // Keep the extraction dependencies in a ref so `startProcessing` can stay
+  // referentially stable. Otherwise it would be recreated whenever `scans`
+  // changes (which happens the moment a scan is added), re-triggering the
+  // ProcessingScreen effect and registering the report twice.
+  const depsRef = useRef({
+    activeBook,
+    books,
+    scans,
+    studyPrefs,
+    addScan,
+    updateScan,
+    recordSuccessfulScan,
+  });
+  depsRef.current = {
+    activeBook,
+    books,
+    scans,
+    studyPrefs,
+    addScan,
+    updateScan,
+    recordSuccessfulScan,
+  };
+
   const clearJob = useCallback(() => {
     jobGenerationRef.current += 1;
     setApiComplete(false);
@@ -71,41 +94,30 @@ export function ScanProcessingProvider({ children }: { children: ReactNode }) {
     setParams(null);
   }, []);
 
-  const startProcessing = useCallback(
-    (nextParams: RunScanExtractionParams) => {
-      const generation = jobGenerationRef.current + 1;
-      jobGenerationRef.current = generation;
-      setApiComplete(false);
-      setStatus("running");
-      setActiveStepIndex(0);
-      setResultItem(null);
-      setError(null);
-      setDismissedToHome(false);
-      setParams(nextParams);
+  const startProcessing = useCallback((nextParams: RunScanExtractionParams) => {
+    const generation = jobGenerationRef.current + 1;
+    jobGenerationRef.current = generation;
+    setApiComplete(false);
+    setStatus("running");
+    setActiveStepIndex(0);
+    setResultItem(null);
+    setError(null);
+    setDismissedToHome(false);
+    setParams(nextParams);
 
-      void (async () => {
-        try {
-          const item = await runScanExtraction(nextParams, {
-            activeBook,
-            books,
-            scans,
-            studyPrefs,
-            addScan,
-            updateScan,
-            recordSuccessfulScan,
-          });
-          if (jobGenerationRef.current !== generation) return;
-          setApiComplete(true);
-          setResultItem(item);
-        } catch (e) {
-          if (jobGenerationRef.current !== generation) return;
-          setError(mapScanExtractionError(e));
-          setStatus("error");
-        }
-      })();
-    },
-    [activeBook, addScan, books, recordSuccessfulScan, scans, studyPrefs, updateScan]
-  );
+    void (async () => {
+      try {
+        const item = await runScanExtraction(nextParams, depsRef.current);
+        if (jobGenerationRef.current !== generation) return;
+        setApiComplete(true);
+        setResultItem(item);
+      } catch (e) {
+        if (jobGenerationRef.current !== generation) return;
+        setError(mapScanExtractionError(e));
+        setStatus("error");
+      }
+    })();
+  }, []);
 
   const dismissToHome = useCallback(() => {
     setDismissedToHome(true);

@@ -5,6 +5,7 @@ import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, LayoutChangeEvent, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAppSettings } from "../context/AppSettingsContext";
 import { LibraryStackNavigator } from "./LibraryStackNavigator";
 import { ProfileStackNavigator } from "./ProfileStackNavigator";
 import { ScanStackNavigator } from "./ScanStackNavigator";
@@ -12,13 +13,38 @@ import type { RootTabParamList } from "./types";
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
-const PILL_BG = "#252525";
-const PILL_BORDER = "rgba(255,255,255,0.1)";
-const HIGHLIGHT_BG = "rgba(255,255,255,0.1)";
-const ICON_ACTIVE = "#ffffff";
-const ICON_INACTIVE = "rgba(255,255,255,0.6)";
-const LABEL_COLOR = "#ffffff";
 const ICON_SIZE = 20;
+
+type TabBarPalette = {
+  pillBg: string;
+  pillBorder: string;
+  highlightBg: string;
+  iconActive: string;
+  iconInactive: string;
+  labelColor: string;
+  shadowOpacity: number;
+};
+
+const TAB_BAR_PALETTES: Record<"light" | "dark", TabBarPalette> = {
+  dark: {
+    pillBg: "#252525",
+    pillBorder: "rgba(255,255,255,0.1)",
+    highlightBg: "rgba(255,255,255,0.1)",
+    iconActive: "#ffffff",
+    iconInactive: "rgba(255,255,255,0.6)",
+    labelColor: "#ffffff",
+    shadowOpacity: 0.35,
+  },
+  light: {
+    pillBg: "#ffffff",
+    pillBorder: "rgba(0,0,0,0.08)",
+    highlightBg: "rgba(0,0,0,0.06)",
+    iconActive: "#1c1c1e",
+    iconInactive: "rgba(0,0,0,0.5)",
+    labelColor: "#1c1c1e",
+    shadowOpacity: 0.12,
+  },
+};
 
 const TAB_GAP = 0;
 const PILL_PAD_V = 4;
@@ -45,6 +71,8 @@ function getDeepestRouteName(route: { state?: unknown; name?: string } | undefin
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { darkMode } = useAppSettings();
+  const palette = darkMode ? TAB_BAR_PALETTES.dark : TAB_BAR_PALETTES.light;
   const [tabLayouts, setTabLayouts] = useState<
     { x: number; width: number; height: number }[] | null
   >(null);
@@ -220,7 +248,16 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       style={[styles.screenOverlay, { paddingBottom: 24 + insets.bottom }]}
     >
       <View style={styles.pillOuter}>
-        <View style={styles.pill}>
+        <View
+          style={[
+            styles.pill,
+            {
+              backgroundColor: palette.pillBg,
+              borderColor: palette.pillBorder,
+              shadowOpacity: palette.shadowOpacity,
+            },
+          ]}
+        >
           <View style={styles.pillTrack}>
             <Animated.View
               pointerEvents="none"
@@ -231,6 +268,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                   top: highlightY,
                   width: highlightW,
                   height: highlightH,
+                  backgroundColor: palette.highlightBg,
                 },
               ]}
             />
@@ -281,11 +319,11 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                         <Ionicons
                           name={tab.icon}
                           size={ICON_SIZE}
-                          color={ICON_ACTIVE}
+                          color={palette.iconActive}
                         />
                         <Animated.Text
                           pointerEvents="none"
-                          style={[styles.tabLabel, { color: LABEL_COLOR, opacity: activeLabelOpacity }]}
+                          style={[styles.tabLabel, { color: palette.labelColor, opacity: activeLabelOpacity }]}
                           numberOfLines={1}
                         >
                           {tab.label}
@@ -295,7 +333,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                       <Ionicons
                         name={tab.icon}
                         size={ICON_SIZE}
-                        color={ICON_INACTIVE}
+                        color={palette.iconInactive}
                       />
                     )}
                   </Pressable>
@@ -334,15 +372,12 @@ const styles = StyleSheet.create({
   pill: {
     alignSelf: "center",
     overflow: "hidden",
-    backgroundColor: PILL_BG,
     borderWidth: 0.5,
-    borderColor: PILL_BORDER,
     borderRadius: PILL_RADIUS,
     paddingVertical: PILL_PAD_V,
     paddingHorizontal: PILL_PAD_H,
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
     shadowRadius: 20,
     elevation: 16,
   },
@@ -355,7 +390,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 0,
     borderRadius: HIGHLIGHT_RADIUS,
-    backgroundColor: HIGHLIGHT_BG,
     zIndex: 0,
   },
   tabRow: {

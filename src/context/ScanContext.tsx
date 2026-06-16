@@ -11,6 +11,7 @@ import type {
   ScanItem,
 } from "../types/note";
 import { playSoundEffect } from "../utils/soundEffects";
+import { dedupeScans } from "../utils/dedupeScans";
 import { BookAddedToast } from "../components/BookAddedToast";
 import { BookDeletedToast } from "../components/BookDeletedToast";
 
@@ -92,7 +93,9 @@ export function ScanProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     loadScanLibrary()
       .then(({ scans: s, books: b, activeBookId: a }) => {
-        setScans(s);
+        // Clean up any duplicate scans left behind by the old duplicate-report
+        // bug or by older app versions. The save effect persists the result.
+        setScans(dedupeScans(s).scans);
         setBooks(b);
         setActiveBookId(a);
       })

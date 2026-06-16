@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import { getActiveElapsedSeconds, useReadingSession, type ReadingRunState } from "../context/ReadingSessionContext";
 import { useScanContext } from "../context/ScanContext";
+import { useAppSettings } from "../context/AppSettingsContext";
 import type { ScanStackParamList } from "../navigation/types";
 import { isEligibleReadingLogSession } from "../reading/readingHistoryStats";
 import { formatReadingTimerHMS, READING_TIMER_FONT_FAMILY } from "../reading/readingTimerDisplay";
@@ -39,6 +40,9 @@ const BLUE_DOT = "#3b82f6";
 const PRIMARY_WHITE = "#ffffff";
 const PRIMARY_TEXT = "#111111";
 const SUBTITLE_BLUE = "#60a5fa";
+
+const LIGHT_MUTED = "rgba(15,23,42,0.5)";
+const LIGHT_SUBTITLE_BLUE = "#2563eb";
 const PHASE_CROSSFADE_MS = 280;
 const PHASE_EASE = Easing.out(Easing.cubic);
 const BOOK_PICKER_ANIM_MS = 280;
@@ -95,6 +99,9 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
   const navigation = useNavigation<NavigationProp<ScanStackParamList>>();
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
+  const { darkMode } = useAppSettings();
+  const mutedColor = darkMode ? MUTED : LIGHT_MUTED;
+  const primaryActionTextColor = darkMode ? PRIMARY_TEXT : "#ffffff";
   const { books, activeBookId, activeBook, scans } = useScanContext();
   const {
     sessions,
@@ -603,7 +610,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
             style={[StyleSheet.absoluteFill, { opacity: backdropOp }]}
           >
             <Pressable
-              style={[styles.overlay, StyleSheet.absoluteFill]}
+              style={[styles.overlay, !darkMode && styles.overlayLight, StyleSheet.absoluteFill]}
               onPress={() => handleDismiss()}
               accessibilityRole="button"
               accessibilityLabel="Dismiss reading timer"
@@ -612,6 +619,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
           <Animated.View
             style={[
               styles.sheet,
+              !darkMode && styles.sheetLight,
               {
                 height: sheetHeight,
                 paddingBottom: sheetBottomPad,
@@ -619,7 +627,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
               },
             ]}
           >
-            <View style={styles.handle} />
+            <View style={[styles.handle, !darkMode && styles.handleLight]} />
             {lastCompletedSession ? (
               <View style={styles.sheetBody}>
                 <ReadingSessionCompleteView
@@ -634,13 +642,13 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
             <View style={styles.sheetColumn}>
             <View style={styles.sheetTitleWrap}>
               <Animated.Text
-                style={[styles.sheetTitle, styles.sheetTitleLayer, { opacity: readingTimerTitleOpacity }]}
+                style={[styles.sheetTitle, !darkMode && styles.sheetTitleLight, styles.sheetTitleLayer, { opacity: readingTimerTitleOpacity }]}
                 pointerEvents="none"
               >
                 Reading timer
               </Animated.Text>
               <Animated.Text
-                style={[styles.sheetTitle, styles.sheetTitleLayer, { opacity: chooseBookTitleOpacity }]}
+                style={[styles.sheetTitle, !darkMode && styles.sheetTitleLight, styles.sheetTitleLayer, { opacity: chooseBookTitleOpacity }]}
                 pointerEvents="none"
               >
                 Choose book
@@ -650,6 +658,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
               <Animated.Text
                 style={[
                   styles.sheetActiveBookTitle,
+                  !darkMode && styles.sheetActiveBookTitleLight,
                   { opacity: readingTimerTitleOpacity },
                 ]}
                 numberOfLines={2}
@@ -684,6 +693,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                     <View
                       style={[
                         styles.bookPickerCard,
+                        !darkMode && styles.bookPickerCardLight,
                         bookPickerOpen && bookPickerUsesFullExpansion && styles.bookPickerCardOpen,
                       ]}
                     >
@@ -703,8 +713,8 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                         <View style={styles.bookRowLeft}>
                           <View style={styles.blueDot} />
                           <View style={styles.bookRowTextCol}>
-                            <Text style={styles.labelMuted}>Reading</Text>
-                            <Text style={styles.bookTitleText} numberOfLines={1}>
+                            <Text style={[styles.labelMuted, !darkMode && styles.labelMutedLight]}>Reading</Text>
+                            <Text style={[styles.bookTitleText, !darkMode && styles.bookTitleTextLight]} numberOfLines={1}>
                               {selectedBookTitle}
                             </Text>
                             {step1BookSubtitle != null ? (
@@ -718,7 +728,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                                   opacity: readingTimerTitleOpacity,
                                 }}
                               >
-                                <Text style={styles.bookSubtitleBlue} numberOfLines={2}>
+                                <Text style={[styles.bookSubtitleBlue, !darkMode && styles.bookSubtitleBlueLight]} numberOfLines={2}>
                                   {step1BookSubtitle}
                                 </Text>
                               </Animated.View>
@@ -726,7 +736,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                           </View>
                         </View>
                         <Animated.View style={{ transform: [{ rotate: bookPickerChevronRotate }] }}>
-                          <Ionicons name="chevron-down" size={16} color={MUTED} />
+                          <Ionicons name="chevron-down" size={16} color={mutedColor} />
                         </Animated.View>
                       </TouchableOpacity>
 
@@ -741,7 +751,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                         pointerEvents={bookPickerOpen ? "auto" : "none"}
                       >
                         <ScrollView
-                          style={styles.bookPickerList}
+                          style={[styles.bookPickerList, !darkMode && styles.bookPickerListLight]}
                           contentContainerStyle={styles.bookPickerListContent}
                           keyboardShouldPersistTaps="handled"
                           showsVerticalScrollIndicator={bookPickerUsesFullExpansion}
@@ -749,7 +759,11 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                           scrollEnabled={bookPickerUsesFullExpansion}
                         >
                           <TouchableOpacity
-                            style={[styles.pickerRow, timerBookId === null && styles.pickerRowSelected]}
+                            style={[
+                              styles.pickerRow,
+                              timerBookId === null && styles.pickerRowSelected,
+                              timerBookId === null && !darkMode && styles.pickerRowSelectedLight,
+                            ]}
                             onPress={() => {
                               hapticLight();
                               setTimerBookId(null);
@@ -757,9 +771,9 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                             }}
                             activeOpacity={0.85}
                           >
-                            <Text style={styles.pickerRowText}>Not tied to a book</Text>
+                            <Text style={[styles.pickerRowText, !darkMode && styles.pickerRowTextLight]}>Not tied to a book</Text>
                             {timerBookId === null ? (
-                              <Ionicons name="checkmark" size={18} color={MUTED} />
+                              <Ionicons name="checkmark" size={18} color={mutedColor} />
                             ) : null}
                           </TouchableOpacity>
                           {books.map((book) => {
@@ -767,7 +781,11 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                             return (
                               <TouchableOpacity
                                 key={book.id}
-                                style={[styles.pickerRow, sel && styles.pickerRowSelected]}
+                                style={[
+                                  styles.pickerRow,
+                                  sel && styles.pickerRowSelected,
+                                  sel && !darkMode && styles.pickerRowSelectedLight,
+                                ]}
                                 onPress={() => {
                                   hapticLight();
                                   setTimerBookId(book.id);
@@ -775,10 +793,10 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                                 }}
                                 activeOpacity={0.85}
                               >
-                                <Text style={styles.pickerRowText} numberOfLines={2}>
+                                <Text style={[styles.pickerRowText, !darkMode && styles.pickerRowTextLight]} numberOfLines={2}>
                                   {book.title}
                                 </Text>
-                                {sel ? <Ionicons name="checkmark" size={18} color={MUTED} /> : null}
+                                {sel ? <Ionicons name="checkmark" size={18} color={mutedColor} /> : null}
                               </TouchableOpacity>
                             );
                           })}
@@ -806,10 +824,10 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                         <View style={styles.idleExtrasGap}>
                         <View>
                           <View style={styles.stepRow}>
-                            <View style={styles.stepBadge}>
-                              <Text style={styles.stepBadgeText}>1</Text>
+                            <View style={[styles.stepBadge, !darkMode && styles.stepBadgeLight]}>
+                              <Text style={[styles.stepBadgeText, !darkMode && styles.stepBadgeTextLight]}>1</Text>
                             </View>
-                            <Text style={styles.fieldLabel}>Page you start on</Text>
+                            <Text style={[styles.fieldLabel, !darkMode && styles.fieldLabelLight]}>Page you start on</Text>
                           </View>
                           <ReadingTimerPageWheel
                             pages={startPages}
@@ -820,7 +838,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                         </View>
 
                         <TouchableOpacity
-                          style={styles.startBtn}
+                          style={[styles.startBtn, !darkMode && styles.startBtnLight]}
                           onPress={() => {
                             hapticLight();
                             const startPage = startPageDraft.trim() || String(draftStartNum);
@@ -828,8 +846,8 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                           }}
                           activeOpacity={0.9}
                         >
-                          <Ionicons name="play" size={20} color={PRIMARY_TEXT} />
-                          <Text style={styles.startBtnText}>Start timer</Text>
+                          <Ionicons name="play" size={20} color={primaryActionTextColor} />
+                          <Text style={[styles.startBtnText, !darkMode && styles.startBtnTextLight]}>Start timer</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -839,15 +857,15 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                           accessibilityRole="button"
                           accessibilityLabel="View saved reading sessions"
                         >
-                          <Text style={styles.savedSessionsLabel}>Saved sessions</Text>
+                          <Text style={[styles.savedSessionsLabel, !darkMode && styles.savedSessionsLabelLight]}>Saved sessions</Text>
                           {eligibleSavedSessionCount > 0 ? (
-                            <View style={styles.savedSessionsBadge}>
-                              <Text style={styles.savedSessionsBadgeText}>
+                            <View style={[styles.savedSessionsBadge, !darkMode && styles.savedSessionsBadgeLight]}>
+                              <Text style={[styles.savedSessionsBadgeText, !darkMode && styles.savedSessionsBadgeTextLight]}>
                                 {eligibleSavedSessionCount}
                               </Text>
                             </View>
                           ) : null}
-                          <Ionicons name="chevron-forward" size={16} color={MUTED} />
+                          <Ionicons name="chevron-forward" size={16} color={mutedColor} />
                         </TouchableOpacity>
                         </View>
                       </Animated.View>
@@ -901,11 +919,11 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                       >
                         <View style={styles.bodyGap}>
                           <View style={styles.stoppedTimerSection}>
-                            <Text style={[styles.timerHuge, { fontFamily: READING_TIMER_FONT_FAMILY }]}>
+                            <Text style={[styles.timerHuge, !darkMode && styles.timerHugeLight, { fontFamily: READING_TIMER_FONT_FAMILY }]}>
                               {formatReadingTimerHMS(stoppedViewRun.durationSeconds)}
                             </Text>
                             {step2Subtitle ? (
-                              <Text style={styles.stoppedContextBlue} numberOfLines={2}>
+                              <Text style={[styles.stoppedContextBlue, !darkMode && styles.stoppedContextBlueLight]} numberOfLines={2}>
                                 {step2Subtitle}
                               </Text>
                             ) : null}
@@ -913,10 +931,10 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
 
                           <View>
                             <View style={styles.stepRow}>
-                              <View style={styles.stepBadge}>
-                                <Text style={styles.stepBadgeText}>2</Text>
+                              <View style={[styles.stepBadge, !darkMode && styles.stepBadgeLight]}>
+                                <Text style={[styles.stepBadgeText, !darkMode && styles.stepBadgeTextLight]}>2</Text>
                               </View>
-                              <Text style={styles.fieldLabel}>Page you finished on</Text>
+                              <Text style={[styles.fieldLabel, !darkMode && styles.fieldLabelLight]}>Page you finished on</Text>
                             </View>
                             <ReadingTimerPageWheel
                               pages={endPages}
@@ -927,7 +945,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                           </View>
 
                           <TouchableOpacity
-                            style={[styles.startBtn, !endPageDraft.trim() && styles.startBtnDisabled]}
+                            style={[styles.startBtn, !darkMode && styles.startBtnLight, !endPageDraft.trim() && styles.startBtnDisabled]}
                             onPress={() => {
                               if (!endPageDraft.trim()) return;
                               hapticLight();
@@ -936,8 +954,8 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                             activeOpacity={0.9}
                             disabled={!endPageDraft.trim()}
                           >
-                            <Ionicons name="checkmark" size={20} color={PRIMARY_TEXT} />
-                            <Text style={styles.startBtnText}>Save session</Text>
+                            <Ionicons name="checkmark" size={20} color={primaryActionTextColor} />
+                            <Text style={[styles.startBtnText, !darkMode && styles.startBtnTextLight]}>Save session</Text>
                           </TouchableOpacity>
 
                           <TouchableOpacity
@@ -948,7 +966,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                             hitSlop={{ top: 8, bottom: 8 }}
                             style={styles.discardHit}
                           >
-                            <Text style={styles.discardText}>Discard</Text>
+                            <Text style={[styles.discardText, !darkMode && styles.discardTextLight]}>Discard</Text>
                           </TouchableOpacity>
                         </View>
                       </Animated.View>
@@ -1312,5 +1330,76 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#ffffff",
+  },
+  overlayLight: {
+    backgroundColor: "rgba(15,23,42,0.4)",
+  },
+  sheetLight: {
+    backgroundColor: "#ffffff",
+    borderTopColor: "rgba(15,23,42,0.1)",
+  },
+  handleLight: {
+    backgroundColor: "rgba(15,23,42,0.15)",
+  },
+  sheetTitleLight: {
+    color: "#0f172a",
+  },
+  sheetActiveBookTitleLight: {
+    color: "#0f172a",
+  },
+  bookPickerCardLight: {
+    backgroundColor: "rgba(15,23,42,0.04)",
+    borderColor: "rgba(15,23,42,0.1)",
+  },
+  bookPickerListLight: {
+    borderTopColor: "rgba(15,23,42,0.1)",
+  },
+  labelMutedLight: {
+    color: LIGHT_MUTED,
+  },
+  bookTitleTextLight: {
+    color: "#0f172a",
+  },
+  bookSubtitleBlueLight: {
+    color: LIGHT_SUBTITLE_BLUE,
+  },
+  pickerRowSelectedLight: {
+    backgroundColor: "rgba(15,23,42,0.05)",
+  },
+  pickerRowTextLight: {
+    color: "#0f172a",
+  },
+  stepBadgeLight: {
+    backgroundColor: "rgba(15,23,42,0.08)",
+  },
+  stepBadgeTextLight: {
+    color: "#0f172a",
+  },
+  fieldLabelLight: {
+    color: LIGHT_MUTED,
+  },
+  startBtnLight: {
+    backgroundColor: "#111111",
+  },
+  startBtnTextLight: {
+    color: "#ffffff",
+  },
+  savedSessionsLabelLight: {
+    color: LIGHT_MUTED,
+  },
+  savedSessionsBadgeLight: {
+    backgroundColor: "rgba(15,23,42,0.1)",
+  },
+  savedSessionsBadgeTextLight: {
+    color: "#0f172a",
+  },
+  timerHugeLight: {
+    color: "#0f172a",
+  },
+  stoppedContextBlueLight: {
+    color: LIGHT_SUBTITLE_BLUE,
+  },
+  discardTextLight: {
+    color: LIGHT_MUTED,
   },
 });

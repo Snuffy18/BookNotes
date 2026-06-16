@@ -66,7 +66,9 @@ export function ReadingTimerRunningView({
   onStopSave,
   onOpenSavedSessions,
 }: Props) {
-  const { accentColor } = useAppSettings();
+  const { accentColor, darkMode } = useAppSettings();
+  const pauseIconColor = darkMode ? "rgba(255,255,255,0.65)" : "rgba(15,23,42,0.6)";
+  const stopIconColor = darkMode ? "#111111" : "#ffffff";
   const [paceTick, setPaceTick] = useState(0);
   const [finishEstimateHelpOpen, setFinishEstimateHelpOpen] = useState(false);
 
@@ -115,9 +117,9 @@ export function ReadingTimerRunningView({
     <View style={styles.sections}>
       {!hideHeader ? (
         <View style={styles.header}>
-          <Text style={styles.headerLabel}>Reading timer</Text>
+          <Text style={[styles.headerLabel, !darkMode && styles.headerLabelLight]}>Reading timer</Text>
           {bookTitle ? (
-            <Text style={styles.headerBookTitle} numberOfLines={2}>
+            <Text style={[styles.headerBookTitle, !darkMode && styles.headerBookTitleLight]} numberOfLines={2}>
               {bookTitle}
             </Text>
           ) : null}
@@ -125,14 +127,14 @@ export function ReadingTimerRunningView({
       ) : null}
 
       <View style={styles.timerSection}>
-        <Text style={styles.timerDisplay}>{formatReadingTimerHMS(elapsedSeconds)}</Text>
+        <Text style={[styles.timerDisplay, !darkMode && styles.timerDisplayLight]}>{formatReadingTimerHMS(elapsedSeconds)}</Text>
 
         <View style={styles.timerMetaRow}>
-          <Text style={styles.timerMetaText}>{startedLine}</Text>
+          <Text style={[styles.timerMetaText, !darkMode && styles.timerMetaTextLight]}>{startedLine}</Text>
           {showPaceMeta ? (
             <>
-              <View style={styles.metaDot} />
-              <Text style={styles.paceText}>~{pacePerHour} p/hr</Text>
+              <View style={[styles.metaDot, !darkMode && styles.metaDotLight]} />
+              <Text style={[styles.paceText, !darkMode && styles.paceTextLight]}>~{pacePerHour} p/hr</Text>
             </>
           ) : null}
         </View>
@@ -147,11 +149,11 @@ export function ReadingTimerRunningView({
               accessibilityHint="Shows how finish time is calculated"
               accessibilityState={{ expanded: finishEstimateHelpOpen }}
             >
-              <Text style={styles.finishEstimate}>{finishEstimate}</Text>
+              <Text style={[styles.finishEstimate, !darkMode && styles.finishEstimateLight]}>{finishEstimate}</Text>
             </Pressable>
             {finishEstimateHelpOpen ? (
-              <View style={styles.finishEstimateHelpCard}>
-                <Text style={styles.finishEstimateHelpText}>{FINISH_ESTIMATE_HELP}</Text>
+              <View style={[styles.finishEstimateHelpCard, !darkMode && styles.cardLight]}>
+                <Text style={[styles.finishEstimateHelpText, !darkMode && styles.finishEstimateHelpTextLight]}>{FINISH_ESTIMATE_HELP}</Text>
               </View>
             ) : null}
           </View>
@@ -159,9 +161,9 @@ export function ReadingTimerRunningView({
       </View>
 
       {progressPct != null && currentPageNum != null ? (
-        <View style={styles.progressCard}>
+        <View style={[styles.progressCard, !darkMode && styles.cardLight]}>
           <View style={styles.progressHeader}>
-            <Text style={styles.progressHeaderLeft}>
+            <Text style={[styles.progressHeaderLeft, !darkMode && styles.progressHeaderLeftLight]}>
               Book progress · currently p. {run.startPage}
             </Text>
             {progressPctLabel ? (
@@ -170,8 +172,8 @@ export function ReadingTimerRunningView({
               </Text>
             ) : null}
           </View>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
+          <View style={[styles.progressTrack, !darkMode && styles.progressTrackLight]}>
+            <View style={[styles.progressFill, !darkMode && styles.progressFillLight, { width: `${progressPct}%` }]} />
             <View
               style={[
                 styles.progressDot,
@@ -188,23 +190,23 @@ export function ReadingTimerRunningView({
       ) : null}
 
       <View style={styles.buttonRow}>
-        <Pressable style={styles.pauseBtn} onPress={onPauseResume} accessibilityRole="button">
-          <Ionicons name={isPaused ? "play" : "pause"} size={16} color="rgba(255,255,255,0.65)" />
-          <Text style={styles.pauseBtnText}>{isPaused ? "Resume" : "Pause"}</Text>
+        <Pressable style={[styles.pauseBtn, !darkMode && styles.pauseBtnLight]} onPress={onPauseResume} accessibilityRole="button">
+          <Ionicons name={isPaused ? "play" : "pause"} size={16} color={pauseIconColor} />
+          <Text style={[styles.pauseBtnText, !darkMode && styles.pauseBtnTextLight]}>{isPaused ? "Resume" : "Pause"}</Text>
         </Pressable>
-        <Pressable style={styles.stopBtn} onPress={onStopSave} accessibilityRole="button">
-          <Ionicons name="stop" size={16} color="#111111" />
-          <Text style={styles.stopBtnText}>Stop & save</Text>
+        <Pressable style={[styles.stopBtn, !darkMode && styles.stopBtnLight]} onPress={onStopSave} accessibilityRole="button">
+          <Ionicons name="stop" size={16} color={stopIconColor} />
+          <Text style={[styles.stopBtnText, !darkMode && styles.stopBtnTextLight]}>Stop & save</Text>
         </Pressable>
       </View>
 
       {lastScan && lastScanIdea ? (
-        <View style={styles.lastScanCard}>
-          <Text style={styles.lastScanLabel}>Last scan from this book</Text>
-          <Text style={styles.lastScanIdea} numberOfLines={2}>
+        <View style={[styles.lastScanCard, !darkMode && styles.cardLight]}>
+          <Text style={[styles.lastScanLabel, !darkMode && styles.lastScanLabelLight]}>Last scan from this book</Text>
+          <Text style={[styles.lastScanIdea, !darkMode && styles.lastScanIdeaLight]} numberOfLines={2}>
             {lastScanIdea}
           </Text>
-          {lastScanMeta ? <Text style={styles.lastScanMeta}>{lastScanMeta}</Text> : null}
+          {lastScanMeta ? <Text style={[styles.lastScanMeta, !darkMode && styles.lastScanMetaLight]}>{lastScanMeta}</Text> : null}
         </View>
       ) : null}
 
@@ -214,7 +216,7 @@ export function ReadingTimerRunningView({
         accessibilityRole="button"
         accessibilityLabel="Saved sessions"
       >
-        <Text style={styles.savedSessionsText}>Saved sessions →</Text>
+        <Text style={[styles.savedSessionsText, !darkMode && styles.savedSessionsTextLight]}>Saved sessions →</Text>
       </Pressable>
     </View>
   );
@@ -425,5 +427,67 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     color: "rgba(255,255,255,0.25)",
     textAlign: "center",
+  },
+  cardLight: {
+    backgroundColor: "rgba(15,23,42,0.03)",
+    borderColor: "rgba(15,23,42,0.08)",
+  },
+  headerLabelLight: {
+    color: "rgba(15,23,42,0.45)",
+  },
+  headerBookTitleLight: {
+    color: "#0f172a",
+  },
+  timerDisplayLight: {
+    color: "#0f172a",
+  },
+  timerMetaTextLight: {
+    color: "rgba(15,23,42,0.45)",
+  },
+  metaDotLight: {
+    backgroundColor: "rgba(15,23,42,0.25)",
+  },
+  paceTextLight: {
+    color: "#16a34a",
+  },
+  finishEstimateLight: {
+    color: "rgba(15,23,42,0.4)",
+  },
+  finishEstimateHelpTextLight: {
+    color: "rgba(15,23,42,0.55)",
+  },
+  progressHeaderLeftLight: {
+    color: "rgba(15,23,42,0.45)",
+  },
+  progressTrackLight: {
+    backgroundColor: "rgba(15,23,42,0.08)",
+  },
+  progressFillLight: {
+    backgroundColor: "rgba(15,23,42,0.16)",
+  },
+  pauseBtnLight: {
+    backgroundColor: "rgba(15,23,42,0.05)",
+    borderColor: "rgba(15,23,42,0.12)",
+  },
+  pauseBtnTextLight: {
+    color: "rgba(15,23,42,0.6)",
+  },
+  stopBtnLight: {
+    backgroundColor: "#111111",
+  },
+  stopBtnTextLight: {
+    color: "#ffffff",
+  },
+  lastScanLabelLight: {
+    color: "rgba(15,23,42,0.4)",
+  },
+  lastScanIdeaLight: {
+    color: "rgba(15,23,42,0.6)",
+  },
+  lastScanMetaLight: {
+    color: "rgba(15,23,42,0.4)",
+  },
+  savedSessionsTextLight: {
+    color: "rgba(15,23,42,0.4)",
   },
 });

@@ -242,8 +242,11 @@ export function ProcessingScreen({ navigation, route }: Props) {
     () => `${route.params.imageUri}|${route.params.rescanForScanId ?? ""}`,
     [route.params.imageUri, route.params.rescanForScanId]
   );
+  const startedJobKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (startedJobKeyRef.current === jobKey) return;
+    startedJobKeyRef.current = jobKey;
     startProcessing(route.params);
   }, [jobKey, startProcessing]);
 

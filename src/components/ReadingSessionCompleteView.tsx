@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { useMemo } from "react";
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { useStreak } from "../context/StreakContext";
+import { useAppSettings } from "../context/AppSettingsContext";
 import { pagesInReadingSession, sessionPacePerHour } from "../reading/readingHistoryStats";
 import type { ReadingSession } from "../types/note";
 import { parseScanPageNumber } from "../utils/bookReadingProgress";
@@ -60,6 +61,10 @@ export function ReadingSessionCompleteView({
   anchorContentToBottom = false,
 }: Props) {
   const { streak } = useStreak();
+  const { darkMode } = useAppSettings();
+  const statBgIconColor = darkMode ? "rgba(255,255,255,0.06)" : "rgba(15,23,42,0.06)";
+  const doneIconColor = darkMode ? PRIMARY_TEXT : "#ffffff";
+  const shareIconColor = darkMode ? MUTED_60 : "rgba(15,23,42,0.6)";
   const startNum = parseScanPageNumber(session.startPage);
   const endNum = parseScanPageNumber(session.endPage);
   const pagesRead = pagesInReadingSession(session);
@@ -128,22 +133,22 @@ export function ReadingSessionCompleteView({
           <Ionicons name="checkmark" size={14} color={GREEN} />
           <Text style={styles.completeBadgeText}>Session complete</Text>
         </View>
-        <Text style={styles.elapsedSmall}>{formatElapsedHMS(session.durationSeconds)}</Text>
+        <Text style={[styles.elapsedSmall, !darkMode && styles.elapsedSmallLight]}>{formatElapsedHMS(session.durationSeconds)}</Text>
       </View>
 
       <View style={styles.sectionGap}>
-        <Text style={styles.heroTitle} numberOfLines={3}>
+        <Text style={[styles.heroTitle, !darkMode && styles.heroTitleLight]} numberOfLines={3}>
           {title}
         </Text>
-        <Text style={styles.heroSubtitle} numberOfLines={2}>
+        <Text style={[styles.heroSubtitle, !darkMode && styles.heroSubtitleLight]} numberOfLines={2}>
           {formatEndedSubtitle(session.endedAt, authorLine)}
         </Text>
       </View>
 
       <View style={styles.sectionGap}>
-        <View style={styles.progressCard}>
+        <View style={[styles.progressCard, !darkMode && styles.cardLight]}>
           <View style={styles.progressTopRow}>
-            <Text style={styles.pageRangeText}>
+            <Text style={[styles.pageRangeText, !darkMode && styles.pageRangeTextLight]}>
               p. {session.startPage} → p. {session.endPage}
             </Text>
             {pctSessionOfBook != null ? (
@@ -151,23 +156,23 @@ export function ReadingSessionCompleteView({
                 <Text style={styles.deltaBadgeText}>+{pctSessionOfBook}%</Text>
               </View>
             ) : (
-              <Text style={styles.emDash}>—</Text>
+              <Text style={[styles.emDash, !darkMode && styles.emDashLight]}>—</Text>
             )}
           </View>
           {totalPages != null && totalPages > 0 && startNum != null && endNum != null ? (
             <>
-              <View style={styles.barTrack}>
-                <View style={[styles.barPrev, { width: `${barPrevWidthPct}%` }]} />
+              <View style={[styles.barTrack, !darkMode && styles.barTrackLight]}>
+                <View style={[styles.barPrev, !darkMode && styles.barPrevLight, { width: `${barPrevWidthPct}%` }]} />
                 <View
                   style={[styles.barSession, { left: `${barPrevWidthPct}%`, width: `${barSessionWidthPct}%` }]}
                 />
               </View>
               <View style={styles.barLabelsRow}>
-                <Text style={styles.barLabelEdge}>0%</Text>
+                <Text style={[styles.barLabelEdge, !darkMode && styles.barLabelEdgeLight]}>0%</Text>
                 <Text style={styles.barLabelCenter}>
                   {pctAtStart}% → {pctAtEnd}%
                 </Text>
-                <Text style={styles.barLabelEdge}>100%</Text>
+                <Text style={[styles.barLabelEdge, !darkMode && styles.barLabelEdgeLight]}>100%</Text>
               </View>
             </>
           ) : null}
@@ -176,35 +181,35 @@ export function ReadingSessionCompleteView({
 
       <View style={styles.grid}>
         <View style={styles.gridRow}>
-          <View style={styles.statCard}>
-            <Ionicons name="document-text-outline" size={48} color="rgba(255,255,255,0.06)" style={styles.statBgIcon} />
+          <View style={[styles.statCard, !darkMode && styles.cardLight]}>
+            <Ionicons name="document-text-outline" size={48} color={statBgIconColor} style={styles.statBgIcon} />
             <Text style={[styles.statValue, { color: BLUE }]}>{pagesRead > 0 ? pagesRead : "—"}</Text>
-            <Text style={styles.statLabel}>Pages read</Text>
+            <Text style={[styles.statLabel, !darkMode && styles.statLabelLight]}>Pages read</Text>
           </View>
-          <View style={styles.statCard}>
-            <Ionicons name="speedometer-outline" size={48} color="rgba(255,255,255,0.06)" style={styles.statBgIcon} />
+          <View style={[styles.statCard, !darkMode && styles.cardLight]}>
+            <Ionicons name="speedometer-outline" size={48} color={statBgIconColor} style={styles.statBgIcon} />
             <Text style={styles.statValueRow}>
               <Text style={[styles.statValue, { color: GREEN }]}>{pace != null ? pace : "—"}</Text>
-              {pace != null ? <Text style={styles.statUnit}>p/hr</Text> : null}
+              {pace != null ? <Text style={[styles.statUnit, !darkMode && styles.statUnitLight]}>p/hr</Text> : null}
             </Text>
-            <Text style={styles.statLabel}>Reading pace</Text>
+            <Text style={[styles.statLabel, !darkMode && styles.statLabelLight]}>Reading pace</Text>
           </View>
         </View>
         <View style={styles.gridRow}>
-          <View style={styles.statCard}>
-            <Ionicons name="timer-outline" size={48} color="rgba(255,255,255,0.06)" style={styles.statBgIcon} />
+          <View style={[styles.statCard, !darkMode && styles.cardLight]}>
+            <Ionicons name="timer-outline" size={48} color={statBgIconColor} style={styles.statBgIcon} />
             <Text style={styles.statValueRow}>
               <Text style={[styles.statValue, { color: AMBER }]}>{timeSpentMinDisplay}</Text>
-              <Text style={styles.statUnit}>min</Text>
+              <Text style={[styles.statUnit, !darkMode && styles.statUnitLight]}>min</Text>
             </Text>
-            <Text style={styles.statLabel}>Time spent</Text>
+            <Text style={[styles.statLabel, !darkMode && styles.statLabelLight]}>Time spent</Text>
           </View>
-          <View style={styles.statCard}>
-            <Ionicons name="library-outline" size={48} color="rgba(255,255,255,0.06)" style={styles.statBgIcon} />
+          <View style={[styles.statCard, !darkMode && styles.cardLight]}>
+            <Ionicons name="library-outline" size={48} color={statBgIconColor} style={styles.statBgIcon} />
             <Text style={[styles.statValue, { color: PURPLE }]}>
               {pagesRemaining != null ? pagesRemaining : "—"}
             </Text>
-            <Text style={styles.statLabel}>Pages remaining</Text>
+            <Text style={[styles.statLabel, !darkMode && styles.statLabelLight]}>Pages remaining</Text>
           </View>
         </View>
       </View>
@@ -215,21 +220,21 @@ export function ReadingSessionCompleteView({
             🔥
           </Text>
           <View style={styles.streakTextCol}>
-            <Text style={styles.streakTitle}>Reading streak</Text>
-            <Text style={styles.streakHint}>Keep it up — read again tomorrow</Text>
+            <Text style={[styles.streakTitle, !darkMode && styles.streakTitleLight]}>Reading streak</Text>
+            <Text style={[styles.streakHint, !darkMode && styles.streakHintLight]}>Keep it up — read again tomorrow</Text>
           </View>
           <Text style={styles.streakNumber}>{streak.currentStreak}</Text>
         </View>
       </View>
 
       <View style={styles.actions}>
-        <Pressable style={styles.doneBtn} onPress={onDonePress} accessibilityRole="button">
-          <Ionicons name="checkmark" size={18} color={PRIMARY_TEXT} />
-          <Text style={styles.doneBtnText}>Done</Text>
+        <Pressable style={[styles.doneBtn, !darkMode && styles.doneBtnLight]} onPress={onDonePress} accessibilityRole="button">
+          <Ionicons name="checkmark" size={18} color={doneIconColor} />
+          <Text style={[styles.doneBtnText, !darkMode && styles.doneBtnTextLight]}>Done</Text>
         </Pressable>
-        <Pressable style={styles.shareBtn} onPress={onShare} accessibilityRole="button">
-          <Ionicons name="share-outline" size={18} color={MUTED_60} />
-          <Text style={styles.shareBtnText}>Share session</Text>
+        <Pressable style={[styles.shareBtn, !darkMode && styles.shareBtnLight]} onPress={onShare} accessibilityRole="button">
+          <Ionicons name="share-outline" size={18} color={shareIconColor} />
+          <Text style={[styles.shareBtnText, !darkMode && styles.shareBtnTextLight]}>Share session</Text>
         </Pressable>
       </View>
     </ScrollView>
@@ -471,5 +476,58 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: MUTED_60,
+  },
+  cardLight: {
+    backgroundColor: "rgba(15,23,42,0.03)",
+    borderColor: "rgba(15,23,42,0.08)",
+  },
+  elapsedSmallLight: {
+    color: "rgba(15,23,42,0.45)",
+  },
+  heroTitleLight: {
+    color: "#0f172a",
+  },
+  heroSubtitleLight: {
+    color: "rgba(15,23,42,0.5)",
+  },
+  pageRangeTextLight: {
+    color: "#0f172a",
+  },
+  emDashLight: {
+    color: "rgba(15,23,42,0.5)",
+  },
+  barTrackLight: {
+    backgroundColor: "rgba(15,23,42,0.08)",
+  },
+  barPrevLight: {
+    backgroundColor: "rgba(15,23,42,0.2)",
+  },
+  barLabelEdgeLight: {
+    color: "rgba(15,23,42,0.4)",
+  },
+  statUnitLight: {
+    color: "rgba(15,23,42,0.5)",
+  },
+  statLabelLight: {
+    color: "rgba(15,23,42,0.5)",
+  },
+  streakTitleLight: {
+    color: "#0f172a",
+  },
+  streakHintLight: {
+    color: "rgba(15,23,42,0.5)",
+  },
+  doneBtnLight: {
+    backgroundColor: "#111111",
+  },
+  doneBtnTextLight: {
+    color: "#ffffff",
+  },
+  shareBtnLight: {
+    backgroundColor: "rgba(15,23,42,0.05)",
+    borderColor: "rgba(15,23,42,0.12)",
+  },
+  shareBtnTextLight: {
+    color: "rgba(15,23,42,0.6)",
   },
 });
