@@ -108,6 +108,8 @@ export function ReadingPlanBottomSheet({ visible, onDismiss, initialBookId }: Pr
   const [pagesEditorVisible, setPagesEditorVisible] = useState(false);
   const [currentPageEditorVisible, setCurrentPageEditorVisible] = useState(false);
   const [currentPageDraft, setCurrentPageDraft] = useState("");
+  const [dailyPagesEditorVisible, setDailyPagesEditorVisible] = useState(false);
+  const [dailyPagesDraft, setDailyPagesDraft] = useState("");
   /** Lifts the sheet above the keyboard (transparent Modal + bottom sheet). */
   const [keyboardPad, setKeyboardPad] = useState(0);
 
@@ -138,6 +140,7 @@ export function ReadingPlanBottomSheet({ visible, onDismiss, initialBookId }: Pr
       setMenuOpen(false);
       setPagesEditorVisible(false);
       setCurrentPageEditorVisible(false);
+      setDailyPagesEditorVisible(false);
       const plan = getPlanForBook(fallback);
       if (plan) {
         const planDate = startOfLocalDay(new Date(plan.targetFinishDate));
@@ -323,6 +326,21 @@ export function ReadingPlanBottomSheet({ visible, onDismiss, initialBookId }: Pr
     setCustomPickerVisible(false);
   }, []);
 
+  /** Setting a fixed daily pace derives the target finish date from the remaining pages. */
+  const onChangeDailyPages = useCallback(
+    (text: string) => {
+      const clean = text.replace(/[^0-9]/g, "");
+      setDailyPagesDraft(clean);
+      const perDay = parseInt(clean, 10);
+      if (!Number.isFinite(perDay) || perDay <= 0) return;
+      if (pagesRemaining == null || pagesRemaining <= 0) return;
+      const days = Math.max(1, Math.ceil(pagesRemaining / perDay));
+      setCustomDate(addDays(new Date(), days));
+      setPreset("custom");
+    },
+    [pagesRemaining]
+  );
+
   const onTapCustom = useCallback(() => {
     hapticLight();
     setPreset("custom");
@@ -447,6 +465,27 @@ export function ReadingPlanBottomSheet({ visible, onDismiss, initialBookId }: Pr
                     </Text>
                   </View>
                 </TouchableOpacity>
+                <View style={[styles.menuDivider, !darkMode && styles.menuDividerLight]} />
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    hapticLight();
+                    setMenuOpen(false);
+                    setDailyPagesDraft(pagesPerDay != null ? String(pagesPerDay) : "");
+                    setDailyPagesEditorVisible(true);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="speedometer-outline" size={16} color={mutedColor} />
+                  <View style={styles.menuItemTextCol}>
+                    <Text style={[styles.menuItemText, !darkMode && styles.menuItemTextLight]}>
+                      Set daily page goal
+                    </Text>
+                    <Text style={[styles.menuItemSub, !darkMode && styles.menuItemSubLight]}>
+                      {pagesPerDay != null ? `${pagesPerDay} pages/day` : "Pick a fixed pace"}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
               </View>
             </>
           ) : null}
@@ -567,6 +606,34 @@ export function ReadingPlanBottomSheet({ visible, onDismiss, initialBookId }: Pr
                       />
                       <Text style={[styles.pagesSuffix, !darkMode && styles.pagesSuffixLight]}>pages</Text>
                     </View>
+                  </>
+                ) : null}
+
+                {dailyPagesEditorVisible ? (
+                  <>
+                    <Text style={[styles.fieldLabel, styles.fieldLabelSpaced, !darkMode && styles.fieldLabelLight]}>
+                      Pages per day
+                    </Text>
+                    <View style={[styles.pagesField, !darkMode && styles.pagesFieldLight]}>
+                      <TextInput
+                        value={dailyPagesDraft}
+                        onChangeText={onChangeDailyPages}
+                        keyboardType="number-pad"
+                        returnKeyType="done"
+                        placeholder="e.g. 20"
+                        placeholderTextColor={mutedColor}
+                        style={[styles.pagesInput, !darkMode && styles.pagesInputLight]}
+                        selectionColor={accentColor}
+                        maxLength={4}
+                        autoFocus
+                      />
+                      <Text style={[styles.pagesSuffix, !darkMode && styles.pagesSuffixLight]}>pages/day</Text>
+                    </View>
+                    <Text style={[styles.dailyHint, !darkMode && styles.dailyHintLight]}>
+                      {pagesRemaining != null && pagesRemaining > 0
+                        ? "We'll set your finish date to match this pace."
+                        : "Add this book's page count and current page to set a daily pace."}
+                    </Text>
                   </>
                 ) : null}
 
@@ -952,6 +1019,15 @@ const styles = StyleSheet.create({
     color: MUTED,
   },
   pagesSuffixLight: {
+    color: LIGHT_MUTED,
+  },
+  dailyHint: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: "400",
+    color: MUTED,
+  },
+  dailyHintLight: {
     color: LIGHT_MUTED,
   },
   presetRow: {

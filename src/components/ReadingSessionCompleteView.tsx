@@ -1,7 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useMemo } from "react";
-import { Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import {
+  Animated,
+  Easing,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 import { useStreak } from "../context/StreakContext";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { pagesInReadingSession, sessionPacePerHour } from "../reading/readingHistoryStats";
@@ -35,6 +46,53 @@ type Props = {
   /** When true, content sits at the bottom when shorter than the screen (full-screen log view). */
   anchorContentToBottom?: boolean;
 };
+
+const ROW_STAGGER_MS = 80;
+
+function AnimatedRow({
+  index,
+  style,
+  children,
+}: {
+  index: number;
+  style?: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const anim = Animated.timing(progress, {
+      toValue: 1,
+      duration: 360,
+      delay: index * ROW_STAGGER_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    anim.start();
+    return () => anim.stop();
+  }, [index, progress]);
+
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity: progress,
+          transform: [
+            {
+              translateY: progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [20, 0],
+              }),
+            },
+          ],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
 
 function formatElapsedHMS(totalSeconds: number): string {
   const s = Math.floor(totalSeconds % 60);
@@ -128,24 +186,24 @@ export function ReadingSessionCompleteView({
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.headerRow}>
+      <AnimatedRow index={0} style={styles.headerRow}>
         <View style={styles.completeBadge}>
           <Ionicons name="checkmark" size={14} color={GREEN} />
           <Text style={styles.completeBadgeText}>Session complete</Text>
         </View>
         <Text style={[styles.elapsedSmall, !darkMode && styles.elapsedSmallLight]}>{formatElapsedHMS(session.durationSeconds)}</Text>
-      </View>
+      </AnimatedRow>
 
-      <View style={styles.sectionGap}>
+      <AnimatedRow index={1} style={styles.sectionGap}>
         <Text style={[styles.heroTitle, !darkMode && styles.heroTitleLight]} numberOfLines={3}>
           {title}
         </Text>
         <Text style={[styles.heroSubtitle, !darkMode && styles.heroSubtitleLight]} numberOfLines={2}>
           {formatEndedSubtitle(session.endedAt, authorLine)}
         </Text>
-      </View>
+      </AnimatedRow>
 
-      <View style={styles.sectionGap}>
+      <AnimatedRow index={2} style={styles.sectionGap}>
         <View style={[styles.progressCard, !darkMode && styles.cardLight]}>
           <View style={styles.progressTopRow}>
             <Text style={[styles.pageRangeText, !darkMode && styles.pageRangeTextLight]}>
@@ -177,10 +235,10 @@ export function ReadingSessionCompleteView({
             </>
           ) : null}
         </View>
-      </View>
+      </AnimatedRow>
 
       <View style={styles.grid}>
-        <View style={styles.gridRow}>
+        <AnimatedRow index={3} style={styles.gridRow}>
           <View style={[styles.statCard, !darkMode && styles.cardLight]}>
             <Ionicons name="document-text-outline" size={48} color={statBgIconColor} style={styles.statBgIcon} />
             <Text style={[styles.statValue, { color: BLUE }]}>{pagesRead > 0 ? pagesRead : "—"}</Text>
@@ -194,8 +252,8 @@ export function ReadingSessionCompleteView({
             </Text>
             <Text style={[styles.statLabel, !darkMode && styles.statLabelLight]}>Reading pace</Text>
           </View>
-        </View>
-        <View style={styles.gridRow}>
+        </AnimatedRow>
+        <AnimatedRow index={4} style={styles.gridRow}>
           <View style={[styles.statCard, !darkMode && styles.cardLight]}>
             <Ionicons name="timer-outline" size={48} color={statBgIconColor} style={styles.statBgIcon} />
             <Text style={styles.statValueRow}>
@@ -211,10 +269,10 @@ export function ReadingSessionCompleteView({
             </Text>
             <Text style={[styles.statLabel, !darkMode && styles.statLabelLight]}>Pages remaining</Text>
           </View>
-        </View>
+        </AnimatedRow>
       </View>
 
-      <View style={styles.sectionGap}>
+      <AnimatedRow index={5} style={styles.sectionGap}>
         <View style={styles.streakCard}>
           <Text style={styles.flameEmoji} accessibilityLabel="Streak">
             🔥
@@ -225,9 +283,9 @@ export function ReadingSessionCompleteView({
           </View>
           <Text style={styles.streakNumber}>{streak.currentStreak}</Text>
         </View>
-      </View>
+      </AnimatedRow>
 
-      <View style={styles.actions}>
+      <AnimatedRow index={6} style={styles.actions}>
         <Pressable style={[styles.doneBtn, !darkMode && styles.doneBtnLight]} onPress={onDonePress} accessibilityRole="button">
           <Ionicons name="checkmark" size={18} color={doneIconColor} />
           <Text style={[styles.doneBtnText, !darkMode && styles.doneBtnTextLight]}>Done</Text>
@@ -236,7 +294,7 @@ export function ReadingSessionCompleteView({
           <Ionicons name="share-outline" size={18} color={shareIconColor} />
           <Text style={[styles.shareBtnText, !darkMode && styles.shareBtnTextLight]}>Share session</Text>
         </Pressable>
-      </View>
+      </AnimatedRow>
     </ScrollView>
   );
 }

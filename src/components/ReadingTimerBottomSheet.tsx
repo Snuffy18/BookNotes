@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import {
@@ -27,6 +27,7 @@ import type { ReadingSession } from "../types/note";
 import { FONT_CANELA_TEXT_REGULAR } from "../theme/fonts";
 import { estimateBookPageTotal, parseScanPageNumber } from "../utils/bookReadingProgress";
 import { ReadingSessionCompleteView } from "./ReadingSessionCompleteView";
+import { BreathingBookLoader } from "./SaveLoaders";
 import { ReadingTimerRunningView } from "./ReadingTimerRunningView";
 import { getPercentage, ReadingTimerPageWheel, READING_TIMER_WHEEL_VISIBLE_HEIGHT } from "./ReadingTimerPageWheel";
 
@@ -101,7 +102,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
   const navigation = useNavigation<NavigationProp<ScanStackParamList>>();
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
-  const { darkMode } = useAppSettings();
+  const { darkMode, accentColor } = useAppSettings();
   const mutedColor = darkMode ? MUTED : LIGHT_MUTED;
   const primaryActionTextColor = darkMode ? PRIMARY_TEXT : "#ffffff";
   const { books, activeBookId, activeBook, scans } = useScanContext();
@@ -163,10 +164,19 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
   const [stoppedPhaseMounted, setStoppedPhaseMounted] = useState(false);
   const [phaseCrossfading, setPhaseCrossfading] = useState(false);
   const [startPhaseCrossfading, setStartPhaseCrossfading] = useState(false);
+  const [savingSession, setSavingSession] = useState(false);
+  const savingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (savingTimeoutRef.current) clearTimeout(savingTimeoutRef.current);
+    },
+    []
+  );
 
   const idlePhaseMounted = isIdle || startPhaseCrossfading;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const phase = run?.phase ?? null;
     const prevPhase = prevRunPhaseRef.current;
     const wasIdle = prevIsIdleRef.current;
@@ -705,6 +715,13 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
               },
             ]}
           >
+            {savingSession ? (
+              <View style={styles.savingOverlay}>
+                <BreathingBookLoader color={accentColor} />
+                <Text style={[styles.savingText, !darkMode && styles.savingTextLight]}>Data is being saved</Text>
+              </View>
+            ) : (
+              <>
             <View style={[styles.handle, !darkMode && styles.handleLight]} />
             {lastCompletedSession ? (
               <View style={styles.sheetBody}>
@@ -803,7 +820,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                         accessibilityState={{ expanded: bookPickerOpen }}
                       >
                         <View style={styles.bookRowLeft}>
-                          <View style={styles.blueDot} />
+                          <View style={[styles.blueDot, { backgroundColor: accentColor }]} />
                           <View style={styles.bookRowTextCol}>
                             <Text style={[styles.labelMuted, !darkMode && styles.labelMutedLight]}>Reading</Text>
                             <Text style={[styles.bookTitleText, !darkMode && styles.bookTitleTextLight]} numberOfLines={1}>
@@ -820,7 +837,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                                   opacity: readingTimerTitleOpacity,
                                 }}
                               >
-                                <Text style={[styles.bookSubtitleBlue, !darkMode && styles.bookSubtitleBlueLight]} numberOfLines={2}>
+                                <Text style={[styles.bookSubtitleBlue, !darkMode && styles.bookSubtitleBlueLight, { color: accentColor }]} numberOfLines={2}>
                                   {step1BookSubtitle}
                                 </Text>
                               </Animated.View>
@@ -1043,14 +1060,20 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                           </View>
 
                           <TouchableOpacity
-                            style={[styles.startBtn, !darkMode && styles.startBtnLight, !endPageDraft.trim() && styles.startBtnDisabled]}
+                            style={[styles.startBtn, !darkMode && styles.startBtnLight, (!endPageDraft.trim() || savingSession) && styles.startBtnDisabled]}
                             onPress={() => {
-                              if (!endPageDraft.trim()) return;
+                                if (!endPageDraft.trim() || savingSession) return;
                               hapticLight();
-                              saveReading(endPageDraft);
+                              const pageToSave = endPageDraft;
+                              setSavingSession(true);
+                              savingTimeoutRef.current = setTimeout(() => {
+                                savingTimeoutRef.current = null;
+                                saveReading(pageToSave);
+                                setSavingSession(false);
+                              }, 1500);
                             }}
                             activeOpacity={0.9}
-                            disabled={!endPageDraft.trim()}
+                            disabled={!endPageDraft.trim() || savingSession}
                           >
                             <Ionicons name="checkmark" size={20} color={primaryActionTextColor} />
                             <Text style={[styles.startBtnText, !darkMode && styles.startBtnTextLight]}>Save session</Text>
@@ -1058,6 +1081,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
 
                           <TouchableOpacity
                             onPress={() => {
+                              if (savingSession) return;
                               hapticLight();
                               cancelReading();
                             }}
@@ -1073,6 +1097,8 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
               </ScrollView>
             </View>
             </View>
+              </>
+            )}
               </>
             )}
           </Animated.View>
@@ -1107,6 +1133,20 @@ const styles = StyleSheet.create({
   sheetBody: {
     flex: 1,
     minHeight: 0,
+  },
+  savingOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 18,
+  },
+  savingText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#ffffff",
+  },
+  savingTextLight: {
+    color: "#0f172a",
   },
   sheetBodyScroll: {
     flex: 1,
