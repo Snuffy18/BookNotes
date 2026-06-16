@@ -5,7 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 const BG = "#111";
 const BG_LIGHT = "#ffffff";
 const BOTTOM_FADE_DARK: readonly [string, string] = ["transparent", BG];
-const BOTTOM_FADE_LIGHT: readonly [string, string] = ["transparent", BG_LIGHT];
+const BOTTOM_FADE_LIGHT: readonly [string, string] = ["rgba(255,255,255,0)", BG_LIGHT];
 
 const GHOST_TITLE_WIDTHS = ["58%", "42%", "66%", "38%"] as const;
 const GHOST_ROW_OPACITIES = [0.5, 0.35, 0.22, 0.12] as const;
@@ -98,21 +98,23 @@ export function ChapterMapEmptyState({ onScanPress, disabled, bottomInset, darkM
           style={styles.bottomBarGradient}
           pointerEvents="none"
         />
-        <Pressable
-          onPress={onScanPress}
-          disabled={disabled}
-          style={({ pressed }) => [
-            styles.scanButton,
-            !darkMode && styles.scanButtonLight,
-            disabled && styles.scanButtonDisabled,
-            pressed && !disabled && styles.scanButtonPressed,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Scan contents page"
-        >
-          <Ionicons name="camera" size={18} color={darkMode ? "#111111" : "#ffffff"} />
-          <Text style={[styles.scanButtonText, !darkMode && styles.scanButtonTextLight]}>Scan contents page</Text>
-        </Pressable>
+        <View style={styles.bottomBarContent}>
+          <Pressable
+            onPress={onScanPress}
+            disabled={disabled}
+            style={({ pressed }) => [
+              styles.scanButton,
+              !darkMode && styles.scanButtonLight,
+              disabled && styles.scanButtonDisabled,
+              pressed && !disabled && styles.scanButtonPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Scan contents page"
+          >
+            <Ionicons name="camera" size={18} color={darkMode ? "#111111" : "#ffffff"} />
+            <Text style={[styles.scanButtonText, !darkMode && styles.scanButtonTextLight]}>Scan contents page</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -234,10 +236,12 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingTop: 12,
-    paddingHorizontal: 20,
   },
   bottomBarGradient: {
     ...StyleSheet.absoluteFill,
+  },
+  bottomBarContent: {
+    paddingHorizontal: 20,
   },
   scanButton: {
     flexDirection: "row",

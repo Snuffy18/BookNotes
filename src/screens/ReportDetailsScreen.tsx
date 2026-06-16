@@ -139,7 +139,7 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
   const exportPrefs = useExportPreferences();
   const insets = useSafeAreaInsets();
   const { removeScan, books, scans, updateScan } = useScanContext();
-  const { item: routeItem, highlightQuery } = route.params;
+  const { item: routeItem, highlightQuery, openPageEditor: openPageEditorParam } = route.params;
   const item = useMemo(
     () => scans.find((s) => s.id === routeItem.id) ?? routeItem,
     [scans, routeItem],
@@ -204,7 +204,7 @@ export function ReportDetailsScreen({ route, navigation }: Props) {
   const [copiedToastVisible, setCopiedToastVisible] = useState(false);
   const [pdfToastMode, setPdfToastMode] = useState<PdfExportToastMode | null>(null);
   const copiedToastExpand = useRef(new Animated.Value(0)).current;
-  const [pageEditorOpen, setPageEditorOpen] = useState(false);
+  const [pageEditorOpen, setPageEditorOpen] = useState(Boolean(openPageEditorParam));
   const [pageDraft, setPageDraft] = useState("");
   const missingPage = !item.page?.trim();
 

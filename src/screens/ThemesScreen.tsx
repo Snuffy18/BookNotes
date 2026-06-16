@@ -19,6 +19,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ButtonFloatingSparkles } from "../components/SparkleDecor";
 import { SettingsOptionHeroCard } from "../components/SettingsOptionHeroCard";
+import { settingsScrollContentLightStyle, settingsScrollLight } from "../components/SettingsGroupCard";
 import { useAppSettings } from "../context/AppSettingsContext";
 import type { ProfileStackParamList } from "../navigation/types";
 import { accentLabels } from "../theme/accentLabels";
@@ -172,7 +173,14 @@ export function ThemesScreen() {
         <View style={styles.topBarSide} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={!darkMode ? settingsScrollLight : undefined}
+        contentContainerStyle={[
+          styles.scrollContent,
+          !darkMode && settingsScrollContentLightStyle({ paddingBottom: 32 }),
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <SettingsOptionHeroCard
           icon="color-palette-outline"
           title="Choose your theme"

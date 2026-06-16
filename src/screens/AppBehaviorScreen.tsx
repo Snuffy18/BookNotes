@@ -4,6 +4,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { SettingsGroupCard, settingsScrollContentLightStyle, settingsScrollLight } from "../components/SettingsGroupCard";
 import { SettingsOptionHeroCard } from "../components/SettingsOptionHeroCard";
 import { useAppSettings } from "../context/AppSettingsContext";
 import type { ProfileStackParamList } from "../navigation/types";
@@ -19,6 +20,7 @@ export function AppBehaviorScreen() {
   const [offlineQueue, setOfflineQueue] = useState(true);
 
   const switchTrackOff = darkMode ? "#3f3f3f" : "#d1d5db";
+  const divider = [styles.rowDivider, darkMode ? styles.rowDividerDark : styles.rowDividerLight];
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
@@ -41,13 +43,20 @@ export function AppBehaviorScreen() {
         <View style={styles.topBarSide} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={!darkMode ? settingsScrollLight : undefined}
+        contentContainerStyle={[
+          styles.scrollContent,
+          !darkMode && settingsScrollContentLightStyle({ paddingBottom: 32 }),
+        ]}
+      >
         <SettingsOptionHeroCard
           icon="options-outline"
           title="App Behavior"
           description="Choose how scans are saved, when your device gives haptic feedback, and how offline scans are queued."
         />
-        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
+        <SettingsGroupCard darkMode={darkMode}>
+          <View style={styles.settingsCardInner}>
           <SettingToggle
             label="Auto-save scans"
             description="Save each generated report automatically."
@@ -57,6 +66,7 @@ export function AppBehaviorScreen() {
             accentColor={accentColor}
             switchTrackOff={switchTrackOff}
           />
+          <View style={divider} />
           <SettingToggle
             label="Haptic feedback"
             description="Vibrate lightly on key actions."
@@ -66,6 +76,7 @@ export function AppBehaviorScreen() {
             accentColor={accentColor}
             switchTrackOff={switchTrackOff}
           />
+          <View style={divider} />
           <SettingToggle
             label="Offline queue"
             description="Queue scans while internet is unavailable."
@@ -75,7 +86,8 @@ export function AppBehaviorScreen() {
             accentColor={accentColor}
             switchTrackOff={switchTrackOff}
           />
-        </View>
+          </View>
+        </SettingsGroupCard>
       </ScrollView>
     </SafeAreaView>
   );
@@ -149,23 +161,26 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     gap: 14,
   },
-  settingsCard: {
-    backgroundColor: lightColors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: lightColors.border,
+  settingsCardInner: {
     padding: 16,
-    gap: 14,
-  },
-  settingsCardDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
+    paddingVertical: 14,
+  },
+  rowDivider: {
+    height: StyleSheet.hairlineWidth,
+    width: "90%",
+    alignSelf: "center",
+  },
+  rowDividerLight: {
+    backgroundColor: "rgba(15,23,42,0.08)",
+  },
+  rowDividerDark: {
+    backgroundColor: "rgba(255,255,255,0.06)",
   },
   rowTextWrap: {
     flex: 1,

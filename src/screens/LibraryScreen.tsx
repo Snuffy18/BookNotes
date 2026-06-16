@@ -27,6 +27,10 @@ import { ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING } from "../navigation/rootTabLayout
 import type { LibraryStackParamList } from "../navigation/types";
 import type { BookItem, ScanItem } from "../types/note";
 import { LibraryEmptyState } from "../components/LibraryEmptyState";
+import {
+  settingsCardLightWrapStyle,
+  settingsScrollContentLightStyle,
+} from "../components/SettingsGroupCard";
 import { darkColors, lightColors } from "../theme/colors";
 import { FONT_CANELA_TEXT_BOLD } from "../theme/fonts";
 import { pagesScannedPercent } from "../utils/bookReadingProgress";
@@ -271,7 +275,7 @@ export function LibraryScreen() {
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark, isLibraryEmpty && styles.screenEmpty]}>
       {isLibraryEmpty ? (
         <View style={styles.emptyPage}>
-          <View style={styles.emptyTopBlock}>
+          <View style={[styles.emptyTopBlock, !darkMode && styles.emptyTopBlockLight]}>
             <View style={styles.headerRow}>
               <Text
                 style={[
@@ -294,24 +298,35 @@ export function LibraryScreen() {
               </Pressable>
             </View>
 
-            <View
-              style={[
-                styles.searchBar,
-                styles.searchBarInactive,
-                { backgroundColor: t.searchBg, borderColor: t.searchBorder },
-              ]}
-              pointerEvents="none"
-            >
-              <Ionicons name="search-outline" size={15} color={t.searchIcon} style={styles.searchIcon} />
-              <Text style={[styles.searchPlaceholderInactive, { color: t.searchPlaceholder }]}>
-                Search books...
-              </Text>
+            <View style={!darkMode && styles.librarySearchLightWrap}>
+              <View
+                style={[
+                  styles.searchBar,
+                  styles.searchBarInactive,
+                  darkMode
+                    ? { backgroundColor: t.searchBg, borderColor: t.searchBorder }
+                    : styles.searchBarLight,
+                ]}
+                pointerEvents="none"
+              >
+                <Ionicons name="search-outline" size={15} color={t.searchIcon} style={styles.searchIcon} />
+                <Text style={[styles.searchPlaceholderInactive, { color: t.searchPlaceholder }]}>
+                  Search books...
+                </Text>
+              </View>
             </View>
           </View>
 
           {isCoverProcessing && !isAddBookSheetOpen ? (
             <View style={styles.loadingSkeletonBlock}>
-              <View style={[styles.loadingSkeletonCard, darkMode && styles.loadingSkeletonCardDark]}>
+              <View style={!darkMode && styles.libraryStackedCardLightWrap}>
+                <View
+                  style={[
+                    styles.loadingSkeletonCard,
+                    darkMode ? styles.loadingSkeletonCardDark : styles.loadingSkeletonCardLight,
+                  ]}
+                >
+                  <View style={styles.loadingSkeletonCardClip}>
                 <View style={styles.loadingSkeletonCover} />
                 <View style={styles.loadingSkeletonMeta}>
                   <View style={styles.loadingSkeletonLineLg} />
@@ -342,6 +357,8 @@ export function LibraryScreen() {
                     style={styles.loadingSkeletonShimmerInner}
                   />
                 </Animated.View>
+                  </View>
+                </View>
               </View>
               <Text style={[styles.loadingSkeletonCaption, darkMode && styles.loadingSkeletonCaptionDark]}>
                 Reading cover with AI…
@@ -349,6 +366,7 @@ export function LibraryScreen() {
             </View>
           ) : (
             <LibraryEmptyState
+              darkMode={darkMode}
               onScanBarcode={onScanBarcodeFromEmpty}
               onTakePhoto={onTakePhotoFromEmpty}
             />
@@ -362,9 +380,11 @@ export function LibraryScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           books.length === 0 && filteredBooks.length === 0 && styles.scrollContentEmpty,
+          !darkMode && styles.scrollContentLight,
+          darkMode && { paddingBottom: ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING },
         ]}
       >
-        <View style={styles.topBlock}>
+        <View style={[styles.topBlock, !darkMode && styles.topBlockLight]}>
           <View style={styles.headerRow}>
             <Text
               style={[
@@ -409,17 +429,26 @@ export function LibraryScreen() {
             </View>
           ) : null}
 
-          <View style={[styles.searchBar, { backgroundColor: t.searchBg, borderColor: t.searchBorder }]}>
-            <Ionicons name="search-outline" size={16} color={t.searchIcon} style={styles.searchIcon} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search books..."
-              placeholderTextColor={t.searchPlaceholder}
-              style={[styles.searchInput, { color: t.primaryText }]}
-              autoCorrect={false}
-              autoCapitalize="none"
-            />
+          <View style={!darkMode && styles.librarySearchLightWrap}>
+            <View
+              style={[
+                styles.searchBar,
+                darkMode
+                  ? { backgroundColor: t.searchBg, borderColor: t.searchBorder }
+                  : styles.searchBarLight,
+              ]}
+            >
+              <Ionicons name="search-outline" size={16} color={t.searchIcon} style={styles.searchIcon} />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search books..."
+                placeholderTextColor={t.searchPlaceholder}
+                style={[styles.searchInput, { color: t.primaryText }]}
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+            </View>
           </View>
 
           <View style={styles.pillsRow}>
@@ -437,10 +466,17 @@ export function LibraryScreen() {
                   onPress={() => setFilter(pill.id)}
                   style={[
                     styles.filterPill,
-                    {
-                      backgroundColor: selected ? t.pillBgSelected : t.pillBgUnselected,
-                      borderColor: selected ? t.pillBorderSelected : t.pillBorderUnselected,
-                    },
+                    darkMode
+                      ? {
+                          backgroundColor: selected ? t.pillBgSelected : t.pillBgUnselected,
+                          borderColor: selected ? t.pillBorderSelected : t.pillBorderUnselected,
+                        }
+                      : selected
+                        ? styles.filterPillSelectedLight
+                        : {
+                            backgroundColor: t.pillBgUnselected,
+                            borderColor: t.pillBorderUnselected,
+                          },
                   ]}
                 >
                   <Text
@@ -459,7 +495,14 @@ export function LibraryScreen() {
 
         {isCoverProcessing && !isAddBookSheetOpen ? (
           <View style={styles.loadingSkeletonBlock}>
-            <View style={[styles.loadingSkeletonCard, darkMode && styles.loadingSkeletonCardDark]}>
+            <View style={!darkMode && styles.libraryStackedCardLightWrap}>
+              <View
+                style={[
+                  styles.loadingSkeletonCard,
+                  darkMode ? styles.loadingSkeletonCardDark : styles.loadingSkeletonCardLight,
+                ]}
+              >
+                <View style={styles.loadingSkeletonCardClip}>
               <View style={styles.loadingSkeletonCover} />
               <View style={styles.loadingSkeletonMeta}>
                 <View style={styles.loadingSkeletonLineLg} />
@@ -490,6 +533,8 @@ export function LibraryScreen() {
                   style={styles.loadingSkeletonShimmerInner}
                 />
               </Animated.View>
+                </View>
+              </View>
             </View>
             <Text style={[styles.loadingSkeletonCaption, darkMode && styles.loadingSkeletonCaptionDark]}>
               Reading cover with AI…
@@ -502,7 +547,7 @@ export function LibraryScreen() {
             <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>No matching books.</Text>
           </View>
         ) : (
-          <View style={styles.bookList}>
+          <View style={[styles.bookList, !darkMode && styles.bookListLight]}>
             {filteredBooks.map(({ book, bookScans, latest, reportCount }) => {
               const pct = pagesScannedPercent(book, bookScans);
               const snippet = snippetFromLatestScan(latest);
@@ -510,17 +555,19 @@ export function LibraryScreen() {
               const relTime = latest ? formatRelativeScanTime(latest.createdAt) : "Not scanned yet";
 
               return (
-                <TouchableOpacity
-                  key={book.id}
-                  style={[
-                    styles.bookCard,
-                    { backgroundColor: t.cardBg, borderColor: t.cardBorder },
-                    book.isRead && styles.bookCardRead,
-                    book.isRead && { borderColor: accentColor },
-                  ]}
-                  onPress={() => navigation.navigate("BookReports", { bookId: book.id })}
-                  activeOpacity={0.85}
-                >
+                <View key={book.id} style={!darkMode && styles.libraryStackedCardLightWrap}>
+                  <TouchableOpacity
+                    style={[
+                      styles.bookCard,
+                      darkMode
+                        ? { backgroundColor: t.cardBg, borderColor: t.cardBorder }
+                        : styles.bookCardLight,
+                      book.isRead && styles.bookCardRead,
+                      book.isRead && { borderColor: accentColor },
+                    ]}
+                    onPress={() => navigation.navigate("BookReports", { bookId: book.id })}
+                    activeOpacity={0.85}
+                  >
                   <View style={styles.bookCardTop}>
                     <View style={[styles.coverFrame, { backgroundColor: t.coverPlaceholderBg }]}>
                       {hasBookCover(book) ? (
@@ -586,7 +633,8 @@ export function LibraryScreen() {
                       />
                     </View>
                   </View>
-                </TouchableOpacity>
+                  </TouchableOpacity>
+                </View>
               );
             })}
           </View>
@@ -658,6 +706,7 @@ const theme = {
 const styles = StyleSheet.create({
   libraryRoot: {
     flex: 1,
+    overflow: "visible",
   },
   screen: {
     flex: 1,
@@ -673,23 +722,45 @@ const styles = StyleSheet.create({
   },
   emptyPage: {
     flex: 1,
+    overflow: "visible",
   },
   emptyTopBlock: {
     gap: 16,
     paddingTop: 4,
+    overflow: "visible",
+  },
+  emptyTopBlockLight: {
+    gap: 8,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING,
     gap: 16,
+  },
+  scrollContentLight: {
+    ...settingsScrollContentLightStyle({ paddingBottom: ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING }),
+    gap: 8,
   },
   scrollContentEmpty: {
     flexGrow: 1,
   },
   topBlock: {
     gap: 16,
+    overflow: "visible",
+  },
+  topBlockLight: {
+    gap: 8,
+  },
+  /** Shadow bleed wrappers tuned for stacked Library rows (matches home screen rhythm). */
+  librarySearchLightWrap: {
+    ...settingsCardLightWrapStyle,
+    marginTop: -10,
+    marginBottom: -12,
+  },
+  libraryStackedCardLightWrap: {
+    ...settingsCardLightWrapStyle,
+    marginBottom: -12,
   },
   headerRow: {
     flexDirection: "row",
@@ -738,6 +809,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
   },
+  searchBarLight: {
+    backgroundColor: "#ffffff",
+    borderColor: "transparent",
+    borderWidth: 0,
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
   searchIcon: {
     marginRight: 8,
   },
@@ -758,6 +840,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+    overflow: "visible",
   },
   filterPill: {
     paddingVertical: 5,
@@ -765,17 +848,43 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 0.5,
   },
+  filterPillSelectedLight: {
+    backgroundColor: "#ffffff",
+    borderColor: "transparent",
+    borderWidth: 0,
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
   filterPillText: {
     fontSize: 11,
     fontWeight: "500",
   },
   bookList: {
     gap: 12,
+    overflow: "visible",
+  },
+  bookListLight: {
+    marginTop: -8,
   },
   bookCard: {
     borderRadius: 16,
     borderWidth: 0.5,
     overflow: "hidden",
+  },
+  bookCardLight: {
+    backgroundColor: "#ffffff",
+    borderColor: "transparent",
+    borderWidth: 0,
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   bookCardRead: {
     borderWidth: 2,
@@ -875,6 +984,7 @@ const styles = StyleSheet.create({
   loadingSkeletonBlock: {
     gap: 8,
     alignSelf: "stretch",
+    overflow: "visible",
   },
   loadingSkeletonCaption: {
     fontSize: 13,
@@ -886,16 +996,30 @@ const styles = StyleSheet.create({
     color: darkColors.textSecondary,
   },
   loadingSkeletonCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+  },
+  loadingSkeletonCardClip: {
     position: "relative",
     overflow: "hidden",
     flexDirection: "row",
     gap: 12,
     alignItems: "center",
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#f8fafc",
     padding: 12,
+  },
+  loadingSkeletonCardLight: {
+    backgroundColor: "#ffffff",
+    borderColor: "transparent",
+    borderWidth: 0,
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   loadingSkeletonCardDark: {
     borderColor: darkColors.border,

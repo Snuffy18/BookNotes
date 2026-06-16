@@ -18,6 +18,7 @@ import { useAppSettings } from "../context/AppSettingsContext";
 import { useReadingReminders } from "../context/ReadingRemindersContext";
 import { mixHex, hexWithAlpha } from "../theme/colorUtils";
 import { darkColors, lightColors } from "../theme/colors";
+import { FONT_CANELA_TEXT_BOLD } from "../theme/fonts";
 
 type ProfileHomeNav = NativeStackNavigationProp<ProfileStackParamList, "ProfileHome">;
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
@@ -29,6 +30,8 @@ const TERMS_URL = "https://example.com/terms";
 
 const SECTION_GAP = 20;
 const SECTION_LABEL_TO_CARD = 6;
+/** Room for iOS card shadow (shadowRadius 12 + offset.y 3) inside ScrollView bounds. */
+const CARD_SHADOW_BLEED = 16;
 
 function formatSyncedTime(d: Date): string {
   return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -162,27 +165,25 @@ export function ProfileScreen() {
   const syncTrailing = lastSyncedAt ? formatSyncedTime(lastSyncedAt) : "Never";
 
   const groupCard = [styles.groupCard, darkMode ? styles.groupCardDark : styles.groupCardLight];
-  const groupCardSupport = [
-    styles.groupCardSupport,
-    darkMode ? styles.groupCardSupportDark : styles.groupCardSupportLight,
-  ];
+  const groupCardWrap = !darkMode ? styles.groupCardLightWrap : undefined;
   const dividerMain = [styles.rowDivider, darkMode ? styles.rowDividerDark : styles.rowDividerLight];
-  const dividerSupport = [
-    styles.rowDividerSupport,
-    darkMode ? styles.rowDividerSupportDark : styles.rowDividerSupportLight,
-  ];
   const chevronMainColor = darkMode ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.35)";
   const switchTrackOff = darkMode ? "#3f3f3f" : "#d1d5db";
   const accentIconBubble = hexWithAlpha(accentColor, 0.15);
+  const supportIconBubble = darkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+  const supportIconColor = darkMode ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.45)";
 
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
       style={[styles.screen, darkMode && styles.screenDark]}
     >
-      <Text style={[styles.pageTitle, darkMode && styles.pageTitleDark]}>Profile & Settings</Text>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, !darkMode && styles.scrollContentLight]}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={[styles.pageTitle, darkMode && styles.pageTitleDark]}>Profile & Settings</Text>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <TouchableOpacity
           style={styles.promoWrap}
           activeOpacity={0.96}
@@ -220,9 +221,10 @@ export function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={{ marginTop: SECTION_GAP }}>
+        <View style={styles.sectionBlock}>
           <SectionLabel darkMode={darkMode}>Preferences</SectionLabel>
-          <View style={[...groupCard, { marginTop: SECTION_LABEL_TO_CARD }]}>
+          <View style={[groupCardWrap, { marginTop: SECTION_LABEL_TO_CARD }]}>
+            <View style={groupCard}>
             <TouchableOpacity
               style={styles.prefRow}
               onPress={() => navigation.navigate("Appearance")}
@@ -294,12 +296,14 @@ export function ProfileScreen() {
                 ios_backgroundColor={switchTrackOff}
               />
             </View>
+            </View>
           </View>
         </View>
 
-        <View style={{ marginTop: SECTION_GAP }}>
+        <View style={styles.sectionBlock}>
           <SectionLabel darkMode={darkMode}>Tools</SectionLabel>
-          <View style={[...groupCard, { marginTop: SECTION_LABEL_TO_CARD }]}>
+          <View style={[groupCardWrap, { marginTop: SECTION_LABEL_TO_CARD }]}>
+            <View style={groupCard}>
             <TouchableOpacity
               style={styles.prefRow}
               onPress={() => navigation.navigate("ExportSettings")}
@@ -365,75 +369,62 @@ export function ProfileScreen() {
               </View>
               <Ionicons name="chevron-forward" size={18} color={chevronMainColor} />
             </TouchableOpacity>
+            </View>
           </View>
         </View>
 
-        <View style={{ marginTop: SECTION_GAP }}>
+        <View style={styles.sectionBlock}>
           <SectionLabel darkMode={darkMode}>Support & legal</SectionLabel>
-          <View style={[...groupCardSupport, { marginTop: SECTION_LABEL_TO_CARD }]}>
-            <TouchableOpacity style={styles.supportRow} onPress={onRequestFeature} activeOpacity={0.82}>
-              <Ionicons
+          <View style={[groupCardWrap, { marginTop: SECTION_LABEL_TO_CARD }]}>
+            <View style={groupCard}>
+            <TouchableOpacity style={styles.prefRow} onPress={onRequestFeature} activeOpacity={0.82}>
+              <IconBubble
                 name="megaphone-outline"
-                size={14}
-                color={darkMode ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.28)"}
+                bubbleBg={supportIconBubble}
+                iconColor={supportIconColor}
               />
-              <Text style={[styles.supportLabel, darkMode && styles.supportLabelDark]}>Request a feature</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={13}
-                color={darkMode ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.2)"}
-              />
+              <View style={styles.prefRowText}>
+                <Text style={[styles.prefTitle, darkMode && styles.prefTitleDark]}>Request a feature</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={chevronMainColor} />
             </TouchableOpacity>
-            <View style={dividerSupport} />
-            <TouchableOpacity style={styles.supportRow} onPress={onContactUs} activeOpacity={0.82}>
-              <Ionicons
-                name="mail-outline"
-                size={14}
-                color={darkMode ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.28)"}
-              />
-              <Text style={[styles.supportLabel, darkMode && styles.supportLabelDark]}>Contact us</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={13}
-                color={darkMode ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.2)"}
-              />
+            <View style={dividerMain} />
+            <TouchableOpacity style={styles.prefRow} onPress={onContactUs} activeOpacity={0.82}>
+              <IconBubble name="mail-outline" bubbleBg={supportIconBubble} iconColor={supportIconColor} />
+              <View style={styles.prefRowText}>
+                <Text style={[styles.prefTitle, darkMode && styles.prefTitleDark]}>Contact us</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={chevronMainColor} />
             </TouchableOpacity>
-            <View style={dividerSupport} />
+            <View style={dividerMain} />
             <TouchableOpacity
-              style={styles.supportRow}
+              style={styles.prefRow}
               onPress={() => openUrl(PRIVACY_URL, "Privacy Policy")}
               activeOpacity={0.82}
             >
-              <Ionicons
+              <IconBubble
                 name="document-text-outline"
-                size={14}
-                color={darkMode ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.28)"}
+                bubbleBg={supportIconBubble}
+                iconColor={supportIconColor}
               />
-              <Text style={[styles.supportLabel, darkMode && styles.supportLabelDark]}>Privacy policy</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={13}
-                color={darkMode ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.2)"}
-              />
+              <View style={styles.prefRowText}>
+                <Text style={[styles.prefTitle, darkMode && styles.prefTitleDark]}>Privacy policy</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={chevronMainColor} />
             </TouchableOpacity>
-            <View style={dividerSupport} />
+            <View style={dividerMain} />
             <TouchableOpacity
-              style={styles.supportRow}
+              style={styles.prefRow}
               onPress={() => openUrl(TERMS_URL, "Terms of Service")}
               activeOpacity={0.82}
             >
-              <Ionicons
-                name="document-outline"
-                size={14}
-                color={darkMode ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.28)"}
-              />
-              <Text style={[styles.supportLabel, darkMode && styles.supportLabelDark]}>Terms of service</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={13}
-                color={darkMode ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.2)"}
-              />
+              <IconBubble name="document-outline" bubbleBg={supportIconBubble} iconColor={supportIconColor} />
+              <View style={styles.prefRowText}>
+                <Text style={[styles.prefTitle, darkMode && styles.prefTitleDark]}>Terms of service</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={chevronMainColor} />
             </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -462,11 +453,11 @@ const styles = StyleSheet.create({
     backgroundColor: darkColors.background,
   },
   pageTitle: {
-    fontSize: 22,
-    fontWeight: "600",
+    fontSize: 28,
+    fontWeight: "400",
+    fontFamily: FONT_CANELA_TEXT_BOLD,
     color: lightColors.textPrimary,
-    letterSpacing: -0.3,
-    marginBottom: 4,
+    marginBottom: 12,
   },
   pageTitleDark: {
     color: "#ffffff",
@@ -474,6 +465,20 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: ROOT_TAB_MAIN_SCROLL_BOTTOM_PADDING,
     paddingTop: 8,
+  },
+  scrollContentLight: {
+    overflow: "visible",
+  },
+  sectionBlock: {
+    marginTop: SECTION_GAP,
+    overflow: "visible",
+  },
+  groupCardLightWrap: {
+    paddingTop: CARD_SHADOW_BLEED - 3,
+    paddingBottom: CARD_SHADOW_BLEED + 3,
+    paddingHorizontal: CARD_SHADOW_BLEED,
+    marginHorizontal: -CARD_SHADOW_BLEED,
+    overflow: "visible",
   },
   sectionLabel: {
     fontSize: 10,
@@ -489,28 +494,22 @@ const styles = StyleSheet.create({
   groupCard: {
     borderRadius: 14,
     borderWidth: 0.5,
-    overflow: "hidden",
   },
   groupCardDark: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "#1C1C1E",
     borderColor: "rgba(255,255,255,0.08)",
-  },
-  groupCardLight: {
-    backgroundColor: "rgba(0,0,0,0.035)",
-    borderColor: "rgba(0,0,0,0.08)",
-  },
-  groupCardSupport: {
-    borderRadius: 14,
-    borderWidth: 0.5,
     overflow: "hidden",
   },
-  groupCardSupportDark: {
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderColor: "rgba(255,255,255,0.06)",
-  },
-  groupCardSupportLight: {
-    backgroundColor: "rgba(0,0,0,0.02)",
-    borderColor: "rgba(0,0,0,0.06)",
+  groupCardLight: {
+    backgroundColor: "#ffffff",
+    borderColor: "transparent",
+    borderWidth: 0,
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   iconBubble: {
     width: 34,
@@ -570,32 +569,6 @@ const styles = StyleSheet.create({
   },
   rowDividerLight: {
     backgroundColor: "rgba(0,0,0,0.06)",
-  },
-  rowDividerSupport: {
-    height: 0.5,
-    marginLeft: 14 + 14 + 10,
-  },
-  rowDividerSupportDark: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
-  rowDividerSupportLight: {
-    backgroundColor: "rgba(0,0,0,0.06)",
-  },
-  supportRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-    gap: 10,
-  },
-  supportLabel: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: "500",
-    color: "rgba(0,0,0,0.4)",
-  },
-  supportLabelDark: {
-    color: "rgba(255,255,255,0.4)",
   },
   promoWrap: {
     borderRadius: 28,

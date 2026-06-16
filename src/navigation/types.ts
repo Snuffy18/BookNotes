@@ -49,13 +49,23 @@ export type ScanStackParamList = {
     rescanReturnTab?: RescanReturnTab;
   };
   Results: { item: ScanItem };
-  ReportDetails: { item: ScanItem; highlightQuery?: string; reportNavOrigin?: RescanReturnTab };
+  ReportDetails: {
+    item: ScanItem;
+    highlightQuery?: string;
+    reportNavOrigin?: RescanReturnTab;
+    openPageEditor?: boolean;
+  };
 };
 
 export type LibraryStackParamList = {
   LibraryHome: undefined;
   BookReports: { bookId: string };
-  ReportDetails: { item: ScanItem; highlightQuery?: string; reportNavOrigin?: RescanReturnTab };
+  ReportDetails: {
+    item: ScanItem;
+    highlightQuery?: string;
+    reportNavOrigin?: RescanReturnTab;
+    openPageEditor?: boolean;
+  };
   CropPhoto: CropPhotoRouteParams;
 };
 

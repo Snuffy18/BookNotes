@@ -172,6 +172,10 @@ function formatChapterMapPageRange(startPage: number, displayEnd?: number): stri
   return String(startPage);
 }
 
+function recentScanHasPage(scan: ScanItem): boolean {
+  return Boolean((scan.page?.trim() || scan.notes.pageNumber?.trim() || "").trim());
+}
+
 function formatRecentScanPageLine(scan: ScanItem): string {
   const raw = (scan.page?.trim() || scan.notes.pageNumber?.trim() || "").trim();
   if (!raw) return "p. —";
@@ -905,15 +909,29 @@ export function ScanCameraScreen({ navigation, route }: Props) {
   }, [needsFirstBook, activeBookId]);
 
   const openReportFromScanHome = useCallback(
-    (scan: ScanItem): boolean => {
+    (scan: ScanItem, options?: { openPageEditor?: boolean }): boolean => {
       if (!scan.bookId?.trim()) return false;
       navigation.navigate("ReportDetails", {
         item: scan,
         reportNavOrigin: "scan",
+        ...(options?.openPageEditor ? { openPageEditor: true } : {}),
       });
       return true;
     },
     [navigation]
+  );
+
+  const onRecentScanAddPagePress = useCallback(
+    (scan: ScanItem) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      if (!openReportFromScanHome(scan, { openPageEditor: true })) {
+        Alert.alert(
+          "Can’t add page",
+          "This scan isn’t linked to a book yet. Save it to a book from the library, then add a page there.",
+        );
+      }
+    },
+    [openReportFromScanHome]
   );
 
   const onRecentScanCardPress = useCallback(
@@ -2099,12 +2117,12 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 <View
                   style={[
                     styles.primaryButtonGradient,
-                    styles.primaryButtonScanDark,
+                    styles.primaryButtonScanLight,
                     coverExtracting && styles.primaryButtonGradientDisabled,
                   ]}
                 >
-                  <Ionicons name="camera" size={22} color="#ffffff" />
-                  <Text style={styles.primaryButtonTextLightOnDark}>Scan Page</Text>
+                  <Ionicons name="camera" size={22} color="#0f172a" />
+                  <Text style={styles.primaryButtonTextOnWhite}>Scan Page</Text>
                 </View>
               )}
             </Pressable>
@@ -2334,12 +2352,32 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                   <View style={styles.recentScanCardInner}>
                     <View style={styles.recentScanCardForeground}>
                       <View style={styles.recentScanCardTop}>
-                        <Text
-                          style={[styles.recentScanPage, !darkMode && styles.recentScanPageLight]}
-                          numberOfLines={1}
-                        >
-                          {formatRecentScanPageLine(scan)}
-                        </Text>
+                        {recentScanHasPage(scan) ? (
+                          <Text
+                            style={[styles.recentScanPage, !darkMode && styles.recentScanPageLight]}
+                            numberOfLines={1}
+                          >
+                            {formatRecentScanPageLine(scan)}
+                          </Text>
+                        ) : (
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.recentScanAddPagePill,
+                              {
+                                backgroundColor: hexWithAlpha(accentColor, pressed ? 0.14 : 0.08),
+                                borderColor: hexWithAlpha(accentColor, 0.2),
+                              },
+                            ]}
+                            onPress={() => onRecentScanAddPagePress(scan)}
+                            hitSlop={4}
+                            accessibilityRole="button"
+                            accessibilityLabel="Add page"
+                          >
+                            <Text style={[styles.recentScanAddPagePillText, { color: accentColor }]}>
+                              Add page
+                            </Text>
+                          </Pressable>
+                        )}
                         <Text
                           style={[styles.recentScanSnippet, !darkMode && styles.recentScanSnippetLight]}
                           numberOfLines={2}
@@ -2862,7 +2900,11 @@ export function ScanCameraScreen({ navigation, route }: Props) {
         <View style={styles.pageScanSheetRoot}>
           <Animated.View
             pointerEvents="box-none"
-            style={[styles.pageScanSheetDim, { opacity: pageScanBackdropOp }]}
+            style={[
+              styles.pageScanSheetDim,
+              !darkMode && styles.pageScanSheetDimLight,
+              { opacity: pageScanBackdropOp },
+            ]}
           >
             <Pressable
               style={StyleSheet.absoluteFill}
@@ -2875,6 +2917,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
             {...pageScanSheetPanResponder.panHandlers}
             style={[
               styles.pageScanSheetPanel,
+              !darkMode && styles.pageScanSheetPanelLight,
               pageScanSheetPurpose === "bookCover" && styles.pageScanSheetPanelFixed,
               {
                 paddingBottom: insets.bottom,
@@ -2883,8 +2926,8 @@ export function ScanCameraScreen({ navigation, route }: Props) {
               },
             ]}
           >
-            <View style={styles.pageScanSheetGrabber} />
-            <Text style={styles.pageScanSheetTitle}>
+            <View style={[styles.pageScanSheetGrabber, !darkMode && styles.pageScanSheetGrabberLight]} />
+            <Text style={[styles.pageScanSheetTitle, !darkMode && styles.pageScanSheetTitleLight]}>
               {pageScanSheetPurpose === "bookCover"
                 ? needsFirstBook
                   ? "Add your first book"
@@ -2896,6 +2939,8 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 styles.pageScanSheetSubtitle,
                 pageScanSheetPurpose === "bookCover" && styles.pageScanSheetSubtitleBookCover,
                 pageScanSheetPurpose === "page" && styles.pageScanSheetSubtitlePageMuted,
+                pageScanSheetPurpose === "bookCover" && !darkMode && styles.pageScanSheetSubtitleBookCoverLight,
+                pageScanSheetPurpose === "page" && !darkMode && styles.pageScanSheetSubtitlePageMutedLight,
               ]}
             >
               {pageScanSheetPurpose === "bookCover"
@@ -2905,6 +2950,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
             <View
               style={[
                 styles.pageScanPreviewWrap,
+                !darkMode && styles.pageScanPreviewWrapLight,
                 pageScanSheetPurpose === "bookCover"
                   ? styles.pageScanPreviewWrapFill
                   : styles.pageScanPreviewWrapPage,
@@ -2935,21 +2981,39 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                   onAvailableLensesChanged={({ lenses }) => applyAvailableLenses(lenses)}
                 >
                   {!pageScanSheetCameraReady ? (
-                    <View style={styles.pageScanPreviewPlaceholder} pointerEvents="none">
-                      <Ionicons name="camera-outline" size={32} color="rgba(255,255,255,0.4)" />
-                      <Text style={styles.pageScanPreviewPlaceholderText}>Camera preview</Text>
+                    <View
+                      style={[
+                        styles.pageScanPreviewPlaceholder,
+                        !darkMode && styles.pageScanPreviewPlaceholderLight,
+                      ]}
+                      pointerEvents="none"
+                    >
+                      <Ionicons
+                        name="camera-outline"
+                        size={32}
+                        color={darkMode ? "rgba(255,255,255,0.4)" : "rgba(15,23,42,0.35)"}
+                      />
+                      <Text
+                        style={[
+                          styles.pageScanPreviewPlaceholderText,
+                          !darkMode && styles.pageScanPreviewPlaceholderTextLight,
+                        ]}
+                      >
+                        Camera preview
+                      </Text>
                     </View>
                   ) : null}
                 </CameraView>
               </View>
               <View style={styles.pageScanPreviewCornersOverlay} pointerEvents="none">
-                <PageScanSheetFrameCorners />
+                <PageScanSheetFrameCorners darkMode={darkMode} />
               </View>
             </View>
             <View style={styles.pageScanActionsRow}>
               <TouchableOpacity
                 style={[
                   styles.contentsFlashButton,
+                  !darkMode && styles.contentsFlashButtonLight,
                   flashEnabled && styles.contentsFlashButtonActive,
                 ]}
                 onPress={() => {
@@ -2963,18 +3027,20 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 <Ionicons
                   name={flashEnabled ? "flash" : "flash-outline"}
                   size={22}
-                  color={flashEnabled ? "#fbbf24" : "#fff"}
+                  color={flashEnabled ? "#fbbf24" : darkMode ? "#fff" : "rgba(15,23,42,0.55)"}
                 />
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.pageScanTakePhotoBtn}
+                style={[styles.pageScanTakePhotoBtn, !darkMode && styles.pageScanTakePhotoBtnLight]}
                 onPress={() => void onCapturePageFromSheet()}
                 activeOpacity={0.88}
                 accessibilityRole="button"
                 accessibilityLabel="Take photo"
               >
-                <Ionicons name="camera" size={18} color="#111111" />
-                <Text style={styles.pageScanTakePhotoBtnText}>Take photo</Text>
+                <Ionicons name="camera" size={18} color={darkMode ? "#111111" : "#ffffff"} />
+                <Text style={[styles.pageScanTakePhotoBtnText, !darkMode && styles.pageScanTakePhotoBtnTextLight]}>
+                  Take photo
+                </Text>
               </TouchableOpacity>
             </View>
             <Pressable
@@ -2987,6 +3053,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
               <Text
                 style={[
                   styles.pageScanGalleryLinkText,
+                  !darkMode && styles.pageScanGalleryLinkTextLight,
                   (isGalleryOpening || coverExtracting) && styles.pageScanGalleryLinkTextDisabled,
                 ]}
               >
@@ -2999,7 +3066,9 @@ export function ScanCameraScreen({ navigation, route }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Cancel"
             >
-              <Text style={styles.pageScanCancelLinkText}>Cancel</Text>
+              <Text style={[styles.pageScanCancelLinkText, !darkMode && styles.pageScanCancelLinkTextLight]}>
+                Cancel
+              </Text>
             </Pressable>
           </Animated.View>
         </View>
@@ -3020,6 +3089,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
         <View
           style={[
             styles.contentsModalScreen,
+            !darkMode && styles.contentsModalScreenLight,
             {
               paddingTop: insets.top + 8,
               paddingBottom: insets.bottom + 16,
@@ -3028,8 +3098,12 @@ export function ScanCameraScreen({ navigation, route }: Props) {
             },
           ]}
         >
+          <StatusBar
+            barStyle={darkMode ? "light-content" : "dark-content"}
+            backgroundColor={darkMode ? CHAPTER_MAP_BG : CHAPTER_MAP_BG_LIGHT}
+          />
           <View style={styles.contentsChrome}>
-            <View style={styles.contentsHeaderBlock}>
+            <View style={[styles.contentsHeaderBlock, !darkMode && styles.contentsHeaderBlockLight]}>
               <View style={styles.contentsTitleRow}>
                 <Pressable
                   onPress={() => {
@@ -3046,16 +3120,16 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                   accessibilityRole="button"
                   accessibilityLabel="Close contents scanner"
                 >
-                  <View style={styles.chapterMapCloseCircle}>
-                    <Text style={styles.chapterMapCloseGlyph}>×</Text>
+                  <View style={[styles.chapterMapCloseCircle, !darkMode && styles.chapterMapCloseCircleLight]}>
+                    <Text style={[styles.chapterMapCloseGlyph, !darkMode && styles.chapterMapCloseGlyphLight]}>×</Text>
                   </View>
                 </Pressable>
-                <Text style={styles.contentsSheetTitle} numberOfLines={2}>
+                <Text style={[styles.contentsSheetTitle, !darkMode && styles.contentsSheetTitleLight]} numberOfLines={2}>
                   {contentsScanAppend ? "Add another contents page" : "Scan the contents page"}
                 </Text>
                 <View style={styles.chapterMapHeaderBalance} />
               </View>
-              <Text style={styles.contentsSheetSubtitle}>
+              <Text style={[styles.contentsSheetSubtitle, !darkMode && styles.contentsSheetSubtitleLight]}>
                 {contentsScanAppend
                   ? "Capture the next part of your table of contents. New chapters will be merged with what you already have."
                   : "Fit the chapter list and page numbers inside the frame."}
@@ -3089,7 +3163,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 />
               </View>
               <View style={styles.contentsViewfinderCornersOverlay} pointerEvents="none">
-                <PageScanSheetFrameCorners />
+                <PageScanSheetFrameCorners darkMode={darkMode} />
               </View>
             </View>
 
@@ -3103,6 +3177,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
               <TouchableOpacity
                 style={[
                   styles.contentsFlashButton,
+                  !darkMode && styles.contentsFlashButtonLight,
                   contentsFlashEnabled && styles.contentsFlashButtonActive,
                 ]}
                 onPress={() => {
@@ -3117,22 +3192,22 @@ export function ScanCameraScreen({ navigation, route }: Props) {
                 <Ionicons
                   name={contentsFlashEnabled ? "flash" : "flash-outline"}
                   size={22}
-                  color={contentsFlashEnabled ? "#fbbf24" : "#fff"}
+                  color={contentsFlashEnabled ? "#fbbf24" : darkMode ? "#fff" : "rgba(15,23,42,0.55)"}
                 />
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.contentsCaptureButton}
+                style={[styles.contentsCaptureButton, !darkMode && styles.contentsCaptureButtonLight]}
                 onPress={onCaptureContents}
                 disabled={contentsExtracting}
                 activeOpacity={0.9}
               >
                 {contentsExtracting ? (
-                  <ActivityIndicator color="#0f172a" />
+                  <ActivityIndicator color={darkMode ? "#0f172a" : "#ffffff"} />
                 ) : (
-                  <Ionicons name="scan-outline" size={22} color="#0f172a" />
+                  <Ionicons name="scan-outline" size={22} color={darkMode ? "#0f172a" : "#ffffff"} />
                 )}
-                <Text style={styles.contentsCaptureText}>
+                <Text style={[styles.contentsCaptureText, !darkMode && styles.contentsCaptureTextLight]}>
                   {contentsExtracting ? "Reading contents..." : "Scan contents"}
                 </Text>
               </TouchableOpacity>
@@ -3183,7 +3258,7 @@ export function ScanCameraScreen({ navigation, route }: Props) {
               <Text style={[styles.bookPickerSheetTitle, !darkMode && styles.bookPickerSheetTitleLight]}>
                 Select book
               </Text>
-              <View style={styles.bookPickerSearchOuter}>
+              <View style={[styles.bookPickerSearchOuter, !darkMode && styles.bookPickerSearchOuterLight]}>
                 <View style={[styles.bookPickerSearchInner, !darkMode && styles.bookPickerSearchInnerLight]}>
                   <Ionicons
                     name="search-outline"
@@ -3629,6 +3704,7 @@ const styles = StyleSheet.create({
   sectionBlock: {
     gap: 10,
     width: "100%",
+    overflow: "visible",
   },
   sectionBlockDark: {},
   cameraShell: {
@@ -3697,12 +3773,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 14,
     borderWidth: 0.5,
-    backgroundColor: "rgba(0,0,0,0.03)",
-    borderColor: "rgba(0,0,0,0.1)",
+    backgroundColor: "#ffffff",
+    borderColor: "transparent",
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   scanIntoBookRowDark: {
     backgroundColor: "rgba(255,255,255,0.05)",
     borderColor: "rgba(255,255,255,0.1)",
+    shadowOpacity: 0,
+    elevation: 0,
   },
   scanIntoBookRowLeft: {
     flexDirection: "row",
@@ -3740,7 +3824,9 @@ const styles = StyleSheet.create({
   },
   recentScansSection: {
     width: "100%",
-    gap: 10,
+    marginTop: 10,
+    gap: 6,
+    overflow: "visible",
   },
   recentScansHeaderRow: {
     flexDirection: "row",
@@ -3766,9 +3852,11 @@ const styles = StyleSheet.create({
     gap: 8,
     width: "100%",
     alignItems: "stretch",
+    overflow: "visible",
   },
   recentScanCard: {
     flex: 1,
+    flexBasis: 0,
     minWidth: 0,
     minHeight: 120,
     borderRadius: 14,
@@ -3778,8 +3866,14 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   recentScanCardLight: {
-    backgroundColor: "rgba(15,23,42,0.04)",
-    borderColor: "rgba(15,23,42,0.1)",
+    backgroundColor: "#ffffff",
+    borderColor: "transparent",
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   recentScanCardPressed: {
     opacity: 0.92,
@@ -3803,6 +3897,17 @@ const styles = StyleSheet.create({
   },
   recentScanPageLight: {
     color: "#0f172a",
+  },
+  recentScanAddPagePill: {
+    alignSelf: "flex-start",
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  recentScanAddPagePillText: {
+    fontSize: 11,
+    fontWeight: "600",
   },
   recentScanSnippet: {
     fontSize: 11,
@@ -3882,6 +3987,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     alignItems: "stretch",
+    overflow: "visible",
   },
   scanWidgetTile: {
     borderRadius: 14,
@@ -3892,11 +3998,18 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   scanWidgetTileLight: {
-    borderColor: "rgba(15,23,42,0.08)",
-    backgroundColor: "rgba(15,23,42,0.04)",
+    backgroundColor: "#ffffff",
+    borderColor: "transparent",
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   scanWidgetTileHalf: {
     flex: 1,
+    flexBasis: 0,
     minWidth: 0,
   },
   scanWidgetTileFull: {
@@ -3914,6 +4027,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 20,
     position: "relative",
+    borderRadius: 14,
+    overflow: "hidden",
   },
   scanWidgetWatermarkIcon: {
     position: "absolute",
@@ -4239,13 +4354,21 @@ const styles = StyleSheet.create({
     width: "100%",
     borderRadius: 14,
     borderWidth: 0.5,
-    backgroundColor: "rgba(0,0,0,0.03)",
-    borderColor: "rgba(0,0,0,0.1)",
-    overflow: "hidden",
+    backgroundColor: "#ffffff",
+    borderColor: "transparent",
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   lastExtractCardDark: {
     backgroundColor: "rgba(255,255,255,0.06)",
     borderColor: "rgba(255,255,255,0.1)",
+    overflow: "hidden",
+    shadowOpacity: 0,
+    elevation: 0,
   },
   lastExtractHeaderPressable: {
     flexDirection: "row",
@@ -4359,18 +4482,26 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   chapterAssistCard: {
-    backgroundColor: lightColors.card,
+    backgroundColor: "#ffffff",
     borderWidth: 1,
-    borderColor: lightColors.border,
+    borderColor: "transparent",
     borderRadius: 14,
     padding: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   chapterAssistCardDark: {
     backgroundColor: darkColors.card,
     borderColor: darkColors.border,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   chapterAssistIcon: {
     width: 38,
@@ -4408,12 +4539,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 0.5,
-    backgroundColor: "rgba(0,0,0,0.03)",
-    borderColor: "rgba(0,0,0,0.08)",
+    backgroundColor: "#ffffff",
+    borderColor: "transparent",
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   chapterAssistCompactDark: {
     backgroundColor: "rgba(255,255,255,0.05)",
     borderColor: "rgba(255,255,255,0.1)",
+    shadowOpacity: 0,
+    elevation: 0,
   },
   chapterAssistCompactText: {
     flex: 1,
@@ -4942,12 +5081,20 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.7)",
   },
+  pageScanSheetDimLight: {
+    backgroundColor: lightColors.overlay,
+  },
   pageScanSheetPanel: {
     backgroundColor: "#1a1a1a",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 20,
     paddingTop: 8,
+  },
+  pageScanSheetPanelLight: {
+    backgroundColor: lightColors.card,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(15,23,42,0.1)",
   },
   pageScanSheetPanelFixed: {
     flexDirection: "column",
@@ -4961,11 +5108,17 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.15)",
     marginBottom: 10,
   },
+  pageScanSheetGrabberLight: {
+    backgroundColor: "rgba(15,23,42,0.15)",
+  },
   pageScanSheetTitle: {
     fontSize: 16,
     fontWeight: "600",
     color: "#ffffff",
     marginBottom: 4,
+  },
+  pageScanSheetTitleLight: {
+    color: lightColors.textPrimary,
   },
   pageScanSheetSubtitle: {
     fontSize: 12,
@@ -4975,8 +5128,14 @@ const styles = StyleSheet.create({
   pageScanSheetSubtitleBookCover: {
     color: "rgba(255,255,255,0.45)",
   },
+  pageScanSheetSubtitleBookCoverLight: {
+    color: "rgba(15,23,42,0.55)",
+  },
   pageScanSheetSubtitlePageMuted: {
     color: "rgba(255,255,255,0.4)",
+  },
+  pageScanSheetSubtitlePageMutedLight: {
+    color: "rgba(15,23,42,0.45)",
   },
   pageScanPreviewWrap: {
     position: "relative",
@@ -4985,6 +5144,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255,255,255,0.12)",
     marginBottom: 12,
+  },
+  pageScanPreviewWrapLight: {
+    backgroundColor: "rgba(15,23,42,0.04)",
+    borderColor: "rgba(15,23,42,0.12)",
   },
   pageScanPreviewWrapPage: {
     width: "100%",
@@ -5020,10 +5183,16 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: "rgba(10,10,10,0.92)",
   },
+  pageScanPreviewPlaceholderLight: {
+    backgroundColor: "rgba(15,23,42,0.06)",
+  },
   pageScanPreviewPlaceholderText: {
     fontSize: 13,
     fontWeight: "500",
     color: "rgba(255,255,255,0.45)",
+  },
+  pageScanPreviewPlaceholderTextLight: {
+    color: "rgba(15,23,42,0.45)",
   },
   pageScanActionsRow: {
     flexDirection: "row",
@@ -5042,10 +5211,16 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 16,
   },
+  pageScanTakePhotoBtnLight: {
+    backgroundColor: "#111111",
+  },
   pageScanTakePhotoBtnText: {
     fontSize: 15,
     fontWeight: "600",
     color: "#111111",
+  },
+  pageScanTakePhotoBtnTextLight: {
+    color: "#ffffff",
   },
   pageScanGalleryLinkWrap: {
     marginTop: 10,
@@ -5059,6 +5234,9 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "rgba(255,255,255,0.35)",
     textAlign: "center",
+  },
+  pageScanGalleryLinkTextLight: {
+    color: "rgba(15,23,42,0.45)",
   },
   pageScanGalleryLinkTextDisabled: {
     opacity: 0.4,
@@ -5076,9 +5254,15 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.25)",
     textAlign: "center",
   },
+  pageScanCancelLinkTextLight: {
+    color: "rgba(15,23,42,0.4)",
+  },
   contentsModalScreen: {
     flex: 1,
     backgroundColor: CHAPTER_MAP_BG,
+  },
+  contentsModalScreenLight: {
+    backgroundColor: CHAPTER_MAP_BG_LIGHT,
   },
   contentsChrome: {
     flex: 1,
@@ -5095,6 +5279,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: "rgba(255,255,255,0.07)",
   },
+  contentsHeaderBlockLight: {
+    borderBottomColor: "rgba(15,23,42,0.1)",
+  },
   contentsTitleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -5107,12 +5294,18 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
   },
+  contentsSheetTitleLight: {
+    color: "#0f172a",
+  },
   contentsSheetSubtitle: {
     color: "rgba(255,255,255,0.55)",
     fontSize: 13,
     fontWeight: "500",
     textAlign: "center",
     lineHeight: 18,
+  },
+  contentsSheetSubtitleLight: {
+    color: "rgba(15,23,42,0.55)",
   },
   contentsViewfinderWrap: {
     position: "relative",
@@ -5171,6 +5364,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(251,191,36,0.16)",
     borderColor: "rgba(251,191,36,0.35)",
   },
+  contentsFlashButtonLight: {
+    backgroundColor: "rgba(15,23,42,0.06)",
+    borderColor: "rgba(15,23,42,0.12)",
+  },
   contentsCaptureButton: {
     flex: 1,
     minHeight: 56,
@@ -5181,10 +5378,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
+  contentsCaptureButtonLight: {
+    backgroundColor: "#111111",
+  },
   contentsCaptureText: {
     color: "#0f172a",
     fontSize: 16,
     fontWeight: "800",
+  },
+  contentsCaptureTextLight: {
+    color: "#ffffff",
   },
   bookPickerModalRoot: {
     flex: 1,
@@ -5223,6 +5426,10 @@ const styles = StyleSheet.create({
   bookPickerSearchOuter: {
     marginHorizontal: 20,
     marginBottom: 12,
+    overflow: "visible",
+  },
+  bookPickerSearchOuterLight: {
+    marginBottom: 20,
   },
   bookPickerSearchInner: {
     flexDirection: "row",
@@ -5365,8 +5572,14 @@ const styles = StyleSheet.create({
     color: "#0f172a",
   },
   bookPickerSearchInnerLight: {
-    backgroundColor: "rgba(15,23,42,0.04)",
-    borderColor: "rgba(15,23,42,0.1)",
+    backgroundColor: "#ffffff",
+    borderColor: "transparent",
+    overflow: "visible",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   bookPickerSearchInputLight: {
     color: "#0f172a",
@@ -5536,6 +5749,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: "hidden",
     width: "100%",
+    alignSelf: "stretch",
   },
   primaryButtonGroup: {
     width: "100%",
@@ -5592,6 +5806,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexDirection: "row",
     gap: 10,
+    width: "100%",
   },
   primaryButtonText: {
     color: "#fff",
@@ -5607,19 +5822,19 @@ const styles = StyleSheet.create({
   primaryButtonScanWhite: {
     backgroundColor: "#ffffff",
   },
-  /** Scan page (light): dominant dark CTA — no accent gradient. */
-  primaryButtonScanDark: {
-    backgroundColor: "#0f172a",
+  /** Scan page (light): white CTA with shadow/border so it reads on the light home surface. */
+  primaryButtonScanLight: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "rgba(15, 23, 42, 0.16)",
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 4,
   },
   primaryButtonTextOnWhite: {
     color: "#0f172a",
-    fontFamily: FONT_HELVETICA,
-    fontWeight: "800",
-    fontSize: 16,
-    letterSpacing: 0.2,
-  },
-  primaryButtonTextLightOnDark: {
-    color: "#ffffff",
     fontFamily: FONT_HELVETICA,
     fontWeight: "800",
     fontSize: 16,

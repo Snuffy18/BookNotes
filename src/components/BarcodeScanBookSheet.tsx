@@ -18,6 +18,7 @@ import type { OpenLibraryBookResult } from "../services/openLibrary";
 import { formatIsbnDisplay } from "../services/openLibrary";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { hexWithAlpha } from "../theme/colorUtils";
+import { lightColors } from "../theme/colors";
 
 export type BarcodeSheetPhase = "scanning" | "lookingUp" | "found" | "error";
 
@@ -25,7 +26,8 @@ const CROSSFADE_MS = 150;
 const VIEWFINDER_HEIGHT = 200;
 const BRACKET_ARM = 20;
 const BRACKET_STROKE = 3;
-const BRACKET_COLOR = "rgba(255,255,255,0.85)";
+const BRACKET_COLOR_DARK = "rgba(255,255,255,0.85)";
+const BRACKET_COLOR_LIGHT = "rgba(15,23,42,0.75)";
 
 type BarcodeScanBookSheetContentProps = {
   phase: BarcodeSheetPhase;
@@ -45,7 +47,15 @@ type BarcodeScanBookSheetContentProps = {
   onClose: () => void;
 };
 
-function BarcodeViewfinderCorners({ width, height }: { width: number; height: number }) {
+function BarcodeViewfinderCorners({
+  width,
+  height,
+  darkMode,
+}: {
+  width: number;
+  height: number;
+  darkMode: boolean;
+}) {
   if (width <= 0 || height <= 0) return null;
 
   const frameW = width * 0.8;
@@ -56,7 +66,7 @@ function BarcodeViewfinderCorners({ width, height }: { width: number; height: nu
     position: "absolute" as const,
     width: BRACKET_ARM,
     height: BRACKET_ARM,
-    borderColor: BRACKET_COLOR,
+    borderColor: darkMode ? BRACKET_COLOR_DARK : BRACKET_COLOR_LIGHT,
   };
 
   return (
@@ -209,7 +219,7 @@ function AnimatedScanLine({
   );
 }
 
-function LookupSpinner() {
+function LookupSpinner({ darkMode }: { darkMode: boolean }) {
   const spin = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -237,7 +247,7 @@ function LookupSpinner() {
         height: 24,
         borderRadius: 12,
         borderWidth: 2,
-        borderColor: "rgba(255,255,255,0.1)",
+        borderColor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(15,23,42,0.1)",
         borderTopColor: "#60a5fa",
         transform: [{ rotate }],
       }}
@@ -245,11 +255,12 @@ function LookupSpinner() {
   );
 }
 
-function DarkPanel({ children }: { children: ReactNode }) {
-  return <View style={styles.darkPanel}>{children}</View>;
+function Panel({ children, darkMode }: { children: ReactNode; darkMode: boolean }) {
+  return <View style={[styles.panel, !darkMode && styles.panelLight]}>{children}</View>;
 }
 
 function ScanningView({
+  darkMode,
   manualIsbnOpen,
   manualIsbnDraft,
   onManualIsbnDraftChange,
@@ -257,7 +268,9 @@ function ScanningView({
   onOpenManualIsbn,
   onSubmitManualIsbn,
   onClose,
-}: Pick<
+}: {
+  darkMode: boolean;
+} & Pick<
   BarcodeScanBookSheetContentProps,
   | "manualIsbnOpen"
   | "manualIsbnDraft"
@@ -289,27 +302,33 @@ function ScanningView({
   return (
     <>
       <View style={styles.headerRow}>
-        <Text style={styles.headerTitle}>Scan book barcode</Text>
+        <Text style={[styles.headerTitle, !darkMode && styles.headerTitleLight]}>Scan book barcode</Text>
         <Pressable
-          style={styles.closeButton}
+          style={[styles.closeButton, !darkMode && styles.closeButtonLight]}
           onPress={onClose}
           accessibilityRole="button"
           accessibilityLabel="Close barcode scanner"
         >
-          <Ionicons name="close" size={13} color="rgba(255,255,255,0.6)" />
+          <Ionicons
+            name="close"
+            size={13}
+            color={darkMode ? "rgba(255,255,255,0.6)" : "rgba(15,23,42,0.5)"}
+          />
         </Pressable>
       </View>
-      <Text style={styles.headerSubtitle}>Point at the barcode on the back cover</Text>
+      <Text style={[styles.headerSubtitle, !darkMode && styles.headerSubtitleLight]}>
+        Point at the barcode on the back cover
+      </Text>
 
       {manualIsbnOpen ? (
         <View style={styles.manualIsbnSection}>
-          <Text style={styles.manualIsbnLabel}>ISBN</Text>
+          <Text style={[styles.manualIsbnLabel, !darkMode && styles.manualIsbnLabelLight]}>ISBN</Text>
           <TextInput
-            style={styles.manualIsbnInput}
+            style={[styles.manualIsbnInput, !darkMode && styles.manualIsbnInputLight]}
             value={manualIsbnDraft}
             onChangeText={onManualIsbnDraftChange}
             placeholder="9780143127741"
-            placeholderTextColor="rgba(255,255,255,0.25)"
+            placeholderTextColor={darkMode ? "rgba(255,255,255,0.25)" : "rgba(15,23,42,0.35)"}
             keyboardType="numbers-and-punctuation"
             autoCapitalize="none"
             autoCorrect={false}
@@ -337,20 +356,24 @@ function ScanningView({
           }}
         >
           {!permission?.granted ? (
-            <DarkPanel>
+            <Panel darkMode={darkMode}>
               <View style={styles.cameraGate}>
-                <Text style={styles.cameraGateText}>Allow camera access to scan barcodes</Text>
+                <Text style={[styles.cameraGateText, !darkMode && styles.cameraGateTextLight]}>
+                  Allow camera access to scan barcodes
+                </Text>
                 <TouchableOpacity
-                  style={styles.cameraGateBtn}
+                  style={[styles.cameraGateBtn, !darkMode && styles.cameraGateBtnLight]}
                   onPress={() => void requestPermission()}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.cameraGateBtnText}>Allow camera</Text>
+                  <Text style={[styles.cameraGateBtnText, !darkMode && styles.cameraGateBtnTextLight]}>
+                    Allow camera
+                  </Text>
                 </TouchableOpacity>
               </View>
-            </DarkPanel>
+            </Panel>
           ) : (
-            <View style={styles.viewfinderCameraSlot}>
+            <View style={[styles.viewfinderCameraSlot, !darkMode && styles.viewfinderCameraSlotLight]}>
               <CameraView
                 style={styles.viewfinderCamera}
                 facing="back"
@@ -364,14 +387,22 @@ function ScanningView({
                   : {})}
               />
               {!cameraReady ? (
-                <View style={styles.cameraPlaceholder} pointerEvents="none">
-                  <Ionicons name="barcode-outline" size={28} color="rgba(255,255,255,0.35)" />
+                <View
+                  style={[styles.cameraPlaceholder, !darkMode && styles.cameraPlaceholderLight]}
+                  pointerEvents="none"
+                >
+                  <Ionicons
+                    name="barcode-outline"
+                    size={28}
+                    color={darkMode ? "rgba(255,255,255,0.35)" : "rgba(15,23,42,0.25)"}
+                  />
                 </View>
               ) : null}
               <View style={styles.viewfinderOverlay} pointerEvents="none">
                 <BarcodeViewfinderCorners
                   width={viewfinderSize.width}
                   height={viewfinderSize.height}
+                  darkMode={darkMode}
                 />
                 <AnimatedScanLine viewfinderHeight={viewfinderSize.height} accentColor={accentColor} />
               </View>
@@ -385,7 +416,7 @@ function ScanningView({
           accessibilityRole="button"
           accessibilityLabel="Enter ISBN manually instead"
         >
-          <Text style={styles.textLink}>Enter ISBN manually instead</Text>
+          <Text style={[styles.textLink, !darkMode && styles.textLinkLight]}>Enter ISBN manually instead</Text>
         </Pressable>
       </View>
       )}
@@ -397,7 +428,7 @@ function ScanningView({
           accessibilityRole="button"
           accessibilityLabel="Back to scanner"
         >
-          <Text style={styles.textLink}>Back to scanner</Text>
+          <Text style={[styles.textLink, !darkMode && styles.textLinkLight]}>Back to scanner</Text>
         </Pressable>
       ) : null}
     </>
@@ -405,24 +436,29 @@ function ScanningView({
 }
 
 function LookingUpView({
+  darkMode,
   detectedIsbn,
   onCancelLookup,
-}: Pick<BarcodeScanBookSheetContentProps, "detectedIsbn" | "onCancelLookup">) {
+}: { darkMode: boolean } & Pick<BarcodeScanBookSheetContentProps, "detectedIsbn" | "onCancelLookup">) {
   return (
     <>
-      <Text style={styles.headerTitle}>Looking up book...</Text>
-      <Text style={styles.headerSubtitle}>
+      <Text style={[styles.headerTitle, !darkMode && styles.headerTitleLight]}>Looking up book...</Text>
+      <Text style={[styles.headerSubtitle, !darkMode && styles.headerSubtitleLight]}>
         {detectedIsbn ? `ISBN ${formatIsbnDisplay(detectedIsbn)}` : "ISBN"}
       </Text>
 
       <View style={styles.viewfinderWrap}>
-        <DarkPanel>
+        <Panel darkMode={darkMode}>
           <View style={styles.lookupInner}>
-            <LookupSpinner />
-            <Text style={styles.lookupPrimary}>Fetching book details</Text>
-            <Text style={styles.lookupSecondary}>Open Library · cover image</Text>
+            <LookupSpinner darkMode={darkMode} />
+            <Text style={[styles.lookupPrimary, !darkMode && styles.lookupPrimaryLight]}>
+              Fetching book details
+            </Text>
+            <Text style={[styles.lookupSecondary, !darkMode && styles.lookupSecondaryLight]}>
+              Open Library · cover image
+            </Text>
           </View>
-        </DarkPanel>
+        </Panel>
       </View>
 
       <Pressable
@@ -431,17 +467,21 @@ function LookingUpView({
         accessibilityRole="button"
         accessibilityLabel="Cancel"
       >
-        <Text style={styles.textLink}>Cancel</Text>
+        <Text style={[styles.textLink, !darkMode && styles.textLinkLight]}>Cancel</Text>
       </Pressable>
     </>
   );
 }
 
 function FoundView({
+  darkMode,
   bookResult,
   onAddToLibrary,
   onScanAgain,
-}: Pick<BarcodeScanBookSheetContentProps, "bookResult" | "onAddToLibrary" | "onScanAgain">) {
+}: { darkMode: boolean } & Pick<
+  BarcodeScanBookSheetContentProps,
+  "bookResult" | "onAddToLibrary" | "onScanAgain"
+>) {
   if (!bookResult) return null;
 
   const chips: string[] = [];
@@ -451,22 +491,24 @@ function FoundView({
 
   return (
     <>
-      <Text style={styles.headerTitle}>Book found</Text>
-      <Text style={styles.headerSubtitle}>Confirm to add to your library</Text>
+      <Text style={[styles.headerTitle, !darkMode && styles.headerTitleLight]}>Book found</Text>
+      <Text style={[styles.headerSubtitle, !darkMode && styles.headerSubtitleLight]}>
+        Confirm to add to your library
+      </Text>
 
-      <View style={styles.bookCard}>
+      <View style={[styles.bookCard, !darkMode && styles.bookCardLight]}>
         {bookResult.coverUrl ? (
           <Image source={{ uri: bookResult.coverUrl }} style={styles.bookCover} />
         ) : (
-          <View style={styles.bookCoverPlaceholder}>
+          <View style={[styles.bookCoverPlaceholder, !darkMode && styles.bookCoverPlaceholderLight]}>
             <Ionicons name="book-outline" size={18} color="#60a5fa" />
           </View>
         )}
         <View style={styles.bookMeta}>
-          <Text style={styles.bookTitle} numberOfLines={3}>
+          <Text style={[styles.bookTitle, !darkMode && styles.bookTitleLight]} numberOfLines={3}>
             {bookResult.title}
           </Text>
-          <Text style={styles.bookAuthor} numberOfLines={2}>
+          <Text style={[styles.bookAuthor, !darkMode && styles.bookAuthorLight]} numberOfLines={2}>
             {bookResult.author}
           </Text>
           {chips.length > 0 ? (
@@ -482,14 +524,14 @@ function FoundView({
       </View>
 
       <TouchableOpacity
-        style={styles.primaryBtn}
+        style={[styles.primaryBtn, !darkMode && styles.primaryBtnLight]}
         onPress={onAddToLibrary}
         activeOpacity={0.88}
         accessibilityRole="button"
         accessibilityLabel="Add to library"
       >
-        <Ionicons name="add" size={18} color="#111111" />
-        <Text style={styles.primaryBtnText}>Add to library</Text>
+        <Ionicons name="add" size={18} color={darkMode ? "#111111" : "#ffffff"} />
+        <Text style={[styles.primaryBtnText, !darkMode && styles.primaryBtnTextLight]}>Add to library</Text>
       </TouchableOpacity>
 
       <Pressable
@@ -498,38 +540,45 @@ function FoundView({
         accessibilityRole="button"
         accessibilityLabel="Scan again"
       >
-        <Text style={styles.textLink}>Scan again</Text>
+        <Text style={[styles.textLink, !darkMode && styles.textLinkLight]}>Scan again</Text>
       </Pressable>
     </>
   );
 }
 
 function ErrorView({
+  darkMode,
   onTryAgain,
   onEnterManually,
-}: Pick<BarcodeScanBookSheetContentProps, "onTryAgain" | "onEnterManually">) {
+}: { darkMode: boolean } & Pick<BarcodeScanBookSheetContentProps, "onTryAgain" | "onEnterManually">) {
   return (
     <>
-      <Text style={styles.headerTitle}>Book not found</Text>
-      <Text style={styles.headerSubtitle}>Try scanning again or enter details manually</Text>
+      <Text style={[styles.headerTitle, !darkMode && styles.headerTitleLight]}>Book not found</Text>
+      <Text style={[styles.headerSubtitle, !darkMode && styles.headerSubtitleLight]}>
+        Try scanning again or enter details manually
+      </Text>
 
       <View style={styles.viewfinderWrap}>
-        <DarkPanel>
+        <Panel darkMode={darkMode}>
           <View style={styles.errorInner}>
-            <Ionicons name="warning-outline" size={24} color="rgba(255,255,255,0.2)" />
-            <Text style={styles.errorText}>Could not find this ISBN</Text>
+            <Ionicons
+              name="warning-outline"
+              size={24}
+              color={darkMode ? "rgba(255,255,255,0.2)" : "rgba(15,23,42,0.2)"}
+            />
+            <Text style={[styles.errorText, !darkMode && styles.errorTextLight]}>Could not find this ISBN</Text>
           </View>
-        </DarkPanel>
+        </Panel>
       </View>
 
       <TouchableOpacity
-        style={styles.primaryBtn}
+        style={[styles.primaryBtn, !darkMode && styles.primaryBtnLight]}
         onPress={onTryAgain}
         activeOpacity={0.88}
         accessibilityRole="button"
         accessibilityLabel="Try again"
       >
-        <Text style={styles.primaryBtnText}>Try again</Text>
+        <Text style={[styles.primaryBtnText, !darkMode && styles.primaryBtnTextLight]}>Try again</Text>
       </TouchableOpacity>
 
       <Pressable
@@ -538,7 +587,7 @@ function ErrorView({
         accessibilityRole="button"
         accessibilityLabel="Enter manually"
       >
-        <Text style={styles.textLink}>Enter manually</Text>
+        <Text style={[styles.textLink, !darkMode && styles.textLinkLight]}>Enter manually</Text>
       </Pressable>
     </>
   );
@@ -546,13 +595,14 @@ function ErrorView({
 
 export function BarcodeScanBookSheetContent(props: BarcodeScanBookSheetContentProps) {
   const { phase } = props;
+  const { darkMode } = useAppSettings();
 
   return (
     <View>
-      {phase === "scanning" ? <ScanningView {...props} /> : null}
-      {phase === "lookingUp" ? <LookingUpView {...props} /> : null}
-      {phase === "found" ? <FoundView {...props} /> : null}
-      {phase === "error" ? <ErrorView {...props} /> : null}
+      {phase === "scanning" ? <ScanningView {...props} darkMode={darkMode} /> : null}
+      {phase === "lookingUp" ? <LookingUpView {...props} darkMode={darkMode} /> : null}
+      {phase === "found" ? <FoundView {...props} darkMode={darkMode} /> : null}
+      {phase === "error" ? <ErrorView {...props} darkMode={darkMode} /> : null}
     </View>
   );
 }
@@ -595,6 +645,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#ffffff",
   },
+  headerTitleLight: {
+    color: lightColors.textPrimary,
+  },
   closeButton: {
     width: 28,
     height: 28,
@@ -605,11 +658,18 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     borderColor: "rgba(255,255,255,0.1)",
   },
+  closeButtonLight: {
+    backgroundColor: "rgba(15,23,42,0.06)",
+    borderColor: "rgba(15,23,42,0.1)",
+  },
   headerSubtitle: {
     marginTop: 4,
     fontSize: 12,
     fontWeight: "400",
     color: "rgba(255,255,255,0.4)",
+  },
+  headerSubtitleLight: {
+    color: lightColors.textMuted,
   },
   previewBlock: {
     marginTop: 16,
@@ -626,6 +686,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#0a0a0a",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255,255,255,0.06)",
+  },
+  viewfinderCameraSlotLight: {
+    borderColor: "rgba(15,23,42,0.1)",
   },
   viewfinderCamera: {
     flex: 1,
@@ -680,13 +743,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "rgba(10,10,10,0.92)",
   },
-  darkPanel: {
+  cameraPlaceholderLight: {
+    backgroundColor: "rgba(15,23,42,0.06)",
+  },
+  panel: {
     flex: 1,
     backgroundColor: "#0a0a0a",
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255,255,255,0.06)",
     overflow: "hidden",
+  },
+  panelLight: {
+    backgroundColor: "rgba(15,23,42,0.04)",
+    borderColor: "rgba(15,23,42,0.1)",
   },
   cameraGate: {
     flex: 1,
@@ -702,16 +772,25 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 18,
   },
+  cameraGateTextLight: {
+    color: lightColors.textMuted,
+  },
   cameraGateBtn: {
     backgroundColor: "rgba(255,255,255,0.1)",
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 10,
   },
+  cameraGateBtnLight: {
+    backgroundColor: "rgba(15,23,42,0.08)",
+  },
   cameraGateBtnText: {
     fontSize: 14,
     fontWeight: "600",
     color: "#ffffff",
+  },
+  cameraGateBtnTextLight: {
+    color: lightColors.textPrimary,
   },
   manualIsbnSection: {
     marginTop: 16,
@@ -724,6 +803,9 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.4,
   },
+  manualIsbnLabelLight: {
+    color: lightColors.textMuted,
+  },
   manualIsbnInput: {
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255,255,255,0.12)",
@@ -733,6 +815,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#ffffff",
     backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  manualIsbnInputLight: {
+    borderColor: "rgba(15,23,42,0.12)",
+    color: lightColors.textPrimary,
+    backgroundColor: "rgba(15,23,42,0.04)",
   },
   manualIsbnSubmit: {
     alignSelf: "flex-start",
@@ -759,10 +846,16 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.4)",
     marginTop: 4,
   },
+  lookupPrimaryLight: {
+    color: lightColors.textMuted,
+  },
   lookupSecondary: {
     fontSize: 10,
     fontWeight: "400",
     color: "rgba(255,255,255,0.25)",
+  },
+  lookupSecondaryLight: {
+    color: "rgba(15,23,42,0.35)",
   },
   errorInner: {
     flex: 1,
@@ -777,6 +870,9 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.4)",
     textAlign: "center",
   },
+  errorTextLight: {
+    color: lightColors.textMuted,
+  },
   bookCard: {
     marginTop: 16,
     backgroundColor: "rgba(255,255,255,0.04)",
@@ -787,6 +883,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     alignItems: "flex-start",
+  },
+  bookCardLight: {
+    backgroundColor: "rgba(15,23,42,0.04)",
+    borderColor: "rgba(15,23,42,0.1)",
   },
   bookCover: {
     width: 40,
@@ -802,6 +902,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  bookCoverPlaceholderLight: {
+    backgroundColor: "rgba(15,23,42,0.06)",
+  },
   bookMeta: {
     flex: 1,
     minWidth: 0,
@@ -812,12 +915,18 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     lineHeight: 15.6,
   },
+  bookTitleLight: {
+    color: lightColors.textPrimary,
+  },
   bookAuthor: {
     marginTop: 3,
     fontSize: 10,
     fontWeight: "400",
     color: "rgba(255,255,255,0.45)",
     lineHeight: 13,
+  },
+  bookAuthorLight: {
+    color: lightColors.textMuted,
   },
   chipRow: {
     marginTop: 8,
@@ -850,10 +959,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     alignSelf: "stretch",
   },
+  primaryBtnLight: {
+    backgroundColor: "#111111",
+  },
   primaryBtnText: {
     fontSize: 14,
     fontWeight: "600",
     color: "#111111",
+  },
+  primaryBtnTextLight: {
+    color: "#ffffff",
   },
   manualIsbnLinkWrap: {
     marginTop: 16,
@@ -884,6 +999,9 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "rgba(255,255,255,0.25)",
     textAlign: "center",
+  },
+  textLinkLight: {
+    color: "rgba(15,23,42,0.4)",
   },
 });
 

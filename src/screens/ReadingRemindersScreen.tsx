@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SettingsGroupCard, settingsScrollContentLightStyle, settingsScrollLight } from "../components/SettingsGroupCard";
 import { SettingsOptionHeroCard } from "../components/SettingsOptionHeroCard";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { useReadingReminders } from "../context/ReadingRemindersContext";
@@ -125,7 +126,14 @@ export function ReadingRemindersScreen() {
         <View style={styles.topBarSide} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={!darkMode ? settingsScrollLight : undefined}
+        contentContainerStyle={[
+          styles.scrollContent,
+          !darkMode && settingsScrollContentLightStyle({ paddingBottom: 40 }),
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <SettingsOptionHeroCard
           icon="notifications-outline"
           title="Reading reminders"
@@ -133,7 +141,7 @@ export function ReadingRemindersScreen() {
           compactDescription
         />
 
-        <View style={[styles.unifiedCard, darkMode && styles.unifiedCardDark]}>
+        <SettingsGroupCard darkMode={darkMode}>
           <ReminderRow
             label="Morning"
             slot={slots.morning}
@@ -180,7 +188,7 @@ export function ReadingRemindersScreen() {
               onTimePress={() => openTimePicker("endOfDay")}
             />
           </View>
-        </View>
+        </SettingsGroupCard>
       </ScrollView>
 
       {androidPickerVisible ? (
@@ -315,21 +323,10 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: 14,
   },
-  unifiedCard: {
-    borderRadius: 14,
-    borderWidth: 0.5,
-    borderColor: "rgba(0,0,0,0.08)",
-    backgroundColor: "rgba(0,0,0,0.035)",
-    overflow: "hidden",
-  },
-  unifiedCardDark: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderColor: "rgba(255,255,255,0.08)",
-  },
   reminderRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 18,
+    paddingVertical: 14,
     paddingHorizontal: 14,
     gap: 10,
   },
@@ -369,8 +366,10 @@ const styles = StyleSheet.create({
     color: "#ffffff",
   },
   rowDividerThin: {
-    height: 0.5,
-    backgroundColor: "rgba(0,0,0,0.06)",
+    height: StyleSheet.hairlineWidth,
+    width: "90%",
+    alignSelf: "center",
+    backgroundColor: "rgba(15,23,42,0.08)",
   },
   rowDividerThinDark: {
     backgroundColor: "rgba(255,255,255,0.06)",

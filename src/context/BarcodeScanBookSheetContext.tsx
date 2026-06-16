@@ -33,7 +33,9 @@ import {
   type BarcodeSheetPhase,
 } from "../components/BarcodeScanBookSheet";
 import { addBookSheetActions } from "./addBookSheetActions";
+import { useAppSettings } from "./AppSettingsContext";
 import { useScanContext } from "./ScanContext";
+import { lightColors } from "../theme/colors";
 import {
   isValidIsbnInput,
   lookupBookByIsbn,
@@ -57,6 +59,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+  const { darkMode } = useAppSettings();
   const { addOrActivateBook } = useScanContext();
 
   const sheetHideY = useMemo(() => Math.round(windowHeight * 0.55) + 80, [windowHeight]);
@@ -410,7 +413,10 @@ export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode
         onRequestClose={closeBarcodeScanBookSheet}
       >
         <View style={styles.root}>
-          <Animated.View pointerEvents="box-none" style={[styles.dim, { opacity: backdropOp }]}>
+          <Animated.View
+            pointerEvents="box-none"
+            style={[styles.dim, !darkMode && styles.dimLight, { opacity: backdropOp }]}
+          >
             <Pressable
               style={StyleSheet.absoluteFill}
               onPress={closeBarcodeScanBookSheet}
@@ -425,13 +431,14 @@ export function BarcodeScanBookSheetProvider({ children }: { children: ReactNode
             <View
               style={[
                 styles.panel,
+                !darkMode && styles.panelLight,
                 {
                   paddingBottom: 28 + insets.bottom,
                   height: targetSheetHeight,
                 },
               ]}
             >
-              <View style={styles.handle} />
+              <View style={[styles.handle, !darkMode && styles.handleLight]} />
               <Animated.View style={{ opacity: contentOpacity }}>
                 <BarcodeScanBookSheetContent
                   phase={renderPhase}
@@ -477,6 +484,9 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.7)",
   },
+  dimLight: {
+    backgroundColor: lightColors.overlay,
+  },
   panel: {
     backgroundColor: "#1a1a1a",
     borderTopLeftRadius: 20,
@@ -487,6 +497,10 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     overflow: "hidden",
   },
+  panelLight: {
+    backgroundColor: lightColors.card,
+    borderColor: "rgba(15,23,42,0.1)",
+  },
   handle: {
     alignSelf: "center",
     width: 36,
@@ -495,5 +509,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.15)",
     marginTop: 14,
     marginBottom: 16,
+  },
+  handleLight: {
+    backgroundColor: "rgba(15,23,42,0.15)",
   },
 });

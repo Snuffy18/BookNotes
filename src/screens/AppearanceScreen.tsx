@@ -5,6 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { MoonIcon } from "../components/MoonIcon";
 import { PaintbrushIcon } from "../components/PaintbrushIcon";
+import { SettingsGroupCard, settingsScrollContentLightStyle, settingsScrollLight } from "../components/SettingsGroupCard";
 import { SettingsOptionHeroCard } from "../components/SettingsOptionHeroCard";
 import { useAppSettings } from "../context/AppSettingsContext";
 import type { ProfileStackParamList } from "../navigation/types";
@@ -26,7 +27,6 @@ export function AppearanceScreen() {
   } as const;
 
   const chevronColor = darkMode ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.35)";
-  const subtitleColor = darkMode ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)";
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
@@ -49,7 +49,14 @@ export function AppearanceScreen() {
         <View style={styles.topBarSide} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={settingsScrollLight}
+        contentContainerStyle={[
+          styles.scrollContent,
+          settingsScrollContentLightStyle({ paddingBottom: 32 }),
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <SettingsOptionHeroCard
           icon="color-palette-outline"
           title="Appearance"
@@ -57,14 +64,16 @@ export function AppearanceScreen() {
           compactDescription
         />
 
-        <View style={[styles.settingsCard, darkMode && styles.settingsCardDark]}>
+        <SettingsGroupCard darkMode={darkMode}>
           <View style={styles.row}>
-            <View style={styles.rowLeft}>
+            <View style={styles.rowIconSlot}>
               <MoonIcon size={ROW_ICON_SIZE} color={accentColor} />
-              <View style={styles.rowTextWrap}>
-                <Text style={[styles.label, darkMode && styles.labelDark]}>Dark mode</Text>
-                <Text style={[styles.subtitle, { color: subtitleColor }]}>Use dark app appearance.</Text>
-              </View>
+            </View>
+            <View style={styles.rowTextWrap}>
+              <Text style={[styles.label, darkMode && styles.labelDark]}>Dark mode</Text>
+              <Text style={[styles.description, darkMode && styles.descriptionDark]}>
+                Use dark app appearance.
+              </Text>
             </View>
             <Switch
               value={themeMode === "dark"}
@@ -75,27 +84,27 @@ export function AppearanceScreen() {
             />
           </View>
 
-          <View style={[styles.settingsSeparator, darkMode && styles.settingsSeparatorDark]} />
+          <View style={[styles.rowDivider, darkMode ? styles.rowDividerDark : styles.rowDividerLight]} />
 
           <TouchableOpacity
-            style={styles.linkRow}
+            style={styles.row}
             onPress={() => navigation.navigate("Themes")}
             activeOpacity={0.85}
           >
-            <View style={styles.rowLeft}>
+            <View style={styles.rowIconSlot}>
               <PaintbrushIcon size={ROW_ICON_SIZE} color={accentColor} />
-              <View style={styles.rowTextWrap}>
-                <Text style={[styles.label, darkMode && styles.labelDark]} numberOfLines={1}>
-                  Themes
-                </Text>
-                <Text style={[styles.subtitle, { color: subtitleColor }]} numberOfLines={1}>
-                  Current: {accentLabels[accentTheme]}
-                </Text>
-              </View>
+            </View>
+            <View style={styles.rowTextWrap}>
+              <Text style={[styles.label, darkMode && styles.labelDark]} numberOfLines={1}>
+                Themes
+              </Text>
+              <Text style={[styles.description, darkMode && styles.descriptionDark]} numberOfLines={1}>
+                Current: {accentLabels[accentTheme]}
+              </Text>
             </View>
             <Ionicons name="chevron-forward" size={CHEVRON_SIZE} color={chevronColor} />
           </TouchableOpacity>
-        </View>
+        </SettingsGroupCard>
       </ScrollView>
     </SafeAreaView>
   );
@@ -135,61 +144,48 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     gap: 14,
   },
-  settingsCard: {
-    backgroundColor: lightColors.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: lightColors.border,
-    padding: 16,
-  },
-  settingsCardDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
-  },
-  settingsSeparator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: lightColors.borderStrong,
-    marginVertical: 12,
-  },
-  settingsSeparatorDark: {
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    paddingVertical: 18,
-  },
-  linkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    paddingVertical: 18,
-  },
-  rowLeft: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
     gap: 12,
-    minWidth: 0,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  rowIconSlot: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
   },
   rowTextWrap: {
     flex: 1,
     gap: 2,
     minWidth: 0,
   },
+  rowDivider: {
+    height: StyleSheet.hairlineWidth,
+    width: "90%",
+    alignSelf: "center",
+  },
+  rowDividerLight: {
+    backgroundColor: "rgba(15,23,42,0.08)",
+  },
+  rowDividerDark: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
   label: {
     color: lightColors.textPrimary,
     fontSize: 15,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   labelDark: {
     color: "#ffffff",
   },
-  subtitle: {
-    fontSize: 11,
-    fontWeight: "400",
+  description: {
+    color: lightColors.textMuted,
+    fontSize: 12,
+  },
+  descriptionDark: {
+    color: darkColors.textSecondary,
   },
 });

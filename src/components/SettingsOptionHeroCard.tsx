@@ -3,6 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { StyleSheet, Text, View } from "react-native";
 import type { ComponentProps } from "react";
 import { useAppSettings } from "../context/AppSettingsContext";
+import { settingsCardLightWrapStyle } from "./SettingsGroupCard";
 import { darkColors, lightColors } from "../theme/colors";
 
 type IonName = ComponentProps<typeof Ionicons>["name"];
@@ -19,49 +20,57 @@ export function SettingsOptionHeroCard({ icon, title, description, compactDescri
   const { darkMode, accentGradient } = useAppSettings();
 
   return (
-    <View style={[styles.card, darkMode && styles.cardDark]}>
-      <LinearGradient
-        colors={accentGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.iconSquare}
-      >
-        <Ionicons name={icon} size={28} color="#ffffff" />
-      </LinearGradient>
-      <Text style={[styles.title, darkMode && styles.titleDark]}>{title}</Text>
-      <Text
-        style={[
-          compactDescription ? styles.descriptionCompact : styles.description,
-          compactDescription && (darkMode ? styles.descriptionCompactDark : styles.descriptionCompactLight),
-        ]}
-        numberOfLines={compactDescription ? 1 : undefined}
-      >
-        {description}
-      </Text>
+    <View style={styles.cardWrap}>
+      <View style={[styles.card, darkMode && styles.cardDark]}>
+        <LinearGradient
+          colors={accentGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.iconSquare}
+        >
+          <Ionicons name={icon} size={28} color="#ffffff" />
+        </LinearGradient>
+        <Text style={[styles.title, darkMode && styles.titleDark]}>{title}</Text>
+        <Text
+          style={[
+            compactDescription ? styles.descriptionCompact : styles.description,
+            compactDescription && (darkMode ? styles.descriptionCompactDark : styles.descriptionCompactLight),
+          ]}
+          numberOfLines={compactDescription ? 1 : undefined}
+        >
+          {description}
+        </Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  cardWrap: {
+    ...settingsCardLightWrapStyle,
+    marginBottom: 4,
+  },
   card: {
     alignItems: "center",
-    backgroundColor: lightColors.card,
+    backgroundColor: "#ffffff",
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: lightColors.border,
+    borderWidth: 0.5,
+    borderColor: "transparent",
     paddingHorizontal: 24,
     paddingVertical: 28,
-    marginBottom: 4,
+    overflow: "visible",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 3,
   },
   cardDark: {
-    backgroundColor: darkColors.card,
-    borderColor: darkColors.border,
-    shadowOpacity: 0.2,
+    backgroundColor: "#1C1C1E",
+    borderColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+    shadowOpacity: 0,
+    elevation: 0,
   },
   iconSquare: {
     width: 64,

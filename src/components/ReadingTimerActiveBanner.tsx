@@ -1,14 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Animated,
+  Easing,
+  LayoutChangeEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { getActiveElapsedSeconds, useReadingSession } from "../context/ReadingSessionContext";
 import { useScanContext } from "../context/ScanContext";
 import { formatReadingTimerHMS, READING_TIMER_FONT_FAMILY } from "../reading/readingTimerDisplay";
 import { averageBookPacePerHour, getEstimate } from "../reading/readingTimerRunningStats";
 import { estimateBookPageTotal, parseScanPageNumber } from "../utils/bookReadingProgress";
 
-const FADE_MS = 220;
-const EASE = Easing.out(Easing.cubic);
+const BANNER_ANIM_MS = 340;
+const BANNER_EASE = Easing.out(Easing.cubic);
+const BANNER_SLIDE_PX = 10;
 const TIMER_ACCENT = "#f59e0b";
 
 type Props = {
@@ -21,8 +30,12 @@ export function ReadingTimerActiveBanner({ darkMode, onPress }: Props) {
   const { books, activeBook } = useScanContext();
   const [tick, setTick] = useState(0);
   const [visible, setVisible] = useState(false);
+  const [contentHeight, setContentHeight] = useState(0);
   const opacity = useRef(new Animated.Value(0)).current;
+  const heightAnim = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(-BANNER_SLIDE_PX)).current;
   const runSnapshotRef = useRef(run);
+  const hasExpandedRef = useRef(false);
 
   const isLive = run?.phase === "running" || run?.phase === "paused";
 
@@ -41,26 +54,83 @@ export function ReadingTimerActiveBanner({ darkMode, onPress }: Props) {
   useEffect(() => {
     if (isLive) {
       setVisible(true);
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: FADE_MS,
-        easing: EASE,
-        useNativeDriver: true,
-      }).start();
       return;
     }
 
     if (!visible) return;
 
-    Animated.timing(opacity, {
-      toValue: 0,
-      duration: FADE_MS,
-      easing: EASE,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) setVisible(false);
+    Animated.parallel([
+      Animated.timing(heightAnim, {
+        toValue: 0,
+        duration: BANNER_ANIM_MS,
+        easing: BANNER_EASE,
+        useNativeDriver: false,
+      }),
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: BANNER_ANIM_MS - 60,
+        easing: BANNER_EASE,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: -BANNER_SLIDE_PX,
+        duration: BANNER_ANIM_MS,
+        easing: BANNER_EASE,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        hasExpandedRef.current = false;
+        setContentHeight(0);
+        setVisible(false);
+      }
     });
-  }, [isLive, visible, opacity]);
+  }, [isLive, visible, opacity, heightAnim, translateY]);
+
+  useEffect(() => {
+    if (!isLive || !visible || contentHeight <= 0) return;
+
+    if (hasExpandedRef.current) {
+      Animated.timing(heightAnim, {
+        toValue: contentHeight,
+        duration: 200,
+        easing: BANNER_EASE,
+        useNativeDriver: false,
+      }).start();
+      return;
+    }
+
+    hasExpandedRef.current = true;
+    heightAnim.setValue(0);
+    opacity.setValue(0);
+    translateY.setValue(-BANNER_SLIDE_PX);
+
+    Animated.parallel([
+      Animated.timing(heightAnim, {
+        toValue: contentHeight,
+        duration: BANNER_ANIM_MS,
+        easing: BANNER_EASE,
+        useNativeDriver: false,
+      }),
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: BANNER_ANIM_MS - 60,
+        easing: BANNER_EASE,
+        useNativeDriver: true,
+      }),
+      Animated.spring(translateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 78,
+        friction: 11,
+      }),
+    ]).start();
+  }, [isLive, visible, contentHeight, heightAnim, opacity, translateY]);
+
+  const onContentLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextHeight = Math.ceil(event.nativeEvent.layout.height);
+    setContentHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+  }, []);
 
   const displayRun = run ?? runSnapshotRef.current;
   const elapsedSeconds = useMemo(() => getActiveElapsedSeconds(displayRun), [displayRun, tick]);
@@ -104,61 +174,71 @@ export function ReadingTimerActiveBanner({ darkMode, onPress }: Props) {
   const metaLine = displayRun.phase === "paused" ? "Paused" : null;
 
   return (
-    <Animated.View style={{ opacity }}>
-      <Pressable
-        onPress={onPress}
-        style={({ pressed }) => [
-          styles.banner,
-          darkMode ? styles.bannerDark : styles.bannerLight,
-          pressed && styles.bannerPressed,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={`Reading timer ${formatReadingTimerHMS(elapsedSeconds)}, page ${displayRun.startPage}${showMotivation && finishEstimate ? `, ${finishEstimate}` : ""}. Tap to open.`}
-      >
-        <View style={styles.bannerTopRow}>
-          <View style={styles.timerCol}>
-            <Ionicons
-              name={displayRun.phase === "paused" ? "pause" : "timer-outline"}
-              size={18}
-              color={displayRun.phase === "paused" ? (darkMode ? "rgba(255,255,255,0.55)" : "rgba(15,23,42,0.45)") : TIMER_ACCENT}
-            />
-            <Text style={[styles.timerText, darkMode && styles.timerTextDark]} numberOfLines={1}>
-              {formatReadingTimerHMS(elapsedSeconds)}
-            </Text>
-          </View>
+    <Animated.View
+      style={{
+        maxHeight: heightAnim,
+        opacity,
+        overflow: "hidden",
+      }}
+    >
+      <Animated.View style={{ transform: [{ translateY }] }}>
+        <View onLayout={onContentLayout}>
+          <Pressable
+            onPress={onPress}
+            style={({ pressed }) => [
+              styles.banner,
+              darkMode ? styles.bannerDark : styles.bannerLight,
+              pressed && styles.bannerPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Reading timer ${formatReadingTimerHMS(elapsedSeconds)}, page ${displayRun.startPage}${showMotivation && finishEstimate ? `, ${finishEstimate}` : ""}. Tap to open.`}
+          >
+            <View style={styles.bannerTopRow}>
+              <View style={styles.timerCol}>
+                <Ionicons
+                  name={displayRun.phase === "paused" ? "pause" : "timer-outline"}
+                  size={18}
+                  color={displayRun.phase === "paused" ? (darkMode ? "rgba(255,255,255,0.55)" : "rgba(15,23,42,0.45)") : TIMER_ACCENT}
+                />
+                <Text style={[styles.timerText, darkMode && styles.timerTextDark]} numberOfLines={1}>
+                  {formatReadingTimerHMS(elapsedSeconds)}
+                </Text>
+              </View>
 
-          {metaLine ? (
-            <Text style={[styles.metaText, darkMode && styles.metaTextDark]} numberOfLines={2}>
-              {metaLine}
-            </Text>
-          ) : (
-            <View style={styles.metaSpacer} />
-          )}
+              {metaLine ? (
+                <Text style={[styles.metaText, darkMode && styles.metaTextDark]} numberOfLines={2}>
+                  {metaLine}
+                </Text>
+              ) : (
+                <View style={styles.metaSpacer} />
+              )}
 
-          <View style={styles.trailingCol}>
-            <Text style={[styles.pageText, darkMode && styles.pageTextDark]} numberOfLines={1}>
-              p. {displayRun.startPage}
-            </Text>
-            <Ionicons
-              name="chevron-forward"
-              size={14}
-              color={darkMode ? "rgba(255,255,255,0.28)" : "rgba(15,23,42,0.28)"}
-            />
-          </View>
+              <View style={styles.trailingCol}>
+                <Text style={[styles.pageText, darkMode && styles.pageTextDark]} numberOfLines={1}>
+                  p. {displayRun.startPage}
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={14}
+                  color={darkMode ? "rgba(255,255,255,0.28)" : "rgba(15,23,42,0.28)"}
+                />
+              </View>
+            </View>
+
+            {showMotivation && finishEstimate ? (
+              <View style={styles.motivationRow}>
+                <View style={styles.motivationDot} />
+                <Text
+                  style={[styles.motivationText, darkMode && styles.motivationTextDark]}
+                  numberOfLines={2}
+                >
+                  {finishEstimate}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
         </View>
-
-        {showMotivation && finishEstimate ? (
-          <View style={styles.motivationRow}>
-            <View style={styles.motivationDot} />
-            <Text
-              style={[styles.motivationText, darkMode && styles.motivationTextDark]}
-              numberOfLines={2}
-            >
-              {finishEstimate}
-            </Text>
-          </View>
-        ) : null}
-      </Pressable>
+      </Animated.View>
     </Animated.View>
   );
 }

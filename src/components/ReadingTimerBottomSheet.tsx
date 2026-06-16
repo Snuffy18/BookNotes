@@ -44,7 +44,9 @@ const SUBTITLE_BLUE = "#60a5fa";
 const LIGHT_MUTED = "rgba(15,23,42,0.5)";
 const LIGHT_SUBTITLE_BLUE = "#2563eb";
 const PHASE_CROSSFADE_MS = 280;
+const START_PHASE_ANIM_MS = 340;
 const PHASE_EASE = Easing.out(Easing.cubic);
+const START_PHASE_EASE = Easing.out(Easing.cubic);
 const BOOK_PICKER_ANIM_MS = 280;
 const BOOK_PICKER_EASE = Easing.out(Easing.cubic);
 const BOOK_PICKER_LIST_MAX_HEIGHT = 2400;
@@ -149,16 +151,26 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
   }, [isRunning]);
 
   const prevRunPhaseRef = useRef<string | null>(null);
+  const prevIsIdleRef = useRef(isIdle);
   const liveRunRef = useRef<LiveReadingRun | null>(null);
+  const idlePhaseOpacity = useRef(new Animated.Value(1)).current;
+  const idleStartTranslateY = useRef(new Animated.Value(0)).current;
   const runningPhaseOpacity = useRef(new Animated.Value(1)).current;
+  const runningStartTranslateY = useRef(new Animated.Value(0)).current;
+  const runningStartScale = useRef(new Animated.Value(1)).current;
   const stoppedPhaseOpacity = useRef(new Animated.Value(0)).current;
   const [runningPhaseMounted, setRunningPhaseMounted] = useState(false);
   const [stoppedPhaseMounted, setStoppedPhaseMounted] = useState(false);
   const [phaseCrossfading, setPhaseCrossfading] = useState(false);
+  const [startPhaseCrossfading, setStartPhaseCrossfading] = useState(false);
+
+  const idlePhaseMounted = isIdle || startPhaseCrossfading;
 
   useEffect(() => {
     const phase = run?.phase ?? null;
     const prevPhase = prevRunPhaseRef.current;
+    const wasIdle = prevIsIdleRef.current;
+    prevIsIdleRef.current = isIdle;
 
     if (isIdle) {
       setEndPageDraft("");
@@ -166,7 +178,12 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
       setRunningPhaseMounted(false);
       setStoppedPhaseMounted(false);
       setPhaseCrossfading(false);
+      setStartPhaseCrossfading(false);
+      idlePhaseOpacity.setValue(1);
+      idleStartTranslateY.setValue(0);
       runningPhaseOpacity.setValue(1);
+      runningStartTranslateY.setValue(0);
+      runningStartScale.setValue(1);
       stoppedPhaseOpacity.setValue(0);
       return;
     }
@@ -176,8 +193,56 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
       setRunningPhaseMounted(true);
       setStoppedPhaseMounted(false);
       setPhaseCrossfading(false);
-      runningPhaseOpacity.setValue(1);
       stoppedPhaseOpacity.setValue(0);
+      if (wasIdle) {
+        setStartPhaseCrossfading(true);
+        idlePhaseOpacity.setValue(1);
+        idleStartTranslateY.setValue(0);
+        runningPhaseOpacity.setValue(0);
+        runningStartTranslateY.setValue(28);
+        runningStartScale.setValue(0.96);
+        Animated.parallel([
+          Animated.timing(idlePhaseOpacity, {
+            toValue: 0,
+            duration: START_PHASE_ANIM_MS,
+            easing: START_PHASE_EASE,
+            useNativeDriver: true,
+          }),
+          Animated.timing(idleStartTranslateY, {
+            toValue: 14,
+            duration: START_PHASE_ANIM_MS,
+            easing: START_PHASE_EASE,
+            useNativeDriver: true,
+          }),
+          Animated.timing(runningPhaseOpacity, {
+            toValue: 1,
+            duration: START_PHASE_ANIM_MS - 60,
+            easing: START_PHASE_EASE,
+            useNativeDriver: true,
+          }),
+          Animated.spring(runningStartTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 78,
+            friction: 11,
+          }),
+          Animated.spring(runningStartScale, {
+            toValue: 1,
+            useNativeDriver: true,
+            tension: 78,
+            friction: 11,
+          }),
+        ]).start(({ finished }) => {
+          if (finished) setStartPhaseCrossfading(false);
+        });
+      } else {
+        setStartPhaseCrossfading(false);
+        idlePhaseOpacity.setValue(0);
+        idleStartTranslateY.setValue(0);
+        runningPhaseOpacity.setValue(1);
+        runningStartTranslateY.setValue(0);
+        runningStartScale.setValue(1);
+      }
     } else if (phase === "stopped") {
       setStoppedPhaseMounted(true);
       const fromLive = prevPhase === "running" || prevPhase === "paused";
@@ -217,7 +282,16 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
       setEndPageDraft(s != null ? String(s) : "1");
     }
     prevRunPhaseRef.current = phase;
-  }, [isIdle, run, runningPhaseOpacity, stoppedPhaseOpacity]);
+  }, [
+    isIdle,
+    run,
+    idlePhaseOpacity,
+    idleStartTranslateY,
+    runningPhaseOpacity,
+    runningStartTranslateY,
+    runningStartScale,
+    stoppedPhaseOpacity,
+  ]);
 
   useEffect(() => {
     if (books.length === 0) {
@@ -540,6 +614,10 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   };
 
+  const hapticMedium = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  };
+
   const openSavedSessions = useCallback(() => {
     hapticLight();
     handleDismiss(() => {
@@ -683,7 +761,21 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                 nestedScrollEnabled
                 scrollEnabled={!bookPickerOpen || !isIdle}
               >
-                {isIdle ? (
+                <View style={styles.phaseCrossfade}>
+                {idlePhaseMounted ? (
+                  <Animated.View
+                    style={[
+                      styles.phaseLayer,
+                      startPhaseCrossfading && styles.phaseLayerOverlay,
+                      {
+                        opacity: startPhaseCrossfading ? idlePhaseOpacity : 1,
+                        transform: startPhaseCrossfading
+                          ? [{ translateY: idleStartTranslateY }]
+                          : [],
+                      },
+                    ]}
+                    pointerEvents={startPhaseCrossfading ? "none" : "auto"}
+                  >
                   <View
                     style={[
                       styles.bodyGap,
@@ -840,7 +932,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                         <TouchableOpacity
                           style={[styles.startBtn, !darkMode && styles.startBtnLight]}
                           onPress={() => {
-                            hapticLight();
+                            hapticMedium();
                             const startPage = startPageDraft.trim() || String(draftStartNum);
                             startReading(startPage, timerBookId === undefined ? null : timerBookId);
                           }}
@@ -871,18 +963,24 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                       </Animated.View>
                     </Animated.View>
                   </View>
+                  </Animated.View>
                 ) : null}
 
-                {(runningPhaseMounted || stoppedPhaseMounted) && run ? (
-                  <View style={styles.phaseCrossfade}>
-                    {runningPhaseMounted && runningViewRun ? (
+                {runningPhaseMounted && runningViewRun ? (
                       <Animated.View
                         style={[
                           styles.phaseLayer,
-                          phaseCrossfading && styles.phaseLayerOverlay,
-                          { opacity: runningPhaseOpacity },
+                          (phaseCrossfading || startPhaseCrossfading) && styles.phaseLayerOverlay,
+                          {
+                            opacity:
+                              phaseCrossfading || startPhaseCrossfading ? runningPhaseOpacity : 1,
+                            transform: [
+                              { translateY: runningStartTranslateY },
+                              { scale: runningStartScale },
+                            ],
+                          },
                         ]}
-                        pointerEvents={phaseCrossfading || isStopped ? "none" : "auto"}
+                        pointerEvents={phaseCrossfading || startPhaseCrossfading || isStopped ? "none" : "auto"}
                       >
                         <ReadingTimerRunningView
                           run={runningViewRun}
@@ -971,8 +1069,7 @@ export function ReadingTimerBottomSheet({ visible, onDismiss }: Props) {
                         </View>
                       </Animated.View>
                     ) : null}
-                  </View>
-                ) : null}
+                </View>
               </ScrollView>
             </View>
             </View>

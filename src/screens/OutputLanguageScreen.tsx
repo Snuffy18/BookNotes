@@ -3,6 +3,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { SettingsGroupCard, SETTINGS_CARD_SHADOW_BLEED } from "../components/SettingsGroupCard";
 import { useAppSettings } from "../context/AppSettingsContext";
 import type { ProfileStackParamList } from "../navigation/types";
 import { darkColors, lightColors } from "../theme/colors";
@@ -15,7 +16,10 @@ export function OutputLanguageScreen() {
   const { darkMode } = useAppSettings();
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, darkMode && styles.screenDark]}>
+    <SafeAreaView
+      edges={["top", "left", "right"]}
+      style={[styles.screen, darkMode && styles.screenDark, !darkMode && styles.screenLight]}
+    >
       <View style={styles.topBar}>
         <TouchableOpacity
           style={styles.topBarSide}
@@ -35,12 +39,12 @@ export function OutputLanguageScreen() {
         <View style={styles.topBarSide} />
       </View>
 
-      <View style={[styles.card, darkMode && styles.cardDark]}>
+      <SettingsGroupCard darkMode={darkMode}>
         <View style={styles.row}>
           <Text style={[styles.langLabel, darkMode && styles.langLabelDark]}>English</Text>
           <Ionicons name="checkmark" size={20} color="#60a5fa" />
         </View>
-      </View>
+      </SettingsGroupCard>
     </SafeAreaView>
   );
 }
@@ -54,6 +58,10 @@ const styles = StyleSheet.create({
   },
   screenDark: {
     backgroundColor: darkColors.background,
+  },
+  screenLight: {
+    overflow: "visible",
+    paddingBottom: SETTINGS_CARD_SHADOW_BLEED,
   },
   topBar: {
     flexDirection: "row",
@@ -74,17 +82,6 @@ const styles = StyleSheet.create({
   },
   topBarTitleDark: {
     color: "#ffffff",
-  },
-  card: {
-    backgroundColor: "rgba(0,0,0,0.035)",
-    borderRadius: 14,
-    borderWidth: 0.5,
-    borderColor: "rgba(0,0,0,0.08)",
-    overflow: "hidden",
-  },
-  cardDark: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderColor: "rgba(255,255,255,0.08)",
   },
   row: {
     flexDirection: "row",

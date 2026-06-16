@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import {
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -61,15 +60,8 @@ export function OneTimeOfferModal({ visible, onClose }: Props) {
       onRequestClose={onClose}
     >
       <SafeAreaView style={[styles.safe, { backgroundColor: bg }]} edges={["top", "left", "right", "bottom"]}>
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={onClose}
-            hitSlop={12}
-            style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
-            accessibilityLabel="Close"
-          >
-            <Ionicons name="close" size={28} color={textPrimary} />
-          </Pressable>
+        <View style={styles.grabberRow}>
+          <View style={[styles.grabber, !darkMode && styles.grabberLight]} />
         </View>
 
         <View style={styles.scrollArea}>
@@ -160,17 +152,20 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
   },
-  headerRow: {
-    paddingHorizontal: 8,
+  grabberRow: {
+    alignItems: "center",
+    paddingTop: 8,
     paddingBottom: 4,
   },
-  closeBtn: {
-    alignSelf: "flex-start",
-    padding: 8,
-    borderRadius: 12,
+  grabber: {
+    alignSelf: "center",
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.15)",
   },
-  closeBtnPressed: {
-    opacity: 0.6,
+  grabberLight: {
+    backgroundColor: "rgba(15,23,42,0.15)",
   },
   scrollArea: {
     flex: 1,

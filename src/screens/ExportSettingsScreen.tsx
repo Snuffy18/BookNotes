@@ -4,19 +4,19 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { SettingsGroupCard, settingsScrollContentLightStyle, settingsScrollLight } from "../components/SettingsGroupCard";
 import { SettingsOptionHeroCard } from "../components/SettingsOptionHeroCard";
 import { useAppSettings } from "../context/AppSettingsContext";
 import { useExportPreferences } from "../context/ExportPreferencesContext";
 import type { ProfileStackParamList } from "../navigation/types";
 import { EXPORT_SCOPE_LABELS } from "../types/exportPreferences";
 import { darkColors, lightColors } from "../theme/colors";
+import { hexWithAlpha } from "../theme/colorUtils";
 
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "ExportSettings">;
 type IonName = ComponentProps<typeof Ionicons>["name"];
 
 const GREEN = "#4ade80";
-const GREEN_BUBBLE = "rgba(34,197,94,0.12)";
-const SWITCH_ON = "#2563eb";
 const SECTION_LABEL_TO_CARD = 6;
 const ROW_PAD_V = 18;
 const ROW_PAD_H = 14;
@@ -35,17 +35,17 @@ function SectionLabel({ children, darkMode }: { children: string; darkMode: bool
   );
 }
 
-function GreenIconBubble({ name }: { name: IonName }) {
+function AccentIconBubble({ name, accentColor }: { name: IonName; accentColor: string }) {
   return (
-    <View style={styles.iconBubble}>
-      <Ionicons name={name} size={ICON_INNER} color={GREEN} />
+    <View style={[styles.iconBubble, { backgroundColor: hexWithAlpha(accentColor, 0.12) }]}>
+      <Ionicons name={name} size={ICON_INNER} color={accentColor} />
     </View>
   );
 }
 
 export function ExportSettingsScreen() {
   const navigation = useNavigation<Nav>();
-  const { darkMode } = useAppSettings();
+  const { darkMode, accentColor } = useAppSettings();
   const {
     defaultFormat,
     includeQuotes,
@@ -59,14 +59,13 @@ export function ExportSettingsScreen() {
 
   const switchTrack = {
     false: darkMode ? "#3f3f3f" : "#d1d5db",
-    true: SWITCH_ON,
-  } as const;
+    true: accentColor,
+  };
 
   const chevronColor = darkMode ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.35)";
   const valueMuted = darkMode ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.45)";
   const subtitleMuted = darkMode ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)";
 
-  const groupCard = [styles.groupCard, darkMode ? styles.groupCardDark : styles.groupCardLight];
   const divider = [styles.rowDivider, darkMode ? styles.rowDividerDark : styles.rowDividerLight];
 
   const noopFormat = () => {
@@ -100,7 +99,14 @@ export function ExportSettingsScreen() {
         <View style={styles.topBarSide} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={!darkMode ? settingsScrollLight : undefined}
+        contentContainerStyle={[
+          styles.scrollContent,
+          !darkMode && settingsScrollContentLightStyle({ paddingBottom: 40 }),
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <SettingsOptionHeroCard
           icon="cloud-upload-outline"
           title="Export"
@@ -110,10 +116,10 @@ export function ExportSettingsScreen() {
 
         <View>
           <SectionLabel darkMode={darkMode}>Content</SectionLabel>
-          <View style={[...groupCard, { marginTop: SECTION_LABEL_TO_CARD }]}>
+          <SettingsGroupCard darkMode={darkMode} style={{ marginTop: SECTION_LABEL_TO_CARD }}>
             <TouchableOpacity style={styles.row} onPress={noopFormat} activeOpacity={0.82}>
-              <GreenIconBubble name="document-outline" />
-              <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Default format</Text>
+              <AccentIconBubble name="document-outline" accentColor={accentColor} />
+              <Text style={[styles.rowLabel, styles.rowLabelGrow, darkMode && styles.rowLabelDark]}>Default format</Text>
               <View style={styles.rowTrail}>
                 <Text style={[styles.rowValue, { color: valueMuted }]} numberOfLines={1}>
                   {defaultFormat.toUpperCase()}
@@ -123,8 +129,8 @@ export function ExportSettingsScreen() {
             </TouchableOpacity>
             <View style={[...divider, { marginLeft: DIVIDER_INSET }]} />
             <View style={styles.row}>
-              <GreenIconBubble name="chatbubble-outline" />
-              <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Include quotes</Text>
+              <AccentIconBubble name="chatbubble-outline" accentColor={accentColor} />
+              <Text style={[styles.rowLabel, styles.rowLabelGrow, darkMode && styles.rowLabelDark]}>Include quotes</Text>
               <Switch
                 value={includeQuotes}
                 onValueChange={(v) => setExportPreferences({ includeQuotes: v })}
@@ -135,8 +141,8 @@ export function ExportSettingsScreen() {
             </View>
             <View style={[...divider, { marginLeft: DIVIDER_INSET }]} />
             <View style={styles.row}>
-              <GreenIconBubble name="document-text-outline" />
-              <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Include summary</Text>
+              <AccentIconBubble name="document-text-outline" accentColor={accentColor} />
+              <Text style={[styles.rowLabel, styles.rowLabelGrow, darkMode && styles.rowLabelDark]}>Include summary</Text>
               <Switch
                 value={includeSummary}
                 onValueChange={(v) => setExportPreferences({ includeSummary: v })}
@@ -147,8 +153,8 @@ export function ExportSettingsScreen() {
             </View>
             <View style={[...divider, { marginLeft: DIVIDER_INSET }]} />
             <View style={styles.row}>
-              <GreenIconBubble name="keypad-outline" />
-              <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Include page numbers</Text>
+              <AccentIconBubble name="keypad-outline" accentColor={accentColor} />
+              <Text style={[styles.rowLabel, styles.rowLabelGrow, darkMode && styles.rowLabelDark]}>Include page numbers</Text>
               <Switch
                 value={includePageNumbers}
                 onValueChange={(v) => setExportPreferences({ includePageNumbers: v })}
@@ -157,14 +163,14 @@ export function ExportSettingsScreen() {
                 ios_backgroundColor={darkMode ? "#3f3f3f" : "#d1d5db"}
               />
             </View>
-          </View>
+          </SettingsGroupCard>
         </View>
 
         <View>
           <SectionLabel darkMode={darkMode}>Destination</SectionLabel>
-          <View style={[...groupCard, { marginTop: SECTION_LABEL_TO_CARD }]}>
+          <SettingsGroupCard darkMode={darkMode} style={{ marginTop: SECTION_LABEL_TO_CARD }}>
             <TouchableOpacity style={styles.rowMultiline} onPress={noopScope} activeOpacity={0.82}>
-              <GreenIconBubble name="funnel-outline" />
+              <AccentIconBubble name="funnel-outline" accentColor={accentColor} />
               <View style={styles.rowTextCol}>
                 <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Export scope</Text>
                 <Text style={[styles.rowSubtitle, { color: subtitleMuted }]} numberOfLines={1}>
@@ -175,7 +181,7 @@ export function ExportSettingsScreen() {
             </TouchableOpacity>
             <View style={[...divider, { marginLeft: DIVIDER_INSET }]} />
             <TouchableOpacity style={styles.rowMultiline} onPress={noopNotion} activeOpacity={0.82}>
-              <GreenIconBubble name="open-outline" />
+              <AccentIconBubble name="open-outline" accentColor={accentColor} />
               <View style={styles.rowTextCol}>
                 <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Notion</Text>
                 <Text
@@ -190,14 +196,14 @@ export function ExportSettingsScreen() {
               </View>
               <Ionicons name="chevron-forward" size={CHEVRON_SIZE} color={chevronColor} />
             </TouchableOpacity>
-          </View>
+          </SettingsGroupCard>
         </View>
 
         <View>
           <SectionLabel darkMode={darkMode}>Automation</SectionLabel>
-          <View style={[...groupCard, { marginTop: SECTION_LABEL_TO_CARD }]}>
+          <SettingsGroupCard darkMode={darkMode} style={{ marginTop: SECTION_LABEL_TO_CARD }}>
             <View style={styles.rowMultiline}>
-              <GreenIconBubble name="flash-outline" />
+              <AccentIconBubble name="flash-outline" accentColor={accentColor} />
               <View style={styles.rowTextCol}>
                 <Text style={[styles.rowLabel, darkMode && styles.rowLabelDark]}>Auto-export after scan</Text>
                 <Text style={[styles.rowSubtitle, { color: subtitleMuted }]} numberOfLines={2}>
@@ -212,7 +218,7 @@ export function ExportSettingsScreen() {
                 ios_backgroundColor={darkMode ? "#3f3f3f" : "#d1d5db"}
               />
             </View>
-          </View>
+          </SettingsGroupCard>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -264,24 +270,10 @@ const styles = StyleSheet.create({
   sectionLabelLight: {
     color: "rgba(0,0,0,0.3)",
   },
-  groupCard: {
-    borderRadius: 14,
-    borderWidth: 0.5,
-    overflow: "hidden",
-  },
-  groupCardDark: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  groupCardLight: {
-    backgroundColor: "rgba(0,0,0,0.035)",
-    borderColor: "rgba(0,0,0,0.08)",
-  },
   iconBubble: {
     width: BUBBLE_SIZE,
     height: BUBBLE_SIZE,
     borderRadius: BUBBLE_RADIUS,
-    backgroundColor: GREEN_BUBBLE,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -309,6 +301,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "500",
     color: lightColors.textPrimary,
+  },
+  rowLabelGrow: {
+    flex: 1,
+    minWidth: 0,
   },
   rowLabelDark: {
     color: "#ffffff",

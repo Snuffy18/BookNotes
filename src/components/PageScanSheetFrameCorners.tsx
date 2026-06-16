@@ -4,7 +4,8 @@ const PAGE_SCAN_SHEET_CORNER_LEN = 26;
 const PAGE_SCAN_SHEET_CORNER_INSET = 14;
 const PAGE_SCAN_SHEET_CORNER_RADIUS = 6;
 const PAGE_SCAN_SHEET_STROKE = 3;
-const PAGE_SCAN_CORNER_COLOR = "rgba(255,255,255,0.9)";
+const PAGE_SCAN_CORNER_COLOR_DARK = "rgba(255,255,255,0.9)";
+const PAGE_SCAN_CORNER_COLOR_LIGHT = "rgba(15,23,42,0.75)";
 
 type CenteredFrameCornersProps = {
   width: number;
@@ -32,7 +33,7 @@ export function CenteredViewfinderFrameCorners({
     position: "absolute" as const,
     width: arm,
     height: arm,
-    borderColor: PAGE_SCAN_CORNER_COLOR,
+    borderColor: PAGE_SCAN_CORNER_COLOR_DARK,
   };
 
   return (
@@ -78,12 +79,13 @@ export function CenteredViewfinderFrameCorners({
 }
 
 /** L-shaped corner brackets for page-scan / add-book sheet camera preview. */
-export function PageScanSheetFrameCorners() {
+export function PageScanSheetFrameCorners({ darkMode = true }: { darkMode?: boolean }) {
+  const cornerColor = darkMode ? PAGE_SCAN_CORNER_COLOR_DARK : PAGE_SCAN_CORNER_COLOR_LIGHT;
   const c = {
     position: "absolute" as const,
     width: PAGE_SCAN_SHEET_CORNER_LEN,
     height: PAGE_SCAN_SHEET_CORNER_LEN,
-    borderColor: PAGE_SCAN_CORNER_COLOR,
+    borderColor: cornerColor,
   };
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">

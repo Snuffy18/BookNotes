@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SettingsGroupCard, settingsScrollContentLightStyle, settingsScrollLight } from "../components/SettingsGroupCard";
 import { Graph2DIcon } from "../components/Graph2DIcon";
 import { HighlighterIcon } from "../components/HighlighterIcon";
 import { RulerIcon } from "../components/RulerIcon";
@@ -32,7 +33,6 @@ type Choice<T extends string> = { id: T; title: string; subtitle: string };
 const SECTION_LABEL_TO_CARD = 6;
 const ROW_ICON_GAP = 12;
 const ROW_ICON_W = 18;
-const DIVIDER_INSET = 14 + ROW_ICON_W + ROW_ICON_GAP;
 
 const TONE_CHOICES: Choice<StudyTone>[] = [
   { id: "simple", title: "Simple", subtitle: "Like explaining to a beginner" },
@@ -98,7 +98,6 @@ export function StudyPreferencesScreen() {
     Haptics.selectionAsync().catch(() => {});
   };
 
-  const groupCard = [styles.groupCard, darkMode ? styles.groupCardDark : styles.groupCardLight];
   const divider = [styles.rowDivider, darkMode ? styles.rowDividerDark : styles.rowDividerLight];
   const chevronMuted = darkMode ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.35)";
 
@@ -126,24 +125,33 @@ export function StudyPreferencesScreen() {
         <View style={styles.topBarSide} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={[styles.heroCard, darkMode && styles.heroCardDark]}>
-          <View style={styles.heroIconWrap}>
-            <Ionicons name="school" size={22} color={accentColor} />
+      <ScrollView
+        style={!darkMode ? settingsScrollLight : undefined}
+        contentContainerStyle={[
+          styles.scrollContent,
+          !darkMode && settingsScrollContentLightStyle({ paddingBottom: 40 }),
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <SettingsGroupCard darkMode={darkMode} style={{ marginBottom: 20 }}>
+          <View style={styles.heroCardInner}>
+            <View style={styles.heroIconWrap}>
+              <Ionicons name="school" size={22} color={accentColor} />
+            </View>
+            <Text style={[styles.heroTitle, darkMode && styles.heroTitleDark]}>Study preferences</Text>
+            <Text
+              style={[styles.heroDescription, darkMode && styles.heroDescriptionDark]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              Adjust tone, length and language to match how you study.
+            </Text>
           </View>
-          <Text style={[styles.heroTitle, darkMode && styles.heroTitleDark]}>Study preferences</Text>
-          <Text
-            style={[styles.heroDescription, darkMode && styles.heroDescriptionDark]}
-            numberOfLines={1}
-            ellipsizeMode="tail"
-          >
-            Adjust tone, length and language to match how you study.
-          </Text>
-        </View>
+        </SettingsGroupCard>
 
         <View>
           <SectionLabel darkMode={darkMode} />
-          <View style={[...groupCard, { marginTop: SECTION_LABEL_TO_CARD }]}>
+          <SettingsGroupCard darkMode={darkMode} style={{ marginTop: SECTION_LABEL_TO_CARD }}>
             <TouchableOpacity
               style={styles.prefRow}
               onPress={() => {
@@ -163,7 +171,7 @@ export function StudyPreferencesScreen() {
                 <Ionicons name="chevron-down" size={15} color={chevronMuted} />
               </View>
             </TouchableOpacity>
-            <View style={[...divider, { marginLeft: DIVIDER_INSET }]} />
+            <View style={divider} />
             <TouchableOpacity
               style={styles.prefRow}
               onPress={() => {
@@ -183,7 +191,7 @@ export function StudyPreferencesScreen() {
                 <Ionicons name="chevron-down" size={15} color={chevronMuted} />
               </View>
             </TouchableOpacity>
-            <View style={[...divider, { marginLeft: DIVIDER_INSET }]} />
+            <View style={divider} />
             <TouchableOpacity
               style={styles.prefRow}
               onPress={() => {
@@ -203,7 +211,7 @@ export function StudyPreferencesScreen() {
                 <Ionicons name="chevron-down" size={15} color={chevronMuted} />
               </View>
             </TouchableOpacity>
-            <View style={[...divider, { marginLeft: DIVIDER_INSET }]} />
+            <View style={divider} />
             <TouchableOpacity
               style={styles.prefRow}
               onPress={() => {
@@ -223,7 +231,7 @@ export function StudyPreferencesScreen() {
                 <Ionicons name="chevron-forward" size={15} color={chevronMuted} />
               </View>
             </TouchableOpacity>
-          </View>
+          </SettingsGroupCard>
         </View>
 
         <TouchableOpacity
@@ -455,20 +463,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 40,
   },
-  heroCard: {
+  heroCardInner: {
     alignItems: "center",
     paddingTop: 14,
     paddingBottom: 16,
     paddingHorizontal: 14,
-    marginBottom: 20,
-    borderRadius: 14,
-    borderWidth: 0.5,
-    borderColor: "rgba(0,0,0,0.08)",
-    backgroundColor: "rgba(0,0,0,0.035)",
-  },
-  heroCardDark: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderColor: "rgba(255,255,255,0.08)",
   },
   heroIconWrap: {
     width: 40,
@@ -509,19 +508,6 @@ const styles = StyleSheet.create({
   },
   sectionLabelLight: {
     color: "rgba(0,0,0,0.3)",
-  },
-  groupCard: {
-    borderRadius: 14,
-    borderWidth: 0.5,
-    overflow: "hidden",
-  },
-  groupCardDark: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  groupCardLight: {
-    backgroundColor: "rgba(0,0,0,0.035)",
-    borderColor: "rgba(0,0,0,0.08)",
   },
   prefRow: {
     flexDirection: "row",
@@ -576,13 +562,15 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.4)",
   },
   rowDivider: {
-    height: 0.5,
+    height: StyleSheet.hairlineWidth,
+    width: "90%",
+    alignSelf: "center",
   },
   rowDividerDark: {
     backgroundColor: "rgba(255,255,255,0.06)",
   },
   rowDividerLight: {
-    backgroundColor: "rgba(0,0,0,0.06)",
+    backgroundColor: "rgba(15,23,42,0.08)",
   },
   resetButton: {
     marginTop: 16,
