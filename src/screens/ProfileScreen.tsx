@@ -25,8 +25,8 @@ type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
 const LAST_SYNC_KEY = "profile_last_sync_iso";
 const SUPPORT_EMAIL = "support@booknotes.app";
-const PRIVACY_URL = "https://example.com/privacy";
-const TERMS_URL = "https://example.com/terms";
+const PRIVACY_URL = "https://snuffy18.github.io/BookNotes/privacy.html";
+const TERMS_URL = "https://snuffy18.github.io/BookNotes/terms.html";
 
 const SECTION_GAP = 20;
 const SECTION_LABEL_TO_CARD = 6;
