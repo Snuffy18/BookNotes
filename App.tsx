@@ -1,5 +1,8 @@
 import { useFonts } from "expo-font";
-import { DMSerifDisplay_400Regular } from "@expo-google-fonts/dm-serif-display";
+import {
+  DMSerifDisplay_400Regular,
+  DMSerifDisplay_400Regular_Italic,
+} from "@expo-google-fonts/dm-serif-display";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppRoot } from "./AppRoot";
@@ -14,13 +17,19 @@ import { ScanProvider } from "./src/context/ScanContext";
 import { StreakProvider } from "./src/context/StreakContext";
 import { ExportPreferencesProvider } from "./src/context/ExportPreferencesContext";
 import { StudyPreferencesProvider } from "./src/context/StudyPreferencesContext";
-import { FONT_CANELA_TEXT_BOLD, FONT_CANELA_TEXT_REGULAR, FONT_DM_SERIF_DISPLAY } from "./src/theme/fonts";
+import {
+  FONT_CANELA_TEXT_BOLD,
+  FONT_CANELA_TEXT_REGULAR,
+  FONT_DM_SERIF_DISPLAY,
+  FONT_DM_SERIF_DISPLAY_ITALIC,
+} from "./src/theme/fonts";
 
 export default function App() {
   const [fontsLoaded] = useFonts({
     [FONT_CANELA_TEXT_REGULAR]: require("./assets/CanelaText-Regular-Trial.otf"),
     [FONT_CANELA_TEXT_BOLD]: require("./assets/CanelaText-Bold-Trial.otf"),
     [FONT_DM_SERIF_DISPLAY]: DMSerifDisplay_400Regular,
+    [FONT_DM_SERIF_DISPLAY_ITALIC]: DMSerifDisplay_400Regular_Italic,
   });
 
   if (!fontsLoaded) {

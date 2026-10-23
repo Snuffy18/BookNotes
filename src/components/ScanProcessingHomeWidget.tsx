@@ -18,10 +18,10 @@ import {
   SCAN_PROCESSING_STEP_COUNT,
   SCAN_PROCESSING_STEPS,
 } from "../processing/scanProcessingSteps";
+import { ReportReadyRibbon } from "./ReportReadyRibbon";
 
 const LOADING_LOTTIE = require("../../assets/loading.json");
 const ERROR_LOTTIE = require("../../assets/error.json");
-const CONFETTI_LOTTIE = require("../../assets/confetti2.json");
 
 const LAST_STEP_INDEX = SCAN_PROCESSING_STEP_COUNT - 1;
 
@@ -57,11 +57,28 @@ export function ScanProcessingHomeWidget({ darkMode, navigation, onTakeAnotherPh
     ? 100
     : Math.round(((activeStepIndex + 1) / SCAN_PROCESSING_STEP_COUNT) * 100);
 
+  const openReport = () => {
+    if (!resultItem) return;
+    navigation.navigate("ReportDetails", {
+      item: resultItem,
+      reportNavOrigin: "scan",
+    });
+    clearJob();
+  };
+
+  if (isComplete && resultItem) {
+    return (
+      <ReportReadyRibbon
+        darkMode={darkMode}
+        imageUri={resultItem.imageUri}
+        page={resultItem.page ?? resultItem.notes.pageNumber}
+        onOpen={openReport}
+        onDismiss={clearJob}
+      />
+    );
+  }
+
   const onPressIn = () => {
-    if (isComplete) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      return;
-    }
     if (isError) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }
@@ -72,12 +89,7 @@ export function ScanProcessingHomeWidget({ darkMode, navigation, onTakeAnotherPh
       setErrorModalVisible(true);
       return;
     }
-    if (!isComplete || !resultItem) return;
-    navigation.navigate("ReportDetails", {
-      item: resultItem,
-      reportNavOrigin: "scan",
-    });
-    clearJob();
+    if (isComplete) openReport();
   };
 
   const onRetry = () => {
@@ -116,18 +128,6 @@ export function ScanProcessingHomeWidget({ darkMode, navigation, onTakeAnotherPh
               : `Processing: ${step.label}`
         }
       >
-        {isComplete ? (
-          <View style={styles.cardConfettiLayer} pointerEvents="none">
-            <LottieView
-              source={CONFETTI_LOTTIE}
-              autoPlay
-              loop={false}
-              speed={1}
-              style={styles.cardConfettiLottie}
-            />
-          </View>
-        ) : null}
-
         <View style={styles.cardContent}>
         <View
           style={[
@@ -244,17 +244,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     overflow: "hidden",
     position: "relative",
-  },
-  cardConfettiLayer: {
-    ...StyleSheet.absoluteFill,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 0,
-  },
-  cardConfettiLottie: {
-    width: "400%",
-    height: "520%",
-    transform: [{ rotate: "180deg" }],
   },
   cardContent: {
     flexDirection: "row",
